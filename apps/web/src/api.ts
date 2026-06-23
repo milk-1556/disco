@@ -53,6 +53,12 @@ export const api = {
     req<{ url: string; permissions: string; mode: string }>(
       `/invite-url?applicationId=${encodeURIComponent(applicationId)}&mode=${mode}${guildId ? `&guildId=${guildId}` : ''}`,
     ),
+  diff: (id: string, against: string) =>
+    req<SnapshotDiff>(`/snapshots/${id}/diff?against=${encodeURIComponent(against)}`),
+  createHandover: (jobId: string) => req<Handover>('/handovers', { method: 'POST', body: JSON.stringify({ jobId }) }),
+  getHandover: (id: string) => req<HandoverBundle>(`/handovers/${id}`),
+  updateHandover: (id: string, patch: Partial<Pick<Handover, 'state' | 'ownershipSteps' | 'upsellStatus'>> & { password?: string | null }) =>
+    req<Handover>(`/handovers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 };
 
 /** SSE stream of a job's logs; returns an unsubscribe fn. */
@@ -186,4 +192,30 @@ export interface JobEvent {
   message?: string;
   progress?: number;
   step?: string;
+}
+export interface SnapshotDiff {
+  guildNameChanged: { before: string; after: string } | null;
+  roles: { added: string[]; removed: string[] };
+  channels: { added: string[]; removed: string[] };
+  emojis: { added: string[]; removed: string[] };
+  counts: Record<string, { before: number; after: number }>;
+}
+export interface OwnershipStep {
+  title: string;
+  detail: string;
+  done: boolean;
+}
+export interface Handover {
+  id: string;
+  jobId: string;
+  clientId: string | null;
+  state: 'draft' | 'ready' | 'handed_over';
+  hasPassword: boolean;
+  ownershipSteps: OwnershipStep[];
+  upsellStatus: 'none' | 'proposed' | 'retained' | 'redesign';
+  createdAt: string;
+}
+export interface HandoverBundle {
+  handover: Handover;
+  job: Job | null;
 }

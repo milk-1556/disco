@@ -4,7 +4,7 @@ import { cx, shortId } from '../util.js';
 
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
 
-export function Library({ onBuild }: { onBuild: (snapshotId: string) => void }) {
+export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) => void; onCompare: () => void }) {
   const [snaps, setSnaps] = useState<SnapshotSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -42,9 +42,16 @@ export function Library({ onBuild }: { onBuild: (snapshotId: string) => void }) 
             permissions, emojis, AutoMod, and info-channel content. Re-capture any time to keep it current.
           </p>
         </div>
-        <button className="btn" onClick={capture} disabled={busy}>
-          {busy ? 'Capturing…' : '↻ New snapshot'}
-        </button>
+        <div className="flex items-center gap-2">
+          {snaps.length >= 2 && (
+            <button className="btn" onClick={onCompare}>
+              ⇄ Compare versions
+            </button>
+          )}
+          <button className="btn" onClick={capture} disabled={busy}>
+            {busy ? 'Capturing…' : '↻ New snapshot'}
+          </button>
+        </div>
       </header>
 
       {err && (
