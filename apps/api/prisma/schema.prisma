@@ -1,0 +1,85 @@
+// Disco persistence model. The API uses an in-memory Repo by default (zero-setup demo); this Prisma
+// schema is the production drop-in behind the same `Repo` interface (apps/api/src/repo.ts).
+//   pnpm --filter @disco/api exec prisma migrate dev
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Operator {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+/// A versioned, captured template. The full typed artifact lives in `artifact` (Snapshot JSON).
+model Snapshot {
+  id            String   @id @default(cuid())
+  name          String
+  version       Int
+  sourceGuildId String
+  schemaVersion String
+  capturedAt    DateTime
+  artifact      Json
+  createdAt     DateTime @default(now())
+  jobs          Job[]
+
+  @@index([sourceGuildId, version])
+}
+
+/// A saved client (creator) for repeat builds + upsells.
+model Client {
+  id          String   @id @default(cuid())
+  creatorName String
+  handle      String   @default("")
+  brandColors String[] @default([])
+  links       String[] @default([])
+  termSwaps   Json     @default("[]")
+  assets      Json     @default("{}")
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+  jobs        Job[]
+  handovers   Handover[]
+}
+
+/// A rebrand+build run. Resumable: `manifest` holds per-step state + localRef→newId mappings.
+model Job {
+  id            String    @id @default(cuid())
+  kind          String // snapshot | rebuild
+  status        String // queued | running | paused | completed | failed | canceled
+  dryRun        Boolean   @default(false)
+  progress      Float     @default(0)
+  targetGuildId String?
+  rebrandConfig Json
+  manifest      Json?
+  report        Json?
+  error         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  snapshot      Snapshot? @relation(fields: [snapshotId], references: [id])
+  snapshotId    String?
+  client        Client?   @relation(fields: [clientId], references: [id])
+  clientId      String?
+  handover      Handover?
+}
+
+/// The client delivery record: handover page state + ownership-transfer checklist + upsell tracking.
+model Handover {
+  id              String   @id @default(cuid())
+  job             Job      @relation(fields: [jobId], references: [id])
+  jobId           String   @unique
+  client          Client   @relation(fields: [clientId], references: [id])
+  clientId        String
+  /// hash of an optional password protecting the public handover page
+  passwordHash    String?
+  state           String   @default("draft") // draft | ready | handed_over
+  ownershipSteps  Json     @default("[]")
+  upsellStatus    String   @default("none") // none | proposed | retained | redesign
+  createdAt       DateTime @default(now())
+}

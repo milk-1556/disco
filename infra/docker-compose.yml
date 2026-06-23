@@ -1,0 +1,86 @@
+# Disco — full stack. Run from the repo root:
+#   docker compose -f infra/docker-compose.yml up --build
+# Boots tokenless in DEMO mode (MockGuild). Add DISCORD_BOT_TOKEN to .env for LIVE mode.
+name: disco
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-disco}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-disco}
+      POSTGRES_DB: ${POSTGRES_DB:-disco}
+    ports:
+      - '5432:5432'
+    volumes:
+      - disco_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-disco}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-disco}:${POSTGRES_PASSWORD:-disco}@postgres:5432/${POSTGRES_DB:-disco}?schema=public
+      REDIS_URL: redis://redis:6379
+      SESSION_SECRET: ${SESSION_SECRET:-dev-insecure-session-secret-change-me}
+      OPERATOR_EMAIL: ${OPERATOR_EMAIL:-operator@disco.local}
+      OPERATOR_PASSWORD_HASH: ${OPERATOR_PASSWORD_HASH:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:-}
+      STORAGE_DISK_PATH: /data/storage
+      WEB_ORIGIN: ${WEB_ORIGIN:-*}
+    ports:
+      - '4000:4000'
+    volumes:
+      - disco_storage:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/worker.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-disco}:${POSTGRES_PASSWORD:-disco}@postgres:5432/${POSTGRES_DB:-disco}?schema=public
+      REDIS_URL: redis://redis:6379
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      STORAGE_DISK_PATH: /data/storage
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+    volumes:
+      - disco_storage:/data/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web.Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:4000}
+    ports:
+      - '5173:5173'
+    depends_on:
+      - api
+
+volumes:
+  disco_pg:
+  disco_storage:

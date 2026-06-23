@@ -55,8 +55,9 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
       behind an interface now (Prisma drops in behind the same `Repo` interface).
 - ✅ U5.2 Auth (JWT + bcrypt operator) + REST routes + SSE job-log channel — BOOTS + HTTP-verified
       (login, snapshots, diff, capture, rebrand/preview, jobs, report). Runs tokenless in DEMO mode.
-- 🔨 U5.3 Job runner (`runBuild`) is queue-ready and streams logs over SSE; runs in-process now.
-      BullMQ+Redis worker wrapper still to add (calls the same `runBuild`).
+- ✅ U5.3 Job runner (`runBuild`) streams logs over SSE (in-process, verified). `@disco/worker`
+      BullMQ build worker added (consumes `disco:builds`, runs the SAME engine) — typecheck-verified.
+      Wiring `POST /jobs` to enqueue + read results from Postgres is the remaining production step.
 - ✅ U5.4 Invite-link/permission-integer generator (administrator=8 + granular set) — HTTP-verified.
 
 ## Phase 6 — apps/web (premium dashboard, §8)   ✅ CORE DONE (boots, screenshot-verified end-to-end)
@@ -71,10 +72,11 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
 - ⏳ U6.4 Remaining: snapshot diff view UI, New Client intake form, dedicated Handover page +
       Ownership Transfer Checklist + upsell tracker (API + Report already expose the data).
 
-## Phase 7 — infra + docs
-- ⏳ U7.1 docker-compose (api, worker, redis, postgres, web) + healthchecks.
-- ⏳ U7.2 README 5-minute quickstart, intents/permissions, "cannot do & why".
-- ⏳ U7.3 HANDOFF.md: what's mocked vs live, exact safe first real-server run.
+## Phase 7 — infra + docs   ✅ DONE
+- ✅ U7.1 docker-compose (api, worker, redis, postgres, web) + healthchecks + Dockerfiles + .dockerignore.
+      Config-valid; not booted here (docker absent — see BLOCKERS). Prisma schema added.
+- ✅ U7.2 README 5-minute quickstart, intents/permissions table, "What Disco cannot do and why".
+- ✅ U7.3 HANDOFF.md: what's built/mocked vs live, exact safe first real-server run, remaining wire-up.
 
 ## Known environment gaps (this machine)
 - `docker` not installed → compose authored & validated by config, but not booted here. Flagged in HANDOFF.
