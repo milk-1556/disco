@@ -7,10 +7,11 @@ import {
   RebrandConfig,
   RebuildReport,
   Snapshot,
+  type SnapshotMetaPatch,
   type SnapshotRecord,
 } from '@disco/schema';
 import { Prisma, PrismaClient } from '@prisma/client';
-import type { HandoverCreate, HandoverPatch, Repo } from './repo.js';
+import type { HandoverCreate, HandoverPatch, Repo, SnapshotCreate } from './repo.js';
 
 let _prisma: PrismaClient | undefined;
 /** Memoized singleton PrismaClient (one pool per process). */
@@ -42,6 +43,7 @@ export class PrismaRepo implements Repo {
   // ── snapshots ──
   private toSnapshot = (r: {
     id: string; name: string; version: number; sourceGuildId: string; schemaVersion: string; capturedAt: Date; artifact: Prisma.JsonValue;
+    tags: string[]; note: string; favorite: boolean; isTemplate: boolean; lastUsedAt: Date | null;
   }): SnapshotRecord => ({
     id: r.id,
     name: r.name,
@@ -50,6 +52,11 @@ export class PrismaRepo implements Repo {
     schemaVersion: r.schemaVersion,
     capturedAt: iso(r.capturedAt),
     snapshot: Snapshot.parse(r.artifact),
+    tags: r.tags,
+    note: r.note,
+    favorite: r.favorite,
+    isTemplate: r.isTemplate,
+    lastUsedAt: r.lastUsedAt ? iso(r.lastUsedAt) : null,
   });
 
   async listSnapshots() {
@@ -60,7 +67,7 @@ export class PrismaRepo implements Repo {
     const r = await this.db.snapshot.findUnique({ where: { id } });
     return r ? this.toSnapshot(r) : undefined;
   }
-  async addSnapshot(rec: Omit<SnapshotRecord, 'id'>) {
+  async addSnapshot(rec: SnapshotCreate) {
     const r = await this.db.snapshot.create({
       data: {
         name: rec.name,
@@ -72,6 +79,21 @@ export class PrismaRepo implements Repo {
       },
     });
     return this.toSnapshot(r);
+  }
+  async updateSnapshot(id: string, patch: SnapshotMetaPatch) {
+    const data: Prisma.SnapshotUpdateInput = {};
+    if (patch.name !== undefined) data.name = patch.name;
+    if (patch.tags !== undefined) data.tags = patch.tags;
+    if (patch.note !== undefined) data.note = patch.note;
+    if (patch.favorite !== undefined) data.favorite = patch.favorite;
+    if (patch.isTemplate !== undefined) data.isTemplate = patch.isTemplate;
+    if (patch.lastUsedAt !== undefined) data.lastUsedAt = patch.lastUsedAt ? new Date(patch.lastUsedAt) : null;
+    try {
+      return this.toSnapshot(await this.db.snapshot.update({ where: { id }, data }));
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') return undefined;
+      throw err;
+    }
   }
 
   // ── clients ──

@@ -1,5 +1,5 @@
 import { type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, parseBundle, rebrand } from '@disco/core';
-import { defaultOwnershipSteps, RebrandConfig } from '@disco/schema';
+import { defaultOwnershipSteps, RebrandConfig, SnapshotMetaPatch } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, mockGuildFromSnapshot } from '@disco/sdk';
 import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
@@ -62,6 +62,11 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       version: s.version,
       sourceGuildId: s.sourceGuildId,
       capturedAt: s.capturedAt,
+      tags: s.tags,
+      note: s.note,
+      favorite: s.favorite,
+      isTemplate: s.isTemplate,
+      lastUsedAt: s.lastUsedAt,
       counts: {
         roles: s.snapshot.roles.length,
         channels: s.snapshot.channels.length,
@@ -72,6 +77,14 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       },
     })),
   );
+
+  app.patch('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
+    const parsed = SnapshotMetaPatch.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid patch', detail: parsed.error.flatten() });
+    const rec = await repo.updateSnapshot((req.params as { id: string }).id, parsed.data);
+    if (!rec) return reply.code(404).send({ error: 'not found' });
+    return { id: rec.id, name: rec.name, tags: rec.tags, note: rec.note, favorite: rec.favorite, isTemplate: rec.isTemplate };
+  });
 
   app.get('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
     const rec = await repo.getSnapshot((req.params as { id: string }).id);
@@ -234,6 +247,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       // In-process demo path; logs stream over the in-memory channel.
       void runBuild(repo, channel, { jobId: job.id, snapshot: rec.snapshot, config: parsed.data, dryRun: job.dryRun });
     }
+    // Bump "last used" so the library can surface recently-built templates.
+    void repo.updateSnapshot(rec.id, { lastUsedAt: new Date().toISOString() }).catch(() => {});
     return { id: job.id, status: job.status };
   });
 

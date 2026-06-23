@@ -48,5 +48,26 @@ export const SnapshotRecord = z.object({
   capturedAt: IsoTimestamp,
   schemaVersion: z.string(),
   snapshot: Snapshot,
+  /** Operator curation: free-form tags ("gambling", "irl-vlogger"), a note, favorite + template flags. */
+  tags: z.array(z.string()).default([]),
+  note: z.string().default(''),
+  favorite: z.boolean().default(false),
+  /** Promoted to a reusable master template (a first-class product SKU). */
+  isTemplate: z.boolean().default(false),
+  /** Bumped whenever this snapshot is used for a build — drives "sort by last used". */
+  lastUsedAt: z.string().nullable().default(null),
 });
 export type SnapshotRecord = z.infer<typeof SnapshotRecord>;
+
+/** Operator-editable curation fields on a snapshot. */
+export const SnapshotMetaPatch = z
+  .object({
+    name: z.string().min(1),
+    tags: z.array(z.string()),
+    note: z.string(),
+    favorite: z.boolean(),
+    isTemplate: z.boolean(),
+    lastUsedAt: z.string().nullable(),
+  })
+  .partial();
+export type SnapshotMetaPatch = z.infer<typeof SnapshotMetaPatch>;

@@ -1,5 +1,8 @@
 import { extractBrandTokens, makeSampleSnapshot } from '@disco/core';
-import type { Client, Handover, Job, SnapshotRecord } from '@disco/schema';
+import type { Client, Handover, Job, SnapshotMetaPatch, SnapshotRecord } from '@disco/schema';
+
+/** Fields supplied when capturing/importing a snapshot — metadata (tags/note/…) defaults on insert. */
+export type SnapshotCreate = Omit<SnapshotRecord, 'id' | 'tags' | 'note' | 'favorite' | 'isTemplate' | 'lastUsedAt'>;
 
 /** Creation/patch shapes for handovers (passwordHash is write-only; never on the domain type). */
 export interface HandoverCreate {
@@ -26,7 +29,8 @@ export type HandoverPatch = Partial<{
 export interface Repo {
   listSnapshots(): Promise<SnapshotRecord[]>;
   getSnapshot(id: string): Promise<SnapshotRecord | undefined>;
-  addSnapshot(rec: Omit<SnapshotRecord, 'id'>): Promise<SnapshotRecord>;
+  addSnapshot(rec: SnapshotCreate): Promise<SnapshotRecord>;
+  updateSnapshot(id: string, patch: SnapshotMetaPatch): Promise<SnapshotRecord | undefined>;
   listClients(): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
   addClient(c: Omit<Client, 'id' | 'createdAt'>): Promise<Client>;
@@ -66,6 +70,11 @@ export class InMemoryRepo implements Repo {
       capturedAt: snap.capturedAt,
       schemaVersion: snap.schemaVersion,
       snapshot: snap,
+      tags: ['gambling', 'slots'],
+      note: 'Master template — polished slots community.',
+      favorite: true,
+      isTemplate: true,
+      lastUsedAt: null,
     };
     this.snapshots.set(rec.id, rec);
     const client: Client = {
@@ -88,10 +97,17 @@ export class InMemoryRepo implements Repo {
   async getSnapshot(sid: string) {
     return this.snapshots.get(sid);
   }
-  async addSnapshot(rec: Omit<SnapshotRecord, 'id'>) {
-    const full: SnapshotRecord = { ...rec, id: newId('snap') };
+  async addSnapshot(rec: SnapshotCreate) {
+    const full: SnapshotRecord = { ...rec, id: newId('snap'), tags: [], note: '', favorite: false, isTemplate: false, lastUsedAt: null };
     this.snapshots.set(full.id, full);
     return full;
+  }
+  async updateSnapshot(sid: string, patch: SnapshotMetaPatch) {
+    const s = this.snapshots.get(sid);
+    if (!s) return undefined;
+    const next = { ...s, ...patch };
+    this.snapshots.set(sid, next);
+    return next;
   }
 
   async listClients() {

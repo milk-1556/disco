@@ -19,14 +19,19 @@ model Operator {
 
 /// A versioned, captured template. The full typed artifact lives in `artifact` (Snapshot JSON).
 model Snapshot {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   name          String
   version       Int
   sourceGuildId String
   schemaVersion String
   capturedAt    DateTime
   artifact      Json
-  createdAt     DateTime @default(now())
+  tags          String[]  @default([])
+  note          String    @default("")
+  favorite      Boolean   @default(false)
+  isTemplate    Boolean   @default(false)
+  lastUsedAt    DateTime?
+  createdAt     DateTime  @default(now())
   jobs          Job[]
 
   @@index([sourceGuildId, version])

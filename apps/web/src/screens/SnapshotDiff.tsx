@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { api, type SnapshotSummary, type SnapshotDiff as SnapshotDiffData } from '../api.js';
-import { cx } from '../util.js';
 
 export function SnapshotDiff({
   snapshots,
@@ -130,10 +129,11 @@ export function SnapshotDiff({
 }
 
 function DiffReport({ diff }: { diff: SnapshotDiffData }) {
-  const sections: [string, { added: string[]; removed: string[] }][] = [
+  const sections: [string, SnapshotDiffData['roles']][] = [
     ['roles', diff.roles],
     ['channels', diff.channels],
     ['emojis', diff.emojis],
+    ['automod', diff.automod],
   ];
   const countKeys = Object.keys(diff.counts);
 
@@ -176,7 +176,7 @@ function DiffReport({ diff }: { diff: SnapshotDiffData }) {
 
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
         {sections.map(([title, sec]) => (
-          <DiffSection key={title} title={title} added={sec.added} removed={sec.removed} />
+          <DiffSection key={title} title={title} added={sec.added} removed={sec.removed} changed={sec.changed} />
         ))}
       </div>
 
@@ -231,20 +231,20 @@ function DiffSection({
   title,
   added,
   removed,
+  changed,
 }: {
   title: string;
   added: string[];
   removed: string[];
+  changed: SnapshotDiffData['roles']['changed'];
 }) {
-  const total = added.length + removed.length;
+  const total = added.length + removed.length + changed.length;
   return (
     <div className="panel p-5 self-start">
       <div className="flex items-center justify-between mb-3">
         <span className="label">{title}</span>
         <span className="chip">
-          {added.length > 0 || removed.length > 0
-            ? `+${added.length} −${removed.length}`
-            : 'unchanged'}
+          {total > 0 ? `+${added.length} ~${changed.length} −${removed.length}` : 'unchanged'}
         </span>
       </div>
 
@@ -257,9 +257,7 @@ function DiffSection({
           {added.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {added.map((name, i) => (
-                <span key={`a-${i}`} className="chip chip-jade">
-                  + {name}
-                </span>
+                <span key={`a-${i}`} className="chip chip-jade">+ {name}</span>
               ))}
             </div>
           )}
@@ -268,7 +266,7 @@ function DiffSection({
               {removed.map((name, i) => (
                 <span
                   key={`r-${i}`}
-                  className={cx('chip')}
+                  className="chip"
                   style={{
                     color: 'var(--color-danger)',
                     borderColor: 'color-mix(in srgb, var(--color-danger) 40%, transparent)',
@@ -281,6 +279,24 @@ function DiffSection({
               ))}
             </div>
           )}
+          {/* per-field expansion: which exact field changed on a matched object */}
+          {changed.map((c, i) => (
+            <details key={`c-${i}`} className="panel-soft px-3 py-2">
+              <summary className="text-sm cursor-pointer" style={{ color: 'var(--color-gold)' }}>
+                ~ {c.name} <span className="mono text-[0.66rem]" style={{ color: 'var(--color-faint)' }}>({c.fields.length} field{c.fields.length === 1 ? '' : 's'})</span>
+              </summary>
+              <div className="mt-2 space-y-1">
+                {c.fields.map((f, j) => (
+                  <div key={j} className="flex items-center gap-2 text-[0.72rem]">
+                    <span className="label" style={{ minWidth: 80 }}>{f.field}</span>
+                    <span className="mono truncate" style={{ color: 'var(--color-source)', maxWidth: 120 }}>{f.before}</span>
+                    <span style={{ color: 'var(--color-faint)' }}>→</span>
+                    <span className="mono truncate" style={{ color: 'var(--color-client)', maxWidth: 120 }}>{f.after}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ))}
         </div>
       )}
     </div>

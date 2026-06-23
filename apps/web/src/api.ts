@@ -38,6 +38,8 @@ export const api = {
   snapshot: (id: string) => req<SnapshotRecord>(`/snapshots/${id}`),
   capture: (body: { sourceGuildId?: string; name?: string }) =>
     req<{ id: string; name: string; version: number }>('/snapshots/capture', { method: 'POST', body: JSON.stringify(body) }),
+  updateSnapshot: (id: string, patch: SnapshotMetaPatch) =>
+    req<{ id: string; favorite: boolean; isTemplate: boolean }>(`/snapshots/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   rebrandPreview: (snapshotId: string, config: RebrandConfig) =>
     req<{ preview: RebrandPreview; rebrandedGuildName: string; brandTokens: BrandToken[] }>('/rebrand/preview', {
       method: 'POST',
@@ -107,7 +109,19 @@ export interface SnapshotSummary {
   version: number;
   sourceGuildId: string;
   capturedAt: string;
+  tags: string[];
+  note: string;
+  favorite: boolean;
+  isTemplate: boolean;
+  lastUsedAt: string | null;
   counts: Record<string, number>;
+}
+export interface SnapshotMetaPatch {
+  name?: string;
+  tags?: string[];
+  note?: string;
+  favorite?: boolean;
+  isTemplate?: boolean;
 }
 export interface BrandToken {
   kind: 'name' | 'color' | 'url';
@@ -210,11 +224,22 @@ export interface JobEvent {
   progress?: number;
   step?: string;
 }
+export interface FieldChange {
+  field: string;
+  before: string;
+  after: string;
+}
+export interface CategoryDiff {
+  added: string[];
+  removed: string[];
+  changed: { name: string; fields: FieldChange[] }[];
+}
 export interface SnapshotDiff {
   guildNameChanged: { before: string; after: string } | null;
-  roles: { added: string[]; removed: string[] };
-  channels: { added: string[]; removed: string[] };
-  emojis: { added: string[]; removed: string[] };
+  roles: CategoryDiff;
+  channels: CategoryDiff;
+  emojis: CategoryDiff;
+  automod: CategoryDiff;
   counts: Record<string, { before: number; after: number }>;
 }
 export interface OwnershipStep {
