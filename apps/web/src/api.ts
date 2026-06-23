@@ -151,6 +151,14 @@ export interface ManualStep {
   url: string | null;
   category: string;
 }
+export interface BotSetupEntry {
+  name: string;
+  vendor: string | null;
+  oauthUrl: string | null;
+  dashboardUrl: string | null;
+  permissions: string;
+  reconfigure: string[];
+}
 export interface RebuildReport {
   dryRun: boolean;
   created: string[];
@@ -158,6 +166,7 @@ export interface RebuildReport {
   skipped: { ref: string; reason: string }[];
   manualSteps: ManualStep[];
   botChecklist: string[];
+  botSetup: BotSetupEntry[];
   warnings: string[];
   counts: Record<string, number>;
 }

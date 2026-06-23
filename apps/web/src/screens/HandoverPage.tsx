@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type HandoverBundle, type OwnershipStep } from '../api.js';
+import { BotSetupList } from '../components/BotSetupList.js';
 import { cx } from '../util.js';
 
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
@@ -168,7 +169,7 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
       </section>
 
       {/* ── bot setup checklist ── */}
-      {report && report.botChecklist.length > 0 && (
+      {report && (report.botSetup?.length ?? 0) > 0 && (
         <section className="panel p-5 mb-6">
           <div className="flex items-baseline gap-2 mb-3">
             <span className="label">Bot Setup Checklist</span>
@@ -176,13 +177,7 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
               re-invite &amp; reconfigure — vendor settings can&apos;t be cloned
             </span>
           </div>
-          <div className="space-y-1.5">
-            {report.botChecklist.map((b, i) => (
-              <div key={i} className="panel-soft px-3 py-2 text-sm">
-                {b}
-              </div>
-            ))}
-          </div>
+          <BotSetupList entries={report.botSetup} />
         </section>
       )}
 

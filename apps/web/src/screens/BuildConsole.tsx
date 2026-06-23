@@ -9,6 +9,7 @@ import {
   type RebuildReport,
   type SnapshotRecord,
 } from '../api.js';
+import { BotSetupList } from '../components/BotSetupList.js';
 import { cx } from '../util.js';
 
 const SPINE_STEPS = [
@@ -341,11 +342,9 @@ function Report({ report, clientName }: { report: RebuildReport; clientName: str
         <Stat n={report.manualSteps.length} label="manual steps" tone="gold" />
       </div>
 
-      {report.botChecklist.length > 0 && (
+      {(report.botSetup?.length ?? 0) > 0 && (
         <Block title="Bot setup checklist" hint="re-invite & reconfigure — vendor settings can't be cloned">
-          {report.botChecklist.map((b, i) => (
-            <div key={i} className="panel-soft px-3 py-2 text-sm">{b}</div>
-          ))}
+          <BotSetupList entries={report.botSetup} />
         </Block>
       )}
 

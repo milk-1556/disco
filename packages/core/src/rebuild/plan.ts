@@ -7,6 +7,7 @@ import type {
   StepState,
 } from '@disco/schema';
 import { REBUILD_STEP_ORDER } from '@disco/schema';
+import { generateBotSetup } from '../botSetup.js';
 
 export interface RebuildPlan {
   steps: StepState[];
@@ -171,6 +172,7 @@ export function dryRunReport(snap: Snapshot, jobId: string, generatedAt: string)
     skipped,
     manualSteps: plan.manualSteps,
     botChecklist: snap.bots.map((b) => `${b.name}${b.vendorGuess ? ` (${b.vendorGuess})` : ''}`),
+    botSetup: generateBotSetup(snap.bots),
     warnings: plan.warnings,
     generatedAt,
   };

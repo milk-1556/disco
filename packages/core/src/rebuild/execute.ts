@@ -6,6 +6,7 @@ import type {
   Snapshot,
 } from '@disco/schema';
 import { REBUILD_STEP_ORDER } from '@disco/schema';
+import { generateBotSetup } from '../botSetup.js';
 import type { ApplyPort, RawMessage, RawOverwrite } from '../ports.js';
 import { mentionsToIds } from '../snapshot/refs.js';
 import { buildIdMap, commitEntry, reconcile, type DesiredObject } from './manifest.js';
@@ -387,6 +388,7 @@ export async function rebuildGuild(
     skipped,
     manualSteps: manual,
     botChecklist: snap.bots.map((b) => `${b.name}${b.vendorGuess ? ` (${b.vendorGuess})` : ''}`),
+    botSetup: generateBotSetup(snap.bots),
     warnings,
     generatedAt,
   };

@@ -28,3 +28,6 @@ export * from './queue.js';
 
 // Transient-failure resilience (rate-limit + 5xx retry) for the Discord ports
 export * from './resilience.js';
+
+// Actionable Bot Setup Checklist (OAuth re-invite URLs + reconfigure markdown)
+export * from './botSetup.js';

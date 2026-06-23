@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BotSetupEntry } from './bot.js';
 import { LocalRef, Snowflake } from './primitives.js';
 import { RebrandConfig } from './rebrand.js';
 
@@ -101,6 +102,8 @@ export const RebuildReport = z.object({
   skipped: z.array(z.object({ ref: z.string(), reason: z.string() })).default([]),
   manualSteps: z.array(ManualStep).default([]),
   botChecklist: z.array(z.string()).default([]),
+  /** Rich, actionable per-bot setup (OAuth re-invite URLs + reconfigure steps). */
+  botSetup: z.array(BotSetupEntry).default([]),
   warnings: z.array(z.string()).default([]),
   generatedAt: z.string(),
 });

@@ -20,6 +20,25 @@ export type BotConfigTrace = z.infer<typeof BotConfigTrace>;
  * A detected third-party bot. NOT cloneable — its config lives on the vendor's servers. Surfaced
  * in the Bot Setup Checklist with an invite link and a "what to reconfigure" note. (§1, §5, §6)
  */
+/**
+ * An actionable per-bot setup entry for the Bot Setup Checklist: a real OAuth re-invite URL (built
+ * from the bot's own application id + the perms it typically needs) plus the steps to reconfigure it.
+ * Third-party bot config lives on the vendor's servers and can't be cloned — this makes the manual
+ * step as turnkey as possible. (§1, §6)
+ */
+export const BotSetupEntry = z.object({
+  name: z.string(),
+  vendor: z.string().nullable().default(null),
+  /** discord.com/oauth2 re-invite URL with scopes + recommended permission integer pre-baked. */
+  oauthUrl: z.string().url().nullable().default(null),
+  /** The vendor's own dashboard/config link. */
+  dashboardUrl: z.string().url().nullable().default(null),
+  permissions: z.string().default('0'),
+  /** Markdown-ready "what to reconfigure" bullets. */
+  reconfigure: z.array(z.string()).default([]),
+});
+export type BotSetupEntry = z.infer<typeof BotSetupEntry>;
+
 export const DetectedBot = z.object({
   localRef: LocalRef,
   sourceId: Snowflake,
