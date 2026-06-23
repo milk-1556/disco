@@ -4,6 +4,7 @@ import { Shell, type View } from './components/Shell.js';
 import { Activity } from './screens/Activity.js';
 import { BuildConsole } from './screens/BuildConsole.js';
 import { Clients } from './screens/Clients.js';
+import { Economics } from './screens/Economics.js';
 import { HandoverPage } from './screens/HandoverPage.js';
 import { Invite } from './screens/Invite.js';
 import { Library } from './screens/Library.js';
@@ -90,6 +91,8 @@ export default function App() {
         <Clients />
       ) : view === 'activity' ? (
         <Activity />
+      ) : view === 'economics' ? (
+        <Economics />
       ) : view === 'setup' ? (
         <Setup go={go} />
       ) : (

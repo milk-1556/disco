@@ -222,6 +222,11 @@ export interface JobManifest {
   steps: StepState[];
   entries: { localRef: string; kind: string; newId: string | null; status: string }[];
 }
+export interface JobMetrics {
+  apiCalls: number;
+  durationMs: number;
+  objectsCreated: number;
+}
 export interface Job {
   id: string;
   kind: string;
@@ -229,6 +234,7 @@ export interface Job {
   dryRun: boolean;
   progress: number;
   manifest: JobManifest | null;
+  metrics: JobMetrics | null;
   report: RebuildReport | null;
   error: string | null;
   createdAt: string;
@@ -243,6 +249,7 @@ export interface JobSummary {
   snapshotId: string | null;
   clientId: string | null;
   error: string | null;
+  metrics: JobMetrics | null;
   createdAt: string;
   updatedAt: string;
 }

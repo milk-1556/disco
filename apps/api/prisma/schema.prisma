@@ -61,6 +61,7 @@ model Job {
   progress      Float     @default(0)
   targetGuildId String?
   rebrandConfig Json      @default("{}")
+  metrics       Json?
   manifest      Json?
   report        Json?
   error         String?

@@ -1,4 +1,4 @@
-import { type BuildJobData, rebrand, rebuildGuild, resilient } from '@disco/core';
+import { type BuildJobData, meterPort, rebrand, rebuildGuild, resilient } from '@disco/core';
 import type { RebuildReport } from '@disco/schema';
 import { type AssetStore, DiscordGuildClient, MockGuild } from '@disco/sdk';
 import type { JobChannel } from './jobChannel.js';
@@ -41,8 +41,10 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
     token && targetGuildId
       ? new DiscordGuildClient({ token, guildId: targetGuildId, store })
       : new MockGuild('900000000000000000', rebranded.guild.name);
-  // Weather 429s + transient 5xx uniformly, streaming throttle notices to the live log.
-  const port = resilient(rawPort, { onLog: (m) => pub({ type: 'log', message: m }) });
+  // Meter UNDER resilient so retried calls count as the real API calls they are (cost analytics).
+  const meter = meterPort(rawPort);
+  const port = resilient(meter.port, { onLog: (m) => pub({ type: 'log', message: m }) });
+  const startMs = Date.now();
 
   const { manifest, report } = await rebuildGuild(port, rebranded, {
     jobId,
@@ -63,7 +65,8 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
   // failure), it propagates: BullMQ retries (resuming idempotently from the checkpointed manifest) or
   // the worker's failed-handler records status:'failed'. Never publish a false 'done'.
   await chain;
-  await repo.updateJob(jobId, { status: 'completed', progress: 1, manifest, report });
+  const metrics = { apiCalls: meter.count(), durationMs: Date.now() - startMs, objectsCreated: report.created.length };
+  await repo.updateJob(jobId, { status: 'completed', progress: 1, manifest, report, metrics });
   await Promise.resolve(
     channel.publish(jobId, {
       type: 'done',

@@ -119,6 +119,15 @@ export const Job = z.object({
   dryRun: z.boolean().default(false),
   /** The rebrand config that produced this build — persisted so the worker can resume self-sufficiently. */
   rebrandConfig: RebrandConfig.optional(),
+  /** Cost-analytics metrics captured at build time. */
+  metrics: z
+    .object({
+      apiCalls: z.number().int().min(0),
+      durationMs: z.number().int().min(0),
+      objectsCreated: z.number().int().min(0),
+    })
+    .nullable()
+    .default(null),
   progress: z.number().min(0).max(1).default(0),
   manifest: JobManifest.nullable().default(null),
   report: RebuildReport.nullable().default(null),

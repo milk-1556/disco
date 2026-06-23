@@ -136,7 +136,7 @@ export class PrismaRepo implements Repo {
   // ── jobs ──
   private toJob = (r: {
     id: string; kind: string; status: string; dryRun: boolean; progress: number; targetGuildId: string | null;
-    rebrandConfig: Prisma.JsonValue; manifest: Prisma.JsonValue | null; report: Prisma.JsonValue | null; error: string | null;
+    rebrandConfig: Prisma.JsonValue; metrics: Prisma.JsonValue | null; manifest: Prisma.JsonValue | null; report: Prisma.JsonValue | null; error: string | null;
     snapshotId: string | null; clientId: string | null; createdAt: Date; updatedAt: Date;
   }): Job => ({
     id: r.id,
@@ -148,6 +148,7 @@ export class PrismaRepo implements Repo {
     dryRun: r.dryRun,
     // safeParse + fallback: a single legacy/partial Json row must not 500 a whole listJobs().
     rebrandConfig: safe(RebrandConfig, r.rebrandConfig) ?? undefined,
+    metrics: (r.metrics as Job['metrics']) ?? null,
     progress: r.progress,
     manifest: safe(JobManifest, r.manifest) ?? null,
     report: safe(RebuildReport, r.report) ?? null,
@@ -172,6 +173,7 @@ export class PrismaRepo implements Repo {
         progress: j.progress,
         targetGuildId: j.targetGuildId,
         rebrandConfig: asJson(j.rebrandConfig ?? {}),
+        metrics: nullableJson(j.metrics),
         manifest: nullableJson(j.manifest),
         report: nullableJson(j.report),
         error: j.error,
@@ -190,6 +192,7 @@ export class PrismaRepo implements Repo {
     if (patch.dryRun !== undefined) data.dryRun = patch.dryRun;
     if (patch.manifest !== undefined) data.manifest = nullableJson(patch.manifest);
     if (patch.report !== undefined) data.report = nullableJson(patch.report);
+    if (patch.metrics !== undefined) data.metrics = nullableJson(patch.metrics);
     if (patch.rebrandConfig !== undefined) data.rebrandConfig = asJson(patch.rebrandConfig);
     try {
       return this.toJob(await this.db.job.update({ where: { id }, data }));

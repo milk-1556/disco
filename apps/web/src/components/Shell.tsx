@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { cx } from '../util.js';
 import { Logo } from './Logo.js';
 
-export type View = 'library' | 'build' | 'queue' | 'clients' | 'activity' | 'invite' | 'setup';
+export type View = 'library' | 'build' | 'queue' | 'clients' | 'activity' | 'economics' | 'invite' | 'setup';
 
 const NAV: { id: View; label: string; hint: string }[] = [
   { id: 'library', label: 'Library', hint: 'snapshots' },
@@ -10,6 +10,7 @@ const NAV: { id: View; label: string; hint: string }[] = [
   { id: 'queue', label: 'Queue', hint: 'jobs' },
   { id: 'clients', label: 'Clients', hint: 'creators' },
   { id: 'activity', label: 'Activity', hint: 'live feed' },
+  { id: 'economics', label: 'Economics', hint: 'unit costs' },
   { id: 'invite', label: 'Invite', hint: 'bot OAuth' },
   { id: 'setup', label: 'Setup', hint: 'onboarding' },
 ];

@@ -37,3 +37,6 @@ export * from './bundle.js';
 
 // Pre-flight authority audit (does the bot have the perms Disco needs?)
 export * from './authority.js';
+
+// Per-build API-call metering for cost analytics
+export * from './meter.js';
