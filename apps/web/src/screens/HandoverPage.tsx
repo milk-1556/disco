@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type HandoverBundle, type OwnershipStep } from '../api.js';
+import { api, assetUrl, type HandoverBundle, type OwnershipStep } from '../api.js';
 import { BotSetupList } from '../components/BotSetupList.js';
 import { cx } from '../util.js';
 
@@ -276,6 +276,9 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
         </section>
       )}
 
+      {/* ── branding & sharing ── */}
+      <Branding handover={handover} onPatch={patch} saving={saving} />
+
       {/* ── footer: upsell tracker + hand-over action ── */}
       <footer className="panel p-5 flex flex-wrap items-center gap-4">
         <div className="flex flex-col gap-2">
@@ -316,5 +319,96 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
         </div>
       </footer>
     </div>
+  );
+}
+
+function Branding({
+  handover,
+  onPatch,
+  saving,
+}: {
+  handover: HandoverBundle['handover'];
+  onPatch: (p: Parameters<typeof api.updateHandover>[1]) => void | Promise<void>;
+  saving: boolean;
+}) {
+  const [welcome, setWelcome] = useState(handover.welcomeMessage);
+  const [pw, setPw] = useState('');
+  const [copied, setCopied] = useState(false);
+  const publicUrl = `${location.origin}/#/h/${handover.id}`;
+
+  return (
+    <section className="panel p-5 mb-6">
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="label">Branding &amp; sharing</span>
+        <span className="text-[0.68rem]" style={{ color: 'var(--color-faint)' }}>
+          make the delivery page feel like the client&apos;s own
+        </span>
+      </div>
+
+      <div className="grid gap-4" style={{ gridTemplateColumns: 'auto 1fr' }}>
+        <div className="flex flex-col items-center gap-2">
+          {handover.logoKey ? (
+            <img src={assetUrl(`/${handover.logoKey}`)} alt="" style={{ width: 64, height: 64, borderRadius: 14, objectFit: 'cover' }} className="transform-ring" />
+          ) : (
+            <div className="transform-ring grid place-items-center text-xs" style={{ width: 64, height: 64, borderRadius: 14, color: 'var(--color-faint)' }}>logo</div>
+          )}
+          <label className="btn btn-ghost text-xs cursor-pointer">
+            Upload
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const reader = new FileReader();
+                reader.onload = () => void onPatch({ logo: String(reader.result) });
+                reader.readAsDataURL(f);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {handover.logoKey && (
+            <button className="btn btn-ghost text-xs" onClick={() => onPatch({ logo: null })}>Remove</button>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <div className="label mb-1">Welcome message (shown to the client)</div>
+            <textarea
+              className="input"
+              rows={2}
+              value={welcome}
+              onChange={(e) => setWelcome(e.target.value)}
+              onBlur={() => welcome !== handover.welcomeMessage && onPatch({ welcomeMessage: welcome })}
+              placeholder="Welcome to your new community hub — here's everything that's set up…"
+            />
+          </div>
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <div className="label mb-1">
+                Password {handover.hasPassword ? '· set' : '· none'}
+              </div>
+              <input className="input" type="text" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Optional password to gate the public page" />
+            </div>
+            <button className="btn" disabled={saving} onClick={() => { onPatch({ password: pw || null }); setPw(''); }}>
+              {pw ? 'Set' : 'Clear'}
+            </button>
+          </div>
+
+          <div className="panel-soft p-3 flex items-center gap-2">
+            <span className="mono text-xs truncate flex-1" style={{ color: 'var(--color-source)' }}>{publicUrl}</span>
+            <button
+              className="btn btn-primary text-xs"
+              onClick={() => { navigator.clipboard?.writeText(publicUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+            >
+              {copied ? 'Copied ✓' : 'Copy public link'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

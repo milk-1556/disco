@@ -7,10 +7,22 @@ import { HandoverPage } from './screens/HandoverPage.js';
 import { Invite } from './screens/Invite.js';
 import { Library } from './screens/Library.js';
 import { Login } from './screens/Login.js';
+import { PublicHandover } from './screens/PublicHandover.js';
 import { Queue } from './screens/Queue.js';
 import { SnapshotDiff } from './screens/SnapshotDiff.js';
 
+function usePublicHandoverId(): string | null {
+  const [id, setId] = useState(() => location.hash.match(/^#\/h\/(.+)$/)?.[1] ?? null);
+  useEffect(() => {
+    const on = () => setId(location.hash.match(/^#\/h\/(.+)$/)?.[1] ?? null);
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return id;
+}
+
 export default function App() {
+  const publicId = usePublicHandoverId();
   const [authed, setAuthed] = useState(!!getToken());
   const [view, setView] = useState<View>('library');
   const [mode, setMode] = useState('demo');
@@ -28,6 +40,9 @@ export default function App() {
       })
       .catch(() => {});
   }, [authed]);
+
+  // Public, shareable, unauthenticated delivery page — bypasses login entirely.
+  if (publicId) return <PublicHandover id={publicId} />;
 
   if (!authed) return <Login onAuthed={() => setAuthed(true)} />;
 

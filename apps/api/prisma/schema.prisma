@@ -84,6 +84,8 @@ model Handover {
   /// hash of an optional password protecting the public handover page
   passwordHash    String?
   state           String   @default("draft") // draft | ready | handed_over
+  logoKey         String?
+  welcomeMessage  String   @default("")
   ownershipSteps  Json     @default("[]")
   upsellStatus    String   @default("none") // none | proposed | retained | redesign
   createdAt       DateTime @default(now())

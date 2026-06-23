@@ -424,15 +424,44 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
 
   app.patch('/handovers/:id', { preHandler: requireAuth }, async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    const b = (req.body ?? {}) as { state?: HandoverPatch['state']; ownershipSteps?: HandoverPatch['ownershipSteps']; upsellStatus?: HandoverPatch['upsellStatus']; password?: string | null };
+    const b = (req.body ?? {}) as {
+      state?: HandoverPatch['state']; ownershipSteps?: HandoverPatch['ownershipSteps']; upsellStatus?: HandoverPatch['upsellStatus'];
+      password?: string | null; welcomeMessage?: string; logo?: string | null;
+    };
     const patch: HandoverPatch = {};
     if (b.state !== undefined) patch.state = b.state;
     if (b.ownershipSteps !== undefined) patch.ownershipSteps = b.ownershipSteps;
     if (b.upsellStatus !== undefined) patch.upsellStatus = b.upsellStatus;
     if (b.password !== undefined) patch.passwordHash = b.password ? bcrypt.hashSync(b.password, 10) : null;
+    if (b.welcomeMessage !== undefined) patch.welcomeMessage = b.welcomeMessage;
+    if (b.logo !== undefined) {
+      if (b.logo === null) patch.logoKey = null;
+      else {
+        // accept a data URL or raw base64; store the bytes and reference the key.
+        const m = b.logo.match(/^data:image\/(\w+);base64,(.*)$/s);
+        const ext = m ? m[1]! : 'png';
+        const data = m ? m[2]! : b.logo;
+        patch.logoKey = await store.put(Buffer.from(data, 'base64'), ext);
+      }
+    }
     const h = await repo.updateHandover(id, patch);
     if (!h) return reply.code(404).send({ error: 'not found' });
     return h;
+  });
+
+  // Public asset serve (handover logos). Key format: assets/<hash>.<ext> — capture via wildcard.
+  app.get('/assets/*', async (req, reply) => {
+    const key = `assets/${(req.params as Record<string, string>)['*']}`;
+    if (!/^assets\/[a-z0-9]+\.[a-z0-9]+$/i.test(key)) return reply.code(400).send({ error: 'bad key' });
+    try {
+      const bytes = await store.get(key);
+      const ext = key.split('.').pop() ?? 'png';
+      reply.header('Content-Type', ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`);
+      reply.header('Cache-Control', 'public, max-age=86400');
+      return reply.send(bytes);
+    } catch {
+      return reply.code(404).send({ error: 'not found' });
+    }
   });
 
   // Public, shareable, read-only delivery page (optionally password-gated). No auth.
@@ -451,9 +480,12 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       serverName: job?.rebrandConfig?.serverName ?? snap?.snapshot.guild.name ?? null,
       sourceName: snap?.name ?? null,
       state: h.state,
+      logoUrl: h.logoKey ? `/${h.logoKey}` : null,
+      welcomeMessage: h.welcomeMessage,
       scope: job?.report?.counts ?? {},
       created: job?.report?.created ?? [],
       botChecklist: job?.report?.botChecklist ?? [],
+      botSetup: job?.report?.botSetup ?? [],
       manualSteps: job?.report?.manualSteps ?? [],
       ownershipSteps: h.ownershipSteps,
     };

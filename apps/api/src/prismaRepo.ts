@@ -202,13 +202,15 @@ export class PrismaRepo implements Repo {
   // ── handovers ──
   private toHandover = (r: {
     id: string; jobId: string; clientId: string | null; passwordHash: string | null; state: string;
-    ownershipSteps: Prisma.JsonValue; upsellStatus: string; createdAt: Date;
+    logoKey: string | null; welcomeMessage: string; ownershipSteps: Prisma.JsonValue; upsellStatus: string; createdAt: Date;
   }): Handover => ({
     id: r.id,
     jobId: r.jobId,
     clientId: r.clientId,
     state: r.state as Handover['state'],
     hasPassword: !!r.passwordHash,
+    logoKey: r.logoKey,
+    welcomeMessage: r.welcomeMessage,
     ownershipSteps: (r.ownershipSteps as OwnershipStep[]) ?? [],
     upsellStatus: r.upsellStatus as Handover['upsellStatus'],
     createdAt: iso(r.createdAt),
@@ -241,6 +243,8 @@ export class PrismaRepo implements Repo {
     if (patch.upsellStatus !== undefined) data.upsellStatus = patch.upsellStatus;
     if (patch.ownershipSteps !== undefined) data.ownershipSteps = asJson(patch.ownershipSteps);
     if (patch.passwordHash !== undefined) data.passwordHash = patch.passwordHash;
+    if (patch.logoKey !== undefined) data.logoKey = patch.logoKey;
+    if (patch.welcomeMessage !== undefined) data.welcomeMessage = patch.welcomeMessage;
     try {
       return this.toHandover(await this.db.handover.update({ where: { id }, data }));
     } catch (err) {

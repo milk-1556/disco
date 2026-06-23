@@ -18,6 +18,8 @@ export type HandoverPatch = Partial<{
   ownershipSteps: Handover['ownershipSteps'];
   upsellStatus: Handover['upsellStatus'];
   passwordHash: string | null;
+  logoKey: string | null;
+  welcomeMessage: string;
 }>;
 
 /**
@@ -157,6 +159,8 @@ export class InMemoryRepo implements Repo {
       clientId: h.clientId,
       state: h.state,
       hasPassword: !!h.passwordHash,
+      logoKey: null,
+      welcomeMessage: '',
       ownershipSteps: h.ownershipSteps,
       upsellStatus: h.upsellStatus,
       createdAt: now(),

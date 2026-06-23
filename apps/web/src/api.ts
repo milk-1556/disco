@@ -64,9 +64,21 @@ export const api = {
     req<{ id: string; name: string; version: number }>('/bundles/import', { method: 'POST', body: JSON.stringify(bundle) }),
   createHandover: (jobId: string) => req<Handover>('/handovers', { method: 'POST', body: JSON.stringify({ jobId }) }),
   getHandover: (id: string) => req<HandoverBundle>(`/handovers/${id}`),
-  updateHandover: (id: string, patch: Partial<Pick<Handover, 'state' | 'ownershipSteps' | 'upsellStatus'>> & { password?: string | null }) =>
-    req<Handover>(`/handovers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  updateHandover: (
+    id: string,
+    patch: Partial<Pick<Handover, 'state' | 'ownershipSteps' | 'upsellStatus' | 'welcomeMessage'>> & { password?: string | null; logo?: string | null },
+  ) => req<Handover>(`/handovers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  /** Public (unauthenticated) delivery page fetch — password via query when gated. */
+  publicHandover: async (id: string, pw?: string): Promise<PublicHandover> => {
+    const res = await fetch(`${BASE}/h/${id}${pw ? `?pw=${encodeURIComponent(pw)}` : ''}`);
+    if (res.status === 401) throw new Error('PASSWORD_REQUIRED');
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${res.status}`);
+    return res.json() as Promise<PublicHandover>;
+  },
 };
+
+/** Absolute URL for an API-served asset path (e.g. a handover logo "/assets/...."). */
+export const assetUrl = (path: string) => `${BASE}${path}`;
 
 /** SSE stream of a job's logs; returns an unsubscribe fn. */
 export function streamJobLogs(jobId: string, onEvent: (ev: JobEvent) => void): () => void {
@@ -253,9 +265,24 @@ export interface Handover {
   clientId: string | null;
   state: 'draft' | 'ready' | 'handed_over';
   hasPassword: boolean;
+  logoKey: string | null;
+  welcomeMessage: string;
   ownershipSteps: OwnershipStep[];
   upsellStatus: 'none' | 'proposed' | 'retained' | 'redesign';
   createdAt: string;
+}
+export interface PublicHandover {
+  serverName: string | null;
+  sourceName: string | null;
+  state: string;
+  logoUrl: string | null;
+  welcomeMessage: string;
+  scope: Record<string, number>;
+  created: string[];
+  botChecklist: string[];
+  botSetup: BotSetupEntry[];
+  manualSteps: ManualStep[];
+  ownershipSteps: OwnershipStep[];
 }
 export interface HandoverBundle {
   handover: Handover;

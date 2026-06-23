@@ -26,6 +26,9 @@ export const Handover = z.object({
   state: HandoverState.default('draft'),
   /** Set when the page is password-protected; never returned to the client UI. */
   hasPassword: z.boolean().default(false),
+  /** Per-client branding for the delivery page. */
+  logoKey: z.string().nullable().default(null),
+  welcomeMessage: z.string().default(''),
   ownershipSteps: z.array(OwnershipStep).default([]),
   upsellStatus: UpsellStatus.default('none'),
   createdAt: z.string(),
