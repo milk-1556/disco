@@ -46,7 +46,7 @@ export const api = {
   snapshots: () => req<SnapshotSummary[]>('/snapshots'),
   snapshot: (id: string) => req<SnapshotRecord>(`/snapshots/${id}`),
   capture: (body: { sourceGuildId?: string; name?: string }) =>
-    req<{ id: string; name: string; version: number }>('/snapshots/capture', { method: 'POST', body: JSON.stringify(body) }),
+    req<{ id: string; name: string; version: number; unchanged?: boolean }>('/snapshots/capture', { method: 'POST', body: JSON.stringify(body) }),
   updateSnapshot: (id: string, patch: SnapshotMetaPatch) =>
     req<{ id: string; favorite: boolean; isTemplate: boolean }>(`/snapshots/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   rebrandPreview: (snapshotId: string, config: RebrandConfig) =>

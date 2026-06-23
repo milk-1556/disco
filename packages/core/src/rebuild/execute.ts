@@ -22,6 +22,8 @@ export interface RebuildOptions {
   /** Identity to post copied content as. */
   contentIdentity?: 'preserve' | 'server';
   serverIdentityName?: string;
+  /** When set, create a visible, removable marker role (e.g. "⟜ Disco Build") on a live build. */
+  markerRole?: string;
   onLog?: (msg: string) => void;
   onProgress?: (pct: number, step: RebuildStep) => void;
   /**
@@ -170,6 +172,13 @@ export async function rebuildGuild(
             unicodeEmoji: r.unicodeEmoji ?? null,
           });
         });
+        // Optional "⟜ Disco Build" marker role — a visible, removable footprint of who built this
+        // server (cleaner than handing the bot Administrator silently). Removed during handover.
+        if (opts.markerRole && !dry) {
+          await runReconciled('role', [{ localRef: 'role_disco_marker', kind: 'role', name: opts.markerRole }], async () =>
+            port.createRole({ name: opts.markerRole!, colors: { primary: 0x7c6cf0, secondary: null, tertiary: null }, hoist: true, mentionable: false, permissions: '0' }),
+          );
+        }
         // reconcile order: bottom→top by ascending source position (everyone stays at 0)
         if (!dry) {
           const ordered = [...buildable].sort((a, b) => a.position - b.position).map((r) => idMap()[r.localRef]).filter((x): x is string => !!x);
@@ -378,6 +387,15 @@ export async function rebuildGuild(
   manifest.idMap = idMap();
 
   const { steps: manual, warnings } = manualSteps(snap);
+  if (opts.markerRole && !dry) {
+    manual.push({
+      title: `Remove the "${opts.markerRole}" role after handover`,
+      reason: 'A temporary marker of who built this server — it carries no permissions and is safe to delete once ownership has transferred.',
+      url: null,
+      botRef: null,
+      category: 'other',
+    });
+  }
   const report: RebuildReport = {
     jobId: manifest.jobId,
     dryRun: dry,

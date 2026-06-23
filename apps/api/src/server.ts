@@ -126,6 +126,16 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         snapshot = await captureSnapshot(source, { ownerNote: 'demo capture' });
       }
       const existing = (await repo.listSnapshots()).filter((s) => s.sourceGuildId === snapshot.source.guildId);
+      // Delta optimization: if the latest version is structurally identical, don't bloat the library
+      // with a no-op version — surface "no changes" and reuse it (a fast incremental re-snapshot).
+      const latest = existing.sort((a, b) => b.version - a.version)[0];
+      if (latest) {
+        const d = diffSnapshots(latest.snapshot, snapshot);
+        const noChange =
+          !d.guildNameChanged &&
+          [d.roles, d.channels, d.emojis, d.automod].every((c) => !c.added.length && !c.removed.length && !c.changed.length);
+        if (noChange) return { id: latest.id, name: latest.name, version: latest.version, unchanged: true };
+      }
       const rec = await repo.addSnapshot({
         name: body.name ?? `${snapshot.guild.name} (v${existing.length + 1})`,
         version: existing.length + 1,
@@ -134,7 +144,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         schemaVersion: snapshot.schemaVersion,
         snapshot,
       });
-      return { id: rec.id, name: rec.name, version: rec.version };
+      return { id: rec.id, name: rec.name, version: rec.version, unchanged: false };
     } catch (err) {
       return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
     }

@@ -10,9 +10,18 @@ interface Step {
 }
 
 /** First-run onboarding: walk the operator from connecting a bot → storage → first capture → first build (#13). */
+function fmtElapsed(ms: number): string {
+  const m = ms / 60000;
+  if (m < 60) return `${Math.max(1, Math.round(m))} min`;
+  const h = m / 60;
+  if (h < 48) return `${h.toFixed(1)} hrs`;
+  return `${Math.round(h / 24)} days`;
+}
+
 export function Setup({ go }: { go: (v: View) => void }) {
   const [steps, setSteps] = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
+  const [journey, setJourney] = useState<{ start: string; firstDelivery: string | null } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -22,6 +31,13 @@ export function Setup({ go }: { go: (v: View) => void }) {
         api.clients().catch(() => []),
         api.jobs().catch(() => []),
       ]);
+      // Onboarding metric: time from first activity to first real delivery.
+      const starts = [...snaps.map((s) => s.capturedAt), ...jobs.map((j) => j.createdAt)].sort();
+      const firstDelivery = jobs
+        .filter((j) => j.status === 'completed' && !j.dryRun)
+        .map((j) => j.updatedAt)
+        .sort()[0];
+      if (starts[0]) setJourney({ start: starts[0], firstDelivery: firstDelivery ?? null });
       setSteps([
         {
           done: cfg.hasToken,
@@ -111,6 +127,23 @@ export function Setup({ go }: { go: (v: View) => void }) {
           </li>
         ))}
       </ol>
+
+      {journey && (
+        <div className="panel-soft px-4 py-3 mt-5 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+          <span className="label">your journey</span>
+          <span style={{ color: 'var(--color-muted)' }}>
+            started <span className="mono">{new Date(journey.start).toLocaleDateString()}</span>
+          </span>
+          {journey.firstDelivery ? (
+            <span style={{ color: 'var(--color-jade)' }}>
+              first delivery in{' '}
+              <span className="mono">{fmtElapsed(new Date(journey.firstDelivery).getTime() - new Date(journey.start).getTime())}</span>
+            </span>
+          ) : (
+            <span style={{ color: 'var(--color-faint)' }}>no delivery yet — ship your first build</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

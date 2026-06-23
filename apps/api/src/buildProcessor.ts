@@ -51,6 +51,7 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
     dryRun,
     targetGuildId: targetGuildId ?? null,
     contentIdentity: contentIdentity ?? 'server',
+    markerRole: token && targetGuildId ? '⟜ Disco Build' : undefined,
     manifest: prior,
     onManifest: (m) => void persist({ manifest: m }),
     onLog: (m) => pub({ type: 'log', message: m }),

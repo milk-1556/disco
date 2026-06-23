@@ -69,3 +69,18 @@ describe('manifest checkpointing & crash-resume (§6)', () => {
     expect(built.channels.filter((c) => c.name === 'rules')).toHaveLength(1);
   });
 });
+
+describe('marker role (#6 scoped Disco footprint)', () => {
+  it('creates a removable "Disco Build" marker role + a manual step to remove it', async () => {
+    const source = mockGuildFromSnapshot(makeSampleSnapshot());
+    const snap = await captureSnapshot(source);
+    const { snapshot: rebranded } = rebrand(snap, makeSampleConfig());
+    const target = new MockGuild();
+    const { report } = await rebuildGuild(target, rebranded, { jobId: 'm', markerRole: '⟜ Disco Build' });
+    const built = await captureSnapshot(target);
+    expect(built.roles.some((r) => r.name === '⟜ Disco Build')).toBe(true);
+    expect(report.manualSteps.some((s) => /Remove the .* role after handover/.test(s.title))).toBe(true);
+    // marker carries no permissions
+    expect(built.roles.find((r) => r.name === '⟜ Disco Build')?.permissions).toBe('0');
+  });
+});

@@ -22,11 +22,15 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
     load().catch((e) => setErr(String(e)));
   }, []);
 
+  const [note, setNote] = useState<string | null>(null);
   async function capture() {
     setBusy(true);
     setErr(null);
+    setNote(null);
     try {
-      await api.capture({});
+      const r = await api.capture({});
+      setNote(r.unchanged ? `No changes since v${r.version} — nothing to re-capture.` : `Captured ${r.name}.`);
+      setTimeout(() => setNote(null), 4000);
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -140,6 +144,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       </div>
 
       {err && <div className="panel-soft p-3 mb-4 text-sm" style={{ color: 'var(--color-danger)' }}>{err}</div>}
+      {note && <div className="panel-soft p-3 mb-4 text-sm" style={{ color: 'var(--color-jade)' }}>{note}</div>}
 
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))' }}>
         {visible.map((s) => (
