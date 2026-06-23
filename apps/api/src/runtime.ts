@@ -1,4 +1,4 @@
-import { BUILD_QUEUE, extractBrandTokens, makeSampleSnapshot, redisConnection } from '@disco/core';
+import { BUILD_QUEUE, extractBrandTokens, makeProductionTraceSnapshot, makeSampleSnapshot, redisConnection } from '@disco/core';
 import type { Client } from '@disco/schema';
 import { Queue } from 'bullmq';
 import { env, usePrisma, useQueue } from './env.js';
@@ -38,6 +38,17 @@ export async function seedIfEmpty(repo: Repo): Promise<void> {
     capturedAt: snap.capturedAt,
     schemaVersion: snap.schemaVersion,
     snapshot: snap,
+  });
+  // A second, higher-fidelity template — a realistic ~$30k community.
+  const trace = makeProductionTraceSnapshot();
+  trace.brandTokens = extractBrandTokens(trace);
+  await repo.addSnapshot({
+    name: 'Stakehaus (production template)',
+    version: 1,
+    sourceGuildId: trace.source.guildId,
+    capturedAt: trace.capturedAt,
+    schemaVersion: trace.schemaVersion,
+    snapshot: trace,
   });
   const client: Omit<Client, 'id' | 'createdAt'> = {
     creatorName: 'Nova',

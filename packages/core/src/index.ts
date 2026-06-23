@@ -23,6 +23,9 @@ export * from './snapshot/vendors.js';
 // Shared canonical sample (template server) for tests, demos & MockGuild seeding
 export * from './testing/sample.js';
 
+// Higher-fidelity "production trace" template — a realistic ~$30k community
+export * from './testing/productionTrace.js';
+
 // Queue contract (name + payload + redis connection) shared by api producer and worker consumer
 export * from './queue.js';
 

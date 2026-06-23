@@ -12,6 +12,7 @@ import { runBuild } from './jobs.js';
 import { buildInviteUrl } from './perms.js';
 import type { HandoverPatch, Repo } from './repo.js';
 import { getQueue, makeJobChannel, makeRepo } from './runtime.js';
+import { registerStripeRoutes } from './stripe.js';
 
 export interface BuildServerOptions {
   repo?: Repo;
@@ -422,6 +423,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (!applicationId) return reply.code(400).send({ error: 'applicationId required (set DISCORD_APPLICATION_ID or pass ?applicationId=)' });
     return buildInviteUrl({ applicationId, mode: q.mode ?? 'administrator', guildId: q.guildId });
   });
+
+  // ── Stripe sales-flow scaffold (checkout + webhook → auto-create client) ──
+  registerStripeRoutes(app, repo);
 
   // ── handover (delivery) ──
   // Create-or-fetch a handover for a completed job (idempotent per job).
