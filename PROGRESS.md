@@ -72,8 +72,15 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
       full Rebuild Report. Verified: login → library → rebrand → dry-run → report, all in-browser.
 - ✅ U6.3 Snapshot Library (cards + counts + capture), Build Queue (live progress), Invite generator,
       Bot Setup Checklist + Manual Steps + warnings in the report.
-- ⏳ U6.4 Remaining: snapshot diff view UI, New Client intake form, dedicated Handover page +
-      Ownership Transfer Checklist + upsell tracker (API + Report already expose the data).
+- ✅ U6.4 Snapshot **diff view** (base→compare, added/removed + counts), **New Client intake** + Clients
+      list, dedicated **Handover page** (included scope + Bot Setup Checklist + Ownership Transfer
+      Checklist + manual steps + upsell tracker). Built by a 3-agent workflow; screenshot-verified.
+
+## Phase 8 — production wire-up (Prisma + queue) + review hardening   ✅ DONE
+- ✅ PrismaRepo behind the async Repo + makeRepo() switch; POST /jobs → BullMQ → worker → Postgres →
+      API read-back; cross-process durable SSE (Redis pub/sub + LIST). Verified vs native PG+Redis.
+- ✅ Adversarial-review workflow (8 findings) → fixed: terminal-write gating, content-step idempotency,
+      category/channel keyspace split, SSE leak/crash safety, tolerant Json reads.
 
 ## Phase 7 — infra + docs   ✅ DONE
 - ✅ U7.1 docker-compose (api, worker, redis, postgres, web) + healthchecks + Dockerfiles + .dockerignore.

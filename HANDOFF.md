@@ -77,22 +77,38 @@ Run it all: `pnpm typecheck && pnpm test` → 30 tests pass, 9 tasks typecheck c
 
 Do **not** point a first live build at a production guild you were handed "for later."
 
-## Remaining wire-up (clearly scoped, not blocking the above)
+## Production wire-up — DONE (was "remaining"; now built & verified)
 
-The platform runs and demos today. To finish the production hardening:
+1. **Persistence:** `PrismaRepo` (`apps/api/src/prismaRepo.ts`) sits behind the async `Repo` interface;
+   `makeRepo()` selects Postgres when `DATABASE_URL` is set, else the zero-setup in-memory demo. Json
+   columns are re-validated through zod on read (tolerant `safeParse` so a legacy row can't 500 a list).
+2. **Queue:** `POST /jobs` enqueues to the BullMQ `disco-builds` queue when `REDIS_URL` is set; the
+   `@disco/worker` consumes it, runs the SAME `runBuildJob`, resumes from the persisted manifest (so a
+   retry never duplicates), and writes results to Postgres BEFORE publishing `done`. SSE logs are
+   cross-process + durable (Redis pub/sub + LIST replay, gap-free via INCR seq + RPUSH-before-PUBLISH),
+   with a terminal short-circuit. Without `REDIS_URL` the API runs builds in-process — identical code.
+3. **Dashboard:** snapshot **diff view**, **New Client** intake + Clients list, and the **Handover page**
+   (included scope + Bot Setup Checklist + Ownership Transfer Checklist + upsell tracker) are all built.
 
-1. **Persistence:** implement a `PrismaRepo` behind the existing `Repo` interface
-   (`apps/api/src/repo.ts`) using `apps/api/prisma/schema.prisma`, and run `prisma migrate`.
-   The in-memory repo is the only thing between demo and durable multi-process state.
-2. **Queue:** have `POST /jobs` enqueue to the BullMQ `disco:builds` queue (the worker already
-   consumes it and runs the same engine) when `REDIS_URL` is set, and read job/report state back
-   from Postgres. Today the API runs builds in-process (fine for single-operator + demo).
-3. **Dashboard extras:** snapshot **diff view** (API `GET /snapshots/:id/diff` is ready), the
-   **New Client** intake form, and a dedicated **Handover page** + Ownership-Transfer Checklist +
-   upsell tracker (the report + `Handover` Prisma model already hold the data).
+**Verified on this box** against native Postgres 16 + Redis (installed via brew, since no Docker here):
+`apps/api` `test:integration` is 3/3 (enqueue → worker → Postgres → API read-back, cross-process SSE,
+terminal short-circuit), plus a manual two-process run and in-browser screenshots of every screen.
+The wiring was pressure-tested by a design workflow up front and an 8-finding adversarial-review
+workflow after — all confirmed findings fixed (see git log).
 
-See `PROGRESS.md` for the unit-by-unit status and `BLOCKERS.md` for the two environment gates
-(a real token; Docker not installed on the build machine).
+### Run the production stack locally (no Docker needed)
+```bash
+brew services start postgresql@16 redis      # or use your own PG/Redis
+createdb disco                               # + a 'disco' role, see infra/README
+export DATABASE_URL=postgresql://disco:disco@localhost:5432/disco?schema=public REDIS_URL=redis://localhost:6379
+pnpm --filter @disco/api exec prisma db push # apply the schema
+pnpm --filter @disco/api start   &           # :4000  (postgres · redis-queue)
+pnpm --filter @disco/worker start &          # consumes the queue
+pnpm --filter @disco/web dev                 # :5173
+```
+
+See `PROGRESS.md` for unit-by-unit status and `BLOCKERS.md` for the one real gate (a live bot token)
+plus the Docker note.
 
 ## Environment notes from the build machine
 
