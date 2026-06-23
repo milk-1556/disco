@@ -189,6 +189,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      // raw responses bypass the CORS plugin — set the header so the browser can read the stream.
+      'Access-Control-Allow-Origin': req.headers.origin ?? env.webOrigin,
     });
     const send = (ev: unknown) => reply.raw.write(`data: ${JSON.stringify(ev)}\n\n`);
     for (const ev of bus.replay(jobId)) send(ev);

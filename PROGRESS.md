@@ -59,10 +59,17 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
       BullMQ+Redis worker wrapper still to add (calls the same `runBuild`).
 - ✅ U5.4 Invite-link/permission-integer generator (administrator=8 + granular set) — HTTP-verified.
 
-## Phase 6 — apps/web (premium dashboard, §8)
-- ⏳ U6.1 Vite+React+Tailwind shell, design system (read frontend-design SKILL first).
-- ⏳ U6.2 Stepper: Connect → Snapshot(library+diff) → New Client → Rebrand(override+preview) → Build(dry-run+live log) → Report → Handover.
-- ⏳ U6.3 Snapshot library/diff, Client list, Build queue, Rebuild Report, Bot Setup Checklist, Handover page + Ownership Transfer Checklist + upsell tracker.
+## Phase 6 — apps/web (premium dashboard, §8)   ✅ CORE DONE (boots, screenshot-verified end-to-end)
+- ✅ U6.1 Vite+React+Tailwind v4 shell. Bespoke "cloning console" design system (read frontend-design
+      first): ink base, signature violet→rose **transform spine**, gold-only CTAs, Space Grotesk /
+      Inter / Space Mono. Same-origin Vite proxy → no CORS, clean SSE.
+- ✅ U6.2 Build console (hero): transform spine with live step nodes, rebrand override panel
+      (tokens pre-filled, side-by-side preview), dry-run + build with **streaming SSE log** + progress,
+      full Rebuild Report. Verified: login → library → rebrand → dry-run → report, all in-browser.
+- ✅ U6.3 Snapshot Library (cards + counts + capture), Build Queue (live progress), Invite generator,
+      Bot Setup Checklist + Manual Steps + warnings in the report.
+- ⏳ U6.4 Remaining: snapshot diff view UI, New Client intake form, dedicated Handover page +
+      Ownership Transfer Checklist + upsell tracker (API + Report already expose the data).
 
 ## Phase 7 — infra + docs
 - ⏳ U7.1 docker-compose (api, worker, redis, postgres, web) + healthchecks.

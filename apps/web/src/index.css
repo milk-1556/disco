@@ -1,0 +1,255 @@
+@import 'tailwindcss';
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Disco — "cloning console" design system.
+   Thesis: the product transforms a template identity into a client identity, so the
+   whole UI encodes a source→client duality. Signature = the violet→rose transform
+   spine. Gold is spent only on primary actions. Mono carries the domain's native
+   vocabulary (snowflakes, localRefs, permission bitfields).
+   ──────────────────────────────────────────────────────────────────────────── */
+@theme {
+  --color-ink: #0e0d13;
+  --color-ink-raised: #17151f;
+  --color-ink-panel: #1c1926;
+  --color-line: #2a2636;
+  --color-line-soft: #211e2c;
+  --color-bone: #ece8f4;
+  --color-muted: #8c85a0;
+  --color-faint: #5c576b;
+
+  --color-source: #7c6cf0; /* template / before */
+  --color-client: #ff5a8a; /* client / after */
+  --color-gold: #e8b341; /* the value accent — primary actions only */
+  --color-jade: #54e0b0; /* built / success */
+  --color-danger: #ff6b6b;
+
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: var(--color-bone);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  /* faint dual-tone ambient glow — the transform colors bleeding from the corners */
+  background-image:
+    radial-gradient(60rem 40rem at 0% -10%, rgba(124, 108, 240, 0.12), transparent 60%),
+    radial-gradient(60rem 40rem at 100% 110%, rgba(255, 90, 138, 0.1), transparent 60%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(232, 179, 65, 0.3);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* ── transform gradient (the signature) ── */
+.transform-text {
+  background: linear-gradient(100deg, var(--color-source), var(--color-client));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.transform-bar {
+  background: linear-gradient(90deg, var(--color-source), var(--color-client));
+}
+.transform-ring {
+  background:
+    linear-gradient(var(--color-ink-raised), var(--color-ink-raised)) padding-box,
+    linear-gradient(120deg, var(--color-source), var(--color-client)) border-box;
+  border: 1px solid transparent;
+}
+
+/* ── panels ── */
+.panel {
+  background: var(--color-ink-raised);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+}
+.panel-soft {
+  background: var(--color-ink-panel);
+  border: 1px solid var(--color-line-soft);
+  border-radius: 12px;
+}
+
+/* ── buttons ── */
+.btn {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 0.9rem;
+  border-radius: 10px;
+  padding: 0.6rem 1.05rem;
+  border: 1px solid var(--color-line);
+  background: var(--color-ink-panel);
+  color: var(--color-bone);
+  cursor: pointer;
+  transition:
+    transform 0.08s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn:hover {
+  border-color: var(--color-faint);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+.btn-primary {
+  background: var(--color-gold);
+  color: #1a1406;
+  border-color: transparent;
+  box-shadow: 0 6px 24px -10px rgba(232, 179, 65, 0.7);
+}
+.btn-primary:hover {
+  background: #f1c25c;
+  border-color: transparent;
+}
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-muted);
+}
+.btn-ghost:hover {
+  color: var(--color-bone);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── chips / pills ── */
+.chip {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-line);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+.chip-source {
+  color: var(--color-source);
+  border-color: color-mix(in srgb, var(--color-source) 40%, transparent);
+  background: color-mix(in srgb, var(--color-source) 12%, transparent);
+}
+.chip-client {
+  color: var(--color-client);
+  border-color: color-mix(in srgb, var(--color-client) 40%, transparent);
+  background: color-mix(in srgb, var(--color-client) 12%, transparent);
+}
+.chip-jade {
+  color: var(--color-jade);
+  border-color: color-mix(in srgb, var(--color-jade) 40%, transparent);
+  background: color-mix(in srgb, var(--color-jade) 12%, transparent);
+}
+.chip-gold {
+  color: var(--color-gold);
+  border-color: color-mix(in srgb, var(--color-gold) 40%, transparent);
+  background: color-mix(in srgb, var(--color-gold) 12%, transparent);
+}
+
+/* ── inputs ── */
+.input {
+  width: 100%;
+  background: var(--color-ink);
+  border: 1px solid var(--color-line);
+  border-radius: 9px;
+  color: var(--color-bone);
+  padding: 0.55rem 0.7rem;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-source);
+}
+.input::placeholder {
+  color: var(--color-faint);
+}
+.label {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  letter-spacing: 0.02em;
+}
+
+/* ── terminal log ── */
+.term {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  background: #0a0910;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  overflow: auto;
+}
+
+/* scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 10px;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 0.4s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+}
