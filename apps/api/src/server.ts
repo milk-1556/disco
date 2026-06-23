@@ -203,7 +203,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       progress: j.progress,
       snapshotId: j.snapshotId,
       clientId: j.clientId,
+      error: j.error,
       createdAt: j.createdAt,
+      updatedAt: j.updatedAt,
     })),
   );
 
@@ -284,6 +286,49 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       send({ type: 'error', message: err instanceof Error ? err.message : 'log stream error' });
       cleanup();
     }
+  });
+
+  /** Re-run a failed/canceled job. The persisted manifest means it RESUMES, not restarts. */
+  app.post('/jobs/:id/retry', { preHandler: requireAuth }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const job = await repo.getJob(id);
+    if (!job) return reply.code(404).send({ error: 'not found' });
+    if (job.status !== 'failed' && job.status !== 'canceled') {
+      return reply.code(400).send({ error: `only failed or canceled jobs can be retried (status: ${job.status})` });
+    }
+    if (!job.snapshotId || !job.rebrandConfig) return reply.code(400).send({ error: 'job is missing its snapshot or config' });
+    const snap = await repo.getSnapshot(job.snapshotId);
+    if (!snap) return reply.code(404).send({ error: 'snapshot not found' });
+
+    await repo.updateJob(id, { status: 'queued', error: null });
+    const data: BuildJobData = {
+      jobId: id,
+      snapshot: snap.snapshot,
+      config: job.rebrandConfig,
+      dryRun: job.dryRun,
+      targetGuildId: job.targetGuildId,
+      contentIdentity: 'server',
+    };
+    if (useQueue()) {
+      const q = getQueue();
+      await q.remove(id).catch(() => {}); // clear any stale failed job so the id is reusable
+      await q.add('rebuild', data, { jobId: id, attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: { age: 86400 }, removeOnFail: false });
+    } else {
+      void runBuild(repo, channel, { jobId: id, snapshot: snap.snapshot, config: job.rebrandConfig, dryRun: job.dryRun });
+    }
+    return { id, status: 'queued' };
+  });
+
+  /** Cancel a queued (not-yet-started) job. A running build can't be interrupted mid-flight — be honest. */
+  app.post('/jobs/:id/cancel', { preHandler: requireAuth }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const job = await repo.getJob(id);
+    if (!job) return reply.code(404).send({ error: 'not found' });
+    if (job.status === 'running') return reply.code(409).send({ error: 'job is already running and cannot be interrupted' });
+    if (job.status !== 'queued' && job.status !== 'paused') return reply.code(400).send({ error: `cannot cancel a ${job.status} job` });
+    if (useQueue()) await getQueue().remove(id).catch(() => {});
+    await repo.updateJob(id, { status: 'canceled' });
+    return { id, status: 'canceled' };
   });
 
   // ── invite-link generator ──

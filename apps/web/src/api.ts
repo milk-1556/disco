@@ -47,6 +47,8 @@ export const api = {
     req<{ id: string; status: string }>('/jobs', { method: 'POST', body: JSON.stringify(body) }),
   jobs: () => req<JobSummary[]>('/jobs'),
   job: (id: string) => req<Job>(`/jobs/${id}`),
+  retryJob: (id: string) => req<{ id: string; status: string }>(`/jobs/${id}/retry`, { method: 'POST' }),
+  cancelJob: (id: string) => req<{ id: string; status: string }>(`/jobs/${id}/cancel`, { method: 'POST' }),
   clients: () => req<Client[]>('/clients'),
   addClient: (body: Partial<Client>) => req<Client>('/clients', { method: 'POST', body: JSON.stringify(body) }),
   inviteUrl: (applicationId: string, mode: 'administrator' | 'granular', guildId?: string) =>
@@ -171,12 +173,15 @@ export interface Job {
 }
 export interface JobSummary {
   id: string;
+  kind: string;
   status: string;
   dryRun: boolean;
   progress: number;
   snapshotId: string | null;
   clientId: string | null;
+  error: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 export interface Client {
   id: string;
