@@ -10,6 +10,8 @@ import { dirname, join } from 'node:path';
 export interface AssetStore {
   /** Store bytes, returning a content-addressed key. */
   put(bytes: Uint8Array, ext: string): Promise<string>;
+  /** Store bytes at an EXACT key (used by bundle import to preserve a snapshot's asset references). */
+  putAt(key: string, bytes: Uint8Array): Promise<void>;
   /** Read bytes back by key. */
   get(key: string): Promise<Buffer>;
 }
@@ -23,10 +25,13 @@ export class DiskAssetStore implements AssetStore {
   constructor(private root: string) {}
   async put(bytes: Uint8Array, ext: string): Promise<string> {
     const key = keyFor(bytes, ext);
+    await this.putAt(key, bytes);
+    return key;
+  }
+  async putAt(key: string, bytes: Uint8Array): Promise<void> {
     const path = join(this.root, key);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, bytes);
-    return key;
   }
   async get(key: string): Promise<Buffer> {
     return readFile(join(this.root, key));
@@ -39,6 +44,9 @@ export class MemoryAssetStore implements AssetStore {
     const key = keyFor(bytes, ext);
     this.store.set(key, Buffer.from(bytes));
     return key;
+  }
+  async putAt(key: string, bytes: Uint8Array): Promise<void> {
+    this.store.set(key, Buffer.from(bytes));
   }
   async get(key: string): Promise<Buffer> {
     const b = this.store.get(key);

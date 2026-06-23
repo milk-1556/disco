@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, type SnapshotSummary } from '../api.js';
-import { cx, shortId } from '../util.js';
+import { shortId } from '../util.js';
 
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
 
@@ -8,6 +8,34 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
   const [snaps, setSnaps] = useState<SnapshotSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function exportOne(s: SnapshotSummary) {
+    setErr(null);
+    try {
+      const bundle = await api.exportBundle(s.id);
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${s.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'snapshot'}.discobundle`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function importFile(file: File) {
+    setErr(null);
+    try {
+      const bundle = JSON.parse(await file.text());
+      await api.importBundle(bundle);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   async function load() {
     setSnaps(await api.snapshots());
@@ -48,6 +76,20 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
               ⇄ Compare versions
             </button>
           )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".discobundle,application/json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void importFile(f);
+              e.target.value = '';
+            }}
+          />
+          <button className="btn" onClick={() => fileRef.current?.click()}>
+            ↑ Import bundle
+          </button>
           <button className="btn" onClick={capture} disabled={busy}>
             {busy ? 'Capturing…' : '↻ New snapshot'}
           </button>
@@ -84,9 +126,14 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
               ))}
             </div>
 
-            <button className={cx('btn btn-primary justify-center mt-auto')} onClick={() => onBuild(s.id)}>
-              Rebrand & build →
-            </button>
+            <div className="flex gap-2 mt-auto">
+              <button className="btn btn-primary justify-center flex-1" onClick={() => onBuild(s.id)}>
+                Rebrand & build →
+              </button>
+              <button className="btn btn-ghost" title="Export portable .discobundle" onClick={() => exportOne(s)}>
+                ↓
+              </button>
+            </div>
           </article>
         ))}
       </div>

@@ -57,6 +57,9 @@ export const api = {
     ),
   diff: (id: string, against: string) =>
     req<SnapshotDiff>(`/snapshots/${id}/diff?against=${encodeURIComponent(against)}`),
+  exportBundle: (id: string) => req<Record<string, unknown>>(`/snapshots/${id}/export`),
+  importBundle: (bundle: unknown) =>
+    req<{ id: string; name: string; version: number }>('/bundles/import', { method: 'POST', body: JSON.stringify(bundle) }),
   createHandover: (jobId: string) => req<Handover>('/handovers', { method: 'POST', body: JSON.stringify({ jobId }) }),
   getHandover: (id: string) => req<HandoverBundle>(`/handovers/${id}`),
   updateHandover: (id: string, patch: Partial<Pick<Handover, 'state' | 'ownershipSteps' | 'upsellStatus'>> & { password?: string | null }) =>

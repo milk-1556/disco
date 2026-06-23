@@ -31,3 +31,6 @@ export * from './resilience.js';
 
 // Actionable Bot Setup Checklist (OAuth re-invite URLs + reconfigure markdown)
 export * from './botSetup.js';
+
+// Portable export/import bundle (§7) — snapshot + config + assets, checksummed
+export * from './bundle.js';

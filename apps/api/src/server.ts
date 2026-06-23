@@ -1,4 +1,4 @@
-import { type BuildJobData, captureSnapshot, makeSampleSnapshot, rebrand } from '@disco/core';
+import { type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, parseBundle, rebrand } from '@disco/core';
 import { defaultOwnershipSteps, RebrandConfig } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, mockGuildFromSnapshot } from '@disco/sdk';
 import cors from '@fastify/cors';
@@ -111,6 +111,49 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       });
       return { id: rec.id, name: rec.name, version: rec.version };
     } catch (err) {
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Export a snapshot (+ optional config) as a portable, checksummed .discobundle (§7).
+  app.get('/snapshots/:id/export', { preHandler: requireAuth }, async (req, reply) => {
+    const rec = await repo.getSnapshot((req.params as { id: string }).id);
+    if (!rec) return reply.code(404).send({ error: 'not found' });
+    // Embed asset bytes best-effort (skip any that aren't in storage — e.g. demo fixtures).
+    const assets: Record<string, string> = {};
+    for (const key of collectAssetKeys(rec.snapshot)) {
+      try {
+        assets[key] = (await store.get(key)).toString('base64');
+      } catch {
+        /* asset bytes not present — bundle stays valid without them */
+      }
+    }
+    const bundle = exportBundle({ snapshot: rec.snapshot, assets, name: rec.name, exportedAt: new Date().toISOString() });
+    const filename = `${rec.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'snapshot'}.discobundle`;
+    reply.header('Content-Type', 'application/json');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    return bundle;
+  });
+
+  // Import a .discobundle → a new snapshot (writing any embedded assets back at their exact keys).
+  app.post('/bundles/import', { preHandler: requireAuth }, async (req, reply) => {
+    try {
+      const { snapshot, assets, name } = parseBundle(req.body);
+      for (const [key, b64] of Object.entries(assets)) {
+        await store.putAt(key, Buffer.from(b64, 'base64')).catch(() => {});
+      }
+      const existing = (await repo.listSnapshots()).filter((s) => s.sourceGuildId === snapshot.source.guildId);
+      const rec = await repo.addSnapshot({
+        name: name || `${snapshot.guild.name} (imported)`,
+        version: existing.length + 1,
+        sourceGuildId: snapshot.source.guildId,
+        capturedAt: snapshot.capturedAt,
+        schemaVersion: snapshot.schemaVersion,
+        snapshot,
+      });
+      return { id: rec.id, name: rec.name, version: rec.version };
+    } catch (err) {
+      if (err instanceof BundleError) return reply.code(400).send({ error: err.message });
       return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
