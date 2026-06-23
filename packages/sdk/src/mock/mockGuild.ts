@@ -70,8 +70,11 @@ export class MockGuild implements CapturePort, ApplyPort {
     });
   }
 
+  // Discord epoch (2015-01-01) — snowflakes encode (ms since epoch) << 22 | sequence.
+  private static readonly EPOCH = 1420070400000n;
   private nextId(): string {
-    return String(900000000000000000n + BigInt(this.seq++));
+    const ms = BigInt(Date.now()) - MockGuild.EPOCH;
+    return ((ms << 22n) | BigInt(this.seq++ & 0x3fffff)).toString();
   }
 
   // ─────────────────────────────── CapturePort ───────────────────────────────

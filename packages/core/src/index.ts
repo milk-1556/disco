@@ -25,3 +25,6 @@ export * from './testing/sample.js';
 
 // Queue contract (name + payload + redis connection) shared by api producer and worker consumer
 export * from './queue.js';
+
+// Transient-failure resilience (rate-limit + 5xx retry) for the Discord ports
+export * from './resilience.js';

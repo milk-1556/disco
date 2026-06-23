@@ -1,4 +1,4 @@
-import { type BuildJobData, rebrand, rebuildGuild } from '@disco/core';
+import { type BuildJobData, rebrand, rebuildGuild, resilient } from '@disco/core';
 import type { RebuildReport } from '@disco/schema';
 import { type AssetStore, DiscordGuildClient, MockGuild } from '@disco/sdk';
 import type { JobChannel } from './jobChannel.js';
@@ -37,10 +37,12 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
   persist({ status: 'running' });
   const prior = (await repo.getJob(jobId))?.manifest ?? undefined;
   const { snapshot: rebranded } = rebrand(snapshot, config);
-  const port =
+  const rawPort =
     token && targetGuildId
       ? new DiscordGuildClient({ token, guildId: targetGuildId, store })
       : new MockGuild('900000000000000000', rebranded.guild.name);
+  // Weather 429s + transient 5xx uniformly, streaming throttle notices to the live log.
+  const port = resilient(rawPort, { onLog: (m) => pub({ type: 'log', message: m }) });
 
   const { manifest, report } = await rebuildGuild(port, rebranded, {
     jobId,
