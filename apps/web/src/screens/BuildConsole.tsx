@@ -149,7 +149,7 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
 
       {/* ── the signature: transform spine ── */}
       <div className="panel p-6 mb-6">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 spine-wrap">
           <Identity tone="source" label="source template" name={sourceName} />
           <div className="flex-1 relative">
             <div className="h-[2px] w-full rounded-full transform-bar opacity-60" />
@@ -178,7 +178,7 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
         </div>
       </div>
 
-      <div className="grid gap-6" style={{ gridTemplateColumns: '380px 1fr' }}>
+      <div className="build-grid">
         {/* ── rebrand controls ── */}
         <section className="panel p-5 self-start">
           <h2 className="text-base mb-1">Rebrand</h2>
