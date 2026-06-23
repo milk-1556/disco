@@ -31,8 +31,9 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
 - ✅ U2.5 Rebuild **plan** ordering (dependency-ordered step list + dry-run report), Discord-free.
 - ✅ U2.6 Golden-file tests for rebrand; idempotency tests for manifest; classification tests.
 
-## Phase 3 — `@disco/sdk` (typed Discord wrapper, discord.js v14)
-- ⏳ U3.1 Real discord.js v14 REST/gateway client implementing CapturePort+ApplyPort (LIVE-GATED: needs a token).
+## Phase 3 — `@disco/sdk` (typed Discord wrapper, discord.js v14)   ✅ DONE (typechecks vs discord.js types; live-gated)
+- ✅ U3.1 Real discord.js v14 client (REST + Routes) implementing CapturePort+ApplyPort, rate-limit
+      queue from discord.js, asset store (disk/memory/S3-ready). LIVE-GATED: needs a token to RUN.
 - ✅ U3.2 Capture port + **MockGuild** read impl (in-memory, structuredClone reads).
 - ✅ U3.3 Apply port + **MockGuild** write impl (create/edit/reorder/overwrites/webhook/listExisting).
 - ✅ U3.4 Bot detection + readable-trace scraping (vendor recognition by app-id/username).
