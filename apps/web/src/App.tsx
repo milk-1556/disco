@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getToken, setToken, type SnapshotSummary } from './api.js';
 import { Shell, type View } from './components/Shell.js';
+import { Activity } from './screens/Activity.js';
 import { BuildConsole } from './screens/BuildConsole.js';
 import { Clients } from './screens/Clients.js';
 import { HandoverPage } from './screens/HandoverPage.js';
@@ -86,6 +87,8 @@ export default function App() {
         <Queue onOpen={(jobId) => setHandoverJob(jobId)} />
       ) : view === 'clients' ? (
         <Clients />
+      ) : view === 'activity' ? (
+        <Activity />
       ) : (
         <Invite applicationId={applicationId} />
       )}
