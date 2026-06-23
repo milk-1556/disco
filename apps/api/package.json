@@ -13,6 +13,7 @@
     "test": "vitest run --passWithNoTests",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "hash-password": "tsx src/scripts/hashPassword.ts",
+    "build-guild": "tsx src/scripts/build.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:migrate": "prisma migrate dev",
