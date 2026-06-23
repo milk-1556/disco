@@ -76,6 +76,17 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
       list, dedicated **Handover page** (included scope + Bot Setup Checklist + Ownership Transfer
       Checklist + manual steps + upsell tracker). Built by a 3-agent workflow; screenshot-verified.
 
+## Phase 9 — post-handover hardening (non-credentialed)   ✅ 6 of 8
+- ✅ #1 Resilience: engine weathers Discord 429s (Retry-After) + transient 5xx via `resilient(port)`;
+      MockGuild `faultyPort` injects them + realistic snowflakes. Build-under-faults stays idempotent.
+- ✅ #3 Build Queue observability: retry/resume (manifest), cancel, inline live SSE log, failure tags.
+- ✅ #4 Bot Setup Checklist: per-bot OAuth re-invite URLs (bot's own app id) + reconfigure steps + copy-md.
+- ✅ #6 Export/import `.discobundle` (snapshot + config + assets, checksummed; tamper-rejected).
+- ✅ #7 Live discord.js client coverage via undici MockAgent (correct routes/bodies, no guild needed).
+- ✅ #8 Responsive shell + grids (small-screen first); desktop + mobile frame-grab verified.
+- ⏳ #2 Snapshot diff per-field expansion + search/tags + promote-to-template.
+- ⏳ #5 Handover templating (client logo upload, custom welcome, password-gated public page).
+
 ## Phase 8 — production wire-up (Prisma + queue) + review hardening   ✅ DONE
 - ✅ PrismaRepo behind the async Repo + makeRepo() switch; POST /jobs → BullMQ → worker → Postgres →
       API read-back; cross-process durable SSE (Redis pub/sub + LIST). Verified vs native PG+Redis.
