@@ -1,0 +1,36 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# turbo / caches
+.turbo/
+.cache/
+coverage/
+
+# env & secrets — never commit real values
+.env
+.env.*
+!.env.example
+
+# local object storage (snapshot asset bytes in dev)
+/storage/
+**/storage/
+
+# prisma
+apps/api/prisma/*.db
+apps/api/prisma/migrations/dev.db*
+
+# logs / os
+*.log
+npm-debug.log*
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
