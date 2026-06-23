@@ -1,0 +1,1484 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Disco — Snapshot a server once. Rebrand and build it a hundred times.</title>
+    <meta
+      name="description"
+      content="Disco turns a finished Discord community into a product line. Snapshot a server once, rebrand it for any client in a few clicks, and build it into a fresh guild idempotently — then deliver a branded handover page."
+    />
+    <meta name="theme-color" content="#0e0d13" />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Disco — snapshot once, rebrand-and-build many" />
+    <meta
+      property="og:description"
+      content="The assembly line for selling custom-branded Discord communities."
+    />
+    <meta property="og:type" content="website" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* ─────────────────────────────────────────────────────────────────────
+         Disco landing — the "cloning console" identity, ported to a public page.
+         Signature = the violet(source)→rose(client) transform spine.
+         Gold is spent only on primary actions.
+         ──────────────────────────────────────────────────────────────────── */
+      :root {
+        --ink: #0e0d13;
+        --ink-raised: #17151f;
+        --ink-panel: #1c1926;
+        --line: #2a2636;
+        --line-soft: #211e2c;
+        --bone: #ece8f4;
+        --muted: #8c85a0;
+        --faint: #5c576b;
+
+        --source: #7c6cf0; /* template / before */
+        --client: #ff5a8a; /* client / after */
+        --gold: #e8b341; /* value accent — primary actions only */
+        --jade: #54e0b0; /* built / success */
+        --danger: #ff6b6b;
+
+        --display: 'Space Grotesk', system-ui, sans-serif;
+        --body: 'Inter', system-ui, sans-serif;
+        --mono: 'Space Mono', ui-monospace, monospace;
+
+        --maxw: 1140px;
+        --nav-h: 68px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--ink);
+        color: var(--bone);
+        font-family: var(--body);
+        font-size: 16px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        overflow-x: hidden;
+        /* faint dual-tone ambient glow — the transform colors bleeding from the corners */
+        background-image:
+          radial-gradient(70rem 46rem at -5% -8%, rgba(124, 108, 240, 0.16), transparent 60%),
+          radial-gradient(70rem 46rem at 105% 4%, rgba(255, 90, 138, 0.1), transparent 58%),
+          radial-gradient(60rem 50rem at 50% 120%, rgba(124, 108, 240, 0.08), transparent 60%);
+        background-attachment: fixed;
+      }
+
+      ::selection {
+        background: rgba(232, 179, 65, 0.3);
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        font-family: var(--display);
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin: 0;
+        line-height: 1.1;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .mono {
+        font-family: var(--mono);
+      }
+
+      .transform-text {
+        background: linear-gradient(100deg, var(--source), var(--client));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 0;
+      }
+
+      .wrap {
+        width: 100%;
+        max-width: var(--maxw);
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      /* ── buttons ── */
+      .btn {
+        font-family: var(--display);
+        font-weight: 500;
+        font-size: 0.95rem;
+        border-radius: 11px;
+        padding: 0.72rem 1.25rem;
+        border: 1px solid var(--line);
+        background: var(--ink-panel);
+        color: var(--bone);
+        cursor: pointer;
+        transition:
+          transform 0.08s ease,
+          border-color 0.16s ease,
+          background 0.16s ease,
+          box-shadow 0.16s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        border-color: var(--faint);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--gold);
+        outline-offset: 2px;
+      }
+      .btn-primary {
+        background: var(--gold);
+        color: #1a1406;
+        border-color: transparent;
+        font-weight: 600;
+        box-shadow: 0 8px 30px -10px rgba(232, 179, 65, 0.6);
+      }
+      .btn-primary:hover {
+        background: #f1c25c;
+        box-shadow: 0 10px 34px -8px rgba(232, 179, 65, 0.72);
+      }
+      .btn-ghost {
+        background: transparent;
+        border-color: var(--line);
+        color: var(--bone);
+      }
+      .btn-ghost:hover {
+        border-color: var(--faint);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .btn-lg {
+        font-size: 1rem;
+        padding: 0.85rem 1.5rem;
+      }
+
+      /* ── chips ── */
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .chip-source {
+        color: var(--source);
+        border-color: color-mix(in srgb, var(--source) 42%, transparent);
+        background: color-mix(in srgb, var(--source) 12%, transparent);
+      }
+      .chip-client {
+        color: var(--client);
+        border-color: color-mix(in srgb, var(--client) 42%, transparent);
+        background: color-mix(in srgb, var(--client) 12%, transparent);
+      }
+      .chip-jade {
+        color: var(--jade);
+        border-color: color-mix(in srgb, var(--jade) 42%, transparent);
+        background: color-mix(in srgb, var(--jade) 12%, transparent);
+      }
+      .chip-gold {
+        color: var(--gold);
+        border-color: color-mix(in srgb, var(--gold) 42%, transparent);
+        background: color-mix(in srgb, var(--gold) 12%, transparent);
+      }
+
+      /* ── panels ── */
+      .panel {
+        background: var(--ink-raised);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+      }
+
+      /* ────────── NAV ────────── */
+      header.nav {
+        position: sticky;
+        top: 0;
+        z-index: 60;
+        height: var(--nav-h);
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid transparent;
+        transition:
+          background 0.25s ease,
+          border-color 0.25s ease,
+          backdrop-filter 0.25s ease;
+      }
+      header.nav.scrolled {
+        background: rgba(14, 13, 19, 0.78);
+        backdrop-filter: blur(14px);
+        border-bottom-color: var(--line-soft);
+      }
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        width: 100%;
+      }
+      .wordmark {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.5rem;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 1.15rem;
+        letter-spacing: -0.02em;
+      }
+      .wordmark .glyph {
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: 1.05rem;
+        letter-spacing: -0.05em;
+        background: linear-gradient(100deg, var(--source), var(--client));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 1.6rem;
+        margin-left: auto;
+      }
+      .nav-links a.navlink {
+        font-size: 0.9rem;
+        color: var(--muted);
+        transition: color 0.15s ease;
+      }
+      .nav-links a.navlink:hover {
+        color: var(--bone);
+      }
+      .nav-cta {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-left: auto;
+      }
+      @media (max-width: 860px) {
+        .nav-links {
+          display: none;
+        }
+      }
+
+      /* ────────── HERO ────────── */
+      .hero {
+        position: relative;
+        padding: clamp(3.5rem, 9vw, 7rem) 0 clamp(3rem, 6vw, 5rem);
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: clamp(2rem, 4vw, 3.5rem);
+        align-items: center;
+      }
+      @media (max-width: 940px) {
+        .hero-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .hero h1 {
+        font-size: clamp(2.35rem, 5.6vw, 4rem);
+        line-height: 1.04;
+        margin-top: 1.4rem;
+        max-width: 16ch;
+      }
+      .hero .lede {
+        margin-top: 1.4rem;
+        font-size: clamp(1.02rem, 1.6vw, 1.18rem);
+        color: var(--muted);
+        max-width: 46ch;
+      }
+      .hero .lede strong {
+        color: var(--bone);
+        font-weight: 600;
+      }
+      .hero-cta {
+        margin-top: 2.1rem;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.9rem;
+      }
+      .hero-note {
+        margin-top: 1.4rem;
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        font-size: 0.82rem;
+        color: var(--faint);
+      }
+      .live-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--jade);
+        box-shadow: 0 0 0 0 rgba(84, 224, 176, 0.5);
+        animation: live-pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes live-pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.45;
+          transform: scale(1.35);
+        }
+      }
+
+      /* hero visual: the build console as a stylized card */
+      .console {
+        position: relative;
+        border-radius: 18px;
+        padding: 1.15rem;
+        background:
+          linear-gradient(var(--ink-raised), var(--ink-raised)) padding-box,
+          linear-gradient(125deg, var(--source), var(--client)) border-box;
+        border: 1px solid transparent;
+        box-shadow:
+          0 40px 80px -40px rgba(124, 108, 240, 0.45),
+          0 30px 60px -40px rgba(255, 90, 138, 0.4);
+      }
+      .console-head {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0 0.2rem 0.85rem;
+        border-bottom: 1px solid var(--line-soft);
+        margin-bottom: 0.95rem;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      .console-head .label {
+        margin-left: 0.5rem;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--faint);
+      }
+      .swap-row {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.55rem 0;
+      }
+      .swap-cell {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        padding: 0.5rem 0.65rem;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        background: var(--ink);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .swap-cell.from {
+        color: var(--source);
+        border-color: color-mix(in srgb, var(--source) 32%, transparent);
+      }
+      .swap-cell.to {
+        color: var(--client);
+        border-color: color-mix(in srgb, var(--client) 32%, transparent);
+      }
+      .swap-arrow {
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 0.9rem;
+      }
+      .console-foot {
+        margin-top: 1rem;
+        padding-top: 0.95rem;
+        border-top: 1px solid var(--line-soft);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+      .progress {
+        flex: 1;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--ink);
+        overflow: hidden;
+        border: 1px solid var(--line-soft);
+      }
+      .progress > i {
+        display: block;
+        height: 100%;
+        width: 72%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--source), var(--client));
+        animation: fill 2.6s ease-in-out infinite alternate;
+      }
+      @keyframes fill {
+        from {
+          width: 38%;
+        }
+        to {
+          width: 86%;
+        }
+      }
+      .console-tags {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        margin-top: 0.9rem;
+      }
+
+      /* ────────── generic section scaffolding ────────── */
+      section {
+        position: relative;
+        padding: clamp(3.5rem, 8vw, 6rem) 0;
+      }
+      .section-head {
+        max-width: 60ch;
+        margin-bottom: 2.6rem;
+      }
+      .section-head h2 {
+        font-size: clamp(1.75rem, 3.6vw, 2.6rem);
+        margin-top: 0.9rem;
+      }
+      .section-head p {
+        margin-top: 1.05rem;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+      .divider {
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--line) 18%,
+          var(--line) 82%,
+          transparent
+        );
+      }
+
+      /* ────────── PROBLEM → UNLOCK ────────── */
+      .pu-grid {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: clamp(1.2rem, 3vw, 2.4rem);
+        align-items: stretch;
+      }
+      @media (max-width: 860px) {
+        .pu-grid {
+          grid-template-columns: 1fr;
+        }
+        .pu-spine {
+          display: none;
+        }
+      }
+      .pu-card {
+        padding: 1.8rem;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: var(--ink-raised);
+      }
+      .pu-card.problem {
+        background: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--danger) 6%, var(--ink-raised)),
+          var(--ink-raised)
+        );
+      }
+      .pu-card.unlock {
+        background:
+          linear-gradient(var(--ink-raised), var(--ink-raised)) padding-box,
+          linear-gradient(140deg, var(--source), var(--client)) border-box;
+        border: 1px solid transparent;
+      }
+      .pu-card h3 {
+        font-size: 1.3rem;
+        margin: 0.7rem 0 0.9rem;
+      }
+      .pu-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .pu-list li {
+        display: flex;
+        gap: 0.65rem;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      .pu-list.unlock li {
+        color: var(--bone);
+      }
+      .pu-mark {
+        flex: none;
+        margin-top: 0.15rem;
+        font-family: var(--mono);
+        font-weight: 700;
+      }
+      .pu-card.problem .pu-mark {
+        color: var(--danger);
+      }
+      .pu-card.unlock .pu-mark {
+        color: var(--jade);
+      }
+      .pu-spine {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .pu-spine .rail {
+        position: relative;
+        width: 3px;
+        height: 100%;
+        min-height: 120px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, var(--source), var(--client));
+      }
+      .pu-spine .rail::after {
+        content: '→';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: var(--mono);
+        font-size: 1.3rem;
+        color: var(--bone);
+        background: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* ────────── FEATURE GRID ────────── */
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.1rem;
+      }
+      @media (max-width: 960px) {
+        .feature-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 620px) {
+        .feature-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .feature {
+        padding: 1.6rem;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: var(--ink-raised);
+        transition:
+          transform 0.18s ease,
+          border-color 0.18s ease,
+          background 0.18s ease;
+      }
+      .feature:hover {
+        transform: translateY(-3px);
+        border-color: var(--faint);
+        background: var(--ink-panel);
+      }
+      .feature .ficon {
+        width: 42px;
+        height: 42px;
+        border-radius: 11px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1.1rem;
+        border: 1px solid var(--line);
+        background: var(--ink);
+      }
+      .feature .ficon svg {
+        width: 20px;
+        height: 20px;
+      }
+      .feature h3 {
+        font-size: 1.12rem;
+        margin-bottom: 0.55rem;
+      }
+      .feature p {
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.55;
+      }
+      .feature .meta {
+        margin-top: 1rem;
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+      }
+
+      /* ────────── HOW IT WORKS — transform spine strip ────────── */
+      .steps {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+      }
+      .steps::before {
+        content: '';
+        position: absolute;
+        top: 34px;
+        left: 6%;
+        right: 6%;
+        height: 2px;
+        background: linear-gradient(90deg, var(--source), var(--client));
+        opacity: 0.55;
+        z-index: 0;
+      }
+      @media (max-width: 860px) {
+        .steps {
+          grid-template-columns: 1fr;
+          gap: 1.4rem;
+        }
+        .steps::before {
+          top: 6%;
+          bottom: 6%;
+          left: 33px;
+          right: auto;
+          width: 2px;
+          height: auto;
+        }
+      }
+      .step {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+        padding: 0 0.4rem;
+      }
+      @media (max-width: 860px) {
+        .step {
+          text-align: left;
+          display: grid;
+          grid-template-columns: 68px 1fr;
+          align-items: start;
+          gap: 1rem;
+          padding: 0;
+        }
+      }
+      .step .node {
+        width: 68px;
+        height: 68px;
+        margin: 0 auto 1.1rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: var(--bone);
+        background:
+          linear-gradient(var(--ink), var(--ink)) padding-box,
+          linear-gradient(135deg, var(--source), var(--client)) border-box;
+        border: 2px solid transparent;
+        box-shadow: 0 0 0 6px rgba(14, 13, 19, 1);
+      }
+      @media (max-width: 860px) {
+        .step .node {
+          margin: 0;
+        }
+      }
+      .step h3 {
+        font-size: 1.18rem;
+        margin-bottom: 0.5rem;
+      }
+      .step p {
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.55;
+      }
+      .step .tag {
+        display: inline-block;
+        margin-bottom: 0.55rem;
+      }
+
+      /* ────────── PRICING ────────── */
+      .price-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.1rem;
+        align-items: stretch;
+      }
+      @media (max-width: 900px) {
+        .price-grid {
+          grid-template-columns: 1fr;
+          max-width: 460px;
+          margin: 0 auto;
+        }
+      }
+      .tier {
+        position: relative;
+        padding: 1.9rem 1.7rem;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: var(--ink-raised);
+        display: flex;
+        flex-direction: column;
+      }
+      .tier.featured {
+        background:
+          linear-gradient(var(--ink-raised), var(--ink-raised)) padding-box,
+          linear-gradient(140deg, var(--source), var(--client)) border-box;
+        border: 1px solid transparent;
+        box-shadow: 0 30px 70px -45px rgba(124, 108, 240, 0.6);
+      }
+      .tier .badge {
+        position: absolute;
+        top: -12px;
+        left: 1.7rem;
+        font-family: var(--mono);
+        font-size: 0.64rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        padding: 0.25rem 0.7rem;
+        border-radius: 999px;
+        color: #1a1406;
+        background: var(--gold);
+        font-weight: 700;
+      }
+      .tier h3 {
+        font-size: 1.25rem;
+      }
+      .tier .price {
+        margin: 1rem 0 0.3rem;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 2.5rem;
+        letter-spacing: -0.03em;
+      }
+      .tier .price span {
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--muted);
+        letter-spacing: 0;
+      }
+      .tier .price.scale {
+        font-size: 1.9rem;
+      }
+      .tier .sub {
+        color: var(--muted);
+        font-size: 0.9rem;
+        min-height: 2.6rem;
+      }
+      .tier ul {
+        list-style: none;
+        margin: 1.4rem 0 1.8rem;
+        padding: 1.4rem 0 0;
+        border-top: 1px solid var(--line-soft);
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+        flex: 1;
+      }
+      .tier ul li {
+        display: flex;
+        gap: 0.6rem;
+        font-size: 0.9rem;
+        color: var(--bone);
+      }
+      .tier ul li svg {
+        flex: none;
+        margin-top: 0.2rem;
+        width: 15px;
+        height: 15px;
+        color: var(--jade);
+      }
+      .tier .btn {
+        width: 100%;
+      }
+
+      /* ────────── FAQ ────────── */
+      .faq-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.9rem;
+      }
+      @media (max-width: 760px) {
+        .faq-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      details.faq {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--ink-raised);
+        padding: 0 1.3rem;
+        transition: border-color 0.16s ease;
+      }
+      details.faq[open] {
+        border-color: var(--faint);
+      }
+      details.faq summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 1.2rem 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        font-family: var(--display);
+        font-weight: 500;
+        font-size: 1.02rem;
+      }
+      details.faq summary::-webkit-details-marker {
+        display: none;
+      }
+      details.faq summary .plus {
+        flex: none;
+        font-family: var(--mono);
+        color: var(--source);
+        transition: transform 0.2s ease;
+      }
+      details.faq[open] summary .plus {
+        transform: rotate(45deg);
+        color: var(--client);
+      }
+      details.faq .answer {
+        padding: 0 0 1.3rem;
+        color: var(--muted);
+        font-size: 0.94rem;
+        line-height: 1.6;
+        max-width: 62ch;
+      }
+
+      /* ────────── FINAL CTA ────────── */
+      .cta-band {
+        position: relative;
+        overflow: hidden;
+        border-radius: 24px;
+        padding: clamp(2.5rem, 6vw, 4.5rem);
+        text-align: center;
+        background:
+          radial-gradient(50rem 30rem at 0% 0%, rgba(124, 108, 240, 0.22), transparent 60%),
+          radial-gradient(50rem 30rem at 100% 100%, rgba(255, 90, 138, 0.2), transparent 60%),
+          var(--ink-raised);
+        border: 1px solid var(--line);
+      }
+      .cta-band h2 {
+        font-size: clamp(1.9rem, 4vw, 3rem);
+        max-width: 20ch;
+        margin: 0 auto;
+      }
+      .cta-band p {
+        margin: 1.2rem auto 0;
+        color: var(--muted);
+        max-width: 52ch;
+        font-size: 1.05rem;
+      }
+      .cta-band .hero-cta {
+        justify-content: center;
+        margin-top: 2.2rem;
+      }
+
+      /* ────────── FOOTER ────────── */
+      footer.site {
+        border-top: 1px solid var(--line-soft);
+        padding: 3rem 0 3.5rem;
+        margin-top: 1rem;
+      }
+      .foot-grid {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.4rem;
+      }
+      .foot-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.4rem;
+        font-size: 0.88rem;
+        color: var(--muted);
+      }
+      .foot-links a:hover {
+        color: var(--bone);
+      }
+      .foot-fine {
+        margin-top: 1.8rem;
+        font-size: 0.78rem;
+        color: var(--faint);
+        font-family: var(--mono);
+      }
+
+      /* ────────── scroll reveal ────────── */
+      .reveal {
+        opacity: 0;
+        transform: translateY(18px);
+        transition:
+          opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+          transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+        will-change: opacity, transform;
+      }
+      .reveal.in {
+        opacity: 1;
+        transform: none;
+      }
+      .reveal.d1 {
+        transition-delay: 0.06s;
+      }
+      .reveal.d2 {
+        transition-delay: 0.12s;
+      }
+      .reveal.d3 {
+        transition-delay: 0.18s;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        .reveal {
+          opacity: 1;
+          transform: none;
+          transition: none;
+        }
+        .live-dot,
+        .progress > i {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- ─────────────── NAV ─────────────── -->
+    <header class="nav" id="nav">
+      <div class="wrap nav-inner">
+        <a class="wordmark" href="#top" aria-label="Disco home">
+          <span class="glyph" aria-hidden="true">⟜→</span>
+          <span>Disco</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a class="navlink" href="#how">How it works</a>
+          <a class="navlink" href="#features">Features</a>
+          <a class="navlink" href="#pricing">Pricing</a>
+          <a class="navlink" href="#faq">FAQ</a>
+        </nav>
+        <div class="nav-cta">
+          <a class="btn btn-ghost" href="#book">Sign in</a>
+          <a class="btn btn-primary" href="#book">Book a demo</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ─────────────── HERO ─────────────── -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="wrap hero-grid">
+          <div>
+            <p class="eyebrow reveal">The assembly line for branded Discord communities</p>
+            <h1 id="hero-title" class="reveal d1">
+              Snapshot a server once.
+              <span class="transform-text">Rebrand and build it a hundred times.</span>
+            </h1>
+            <p class="lede reveal d2">
+              You craft polished Discord communities and sell them to creators. Today every sale
+              means rebuilding the whole thing by hand. <strong>Disco turns that craft into a
+              product line</strong> — capture once, rebrand in clicks, build idempotently, deliver
+              branded.
+            </p>
+            <div class="hero-cta reveal d2">
+              <a class="btn btn-primary btn-lg" href="#book">Book a demo</a>
+              <a class="btn btn-ghost btn-lg" href="#how">See how it works →</a>
+            </div>
+            <div class="hero-note reveal d3">
+              <span class="live-dot" aria-hidden="true"></span>
+              <span>Dry-run before every commit · idempotent · resumable · honest manual steps</span>
+            </div>
+          </div>
+
+          <!-- hero visual: the build console -->
+          <div class="reveal d2" aria-hidden="true">
+            <div class="console">
+              <div class="console-head">
+                <span class="dot" style="background: var(--source)"></span>
+                <span class="dot" style="background: var(--gold)"></span>
+                <span class="dot" style="background: var(--client)"></span>
+                <span class="label">build-console · acme-slots-hq → client</span>
+              </div>
+
+              <div class="swap-row">
+                <span class="swap-cell from">Acme Slots HQ</span>
+                <span class="swap-arrow">⟜→</span>
+                <span class="swap-cell to">NovaPlay Lounge</span>
+              </div>
+              <div class="swap-row">
+                <span class="swap-cell from">#acme-announcements</span>
+                <span class="swap-arrow">⟜→</span>
+                <span class="swap-cell to">#nova-announcements</span>
+              </div>
+              <div class="swap-row">
+                <span class="swap-cell from">@AcmeMod · #7c6cf0</span>
+                <span class="swap-arrow">⟜→</span>
+                <span class="swap-cell to">@NovaMod · #ff5a8a</span>
+              </div>
+
+              <div class="console-tags">
+                <span class="chip chip-source">snapshot v4</span>
+                <span class="chip chip-jade">42 channels built</span>
+                <span class="chip chip-gold">3 manual steps</span>
+              </div>
+
+              <div class="console-foot">
+                <div class="progress"><i></i></div>
+                <span class="mono" style="font-size: 0.72rem; color: var(--jade)"
+                  >building…</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────── PROBLEM → UNLOCK ─────────────── -->
+      <section aria-labelledby="pu-title">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="eyebrow">The problem → the unlock</p>
+            <h2 id="pu-title">A template should be a SKU you sell — not a thing you rebuild.</h2>
+            <p>
+              The work is real and the demand is there. What's missing is leverage: a way to make
+              the second, tenth, and hundredth build cost almost nothing.
+            </p>
+          </div>
+
+          <div class="pu-grid">
+            <div class="pu-card problem reveal d1">
+              <span class="chip" style="border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger)">today · by hand</span>
+              <h3>Every sale is a full rebuild</h3>
+              <ul class="pu-list">
+                <li><span class="pu-mark">✕</span> Re-create every channel and category, in order, from memory.</li>
+                <li><span class="pu-mark">✕</span> Re-apply every role and permission overwrite — and hope nothing drifts.</li>
+                <li><span class="pu-mark">✕</span> Re-skin names, colors, links and copy by hand, one client at a time.</li>
+                <li><span class="pu-mark">✕</span> Hours per delivery. Inconsistent results. A hard ceiling on volume.</li>
+              </ul>
+            </div>
+
+            <div class="pu-spine reveal d2" aria-hidden="true">
+              <div class="rail"></div>
+            </div>
+
+            <div class="pu-card unlock reveal d2">
+              <span class="chip chip-jade">with Disco · snapshot once</span>
+              <h3>Rebrand-and-build, many</h3>
+              <ul class="pu-list unlock">
+                <li><span class="pu-mark">✓</span> Capture the finished server once into a typed, versioned, diffable artifact.</li>
+                <li><span class="pu-mark">✓</span> Rebrand deterministically — names, colors, links, copy, assets, all previewed.</li>
+                <li><span class="pu-mark">✓</span> Build into a fresh guild idempotently, resumably, in dependency-correct order.</li>
+                <li><span class="pu-mark">✓</span> Minutes per delivery. Zero drift. The same template sells again and again.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="wrap"><div class="divider"></div></div>
+
+      <!-- ─────────────── FEATURE GRID ─────────────── -->
+      <section id="features" aria-labelledby="feat-title">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="eyebrow">What's in the box</p>
+            <h2 id="feat-title">Built like an engine, not a macro.</h2>
+            <p>
+              Every part of the pipeline is designed for the thing that actually matters when you're
+              selling: trust, consistency, and the volume that comes from both.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <!-- Snapshot -->
+            <article class="feature reveal">
+              <div class="ficon" style="color: var(--source)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="6" width="18" height="14" rx="2" /><circle cx="12" cy="13" r="3.5" /><path d="M8 6 9.5 3.5h5L16 6" />
+                </svg>
+              </div>
+              <h3>Snapshot</h3>
+              <p>
+                Capture any finished server — channels, categories, roles, permission overwrites,
+                emojis, stickers, AutoMod, welcome screen, even info-channel content — into one
+                versioned, diffable artifact.
+              </p>
+              <div class="meta"><span class="chip chip-source">.discobundle</span><span class="chip">versioned</span></div>
+            </article>
+
+            <!-- Rebrand -->
+            <article class="feature reveal d1">
+              <div class="ficon" style="color: var(--client)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 17l8.5-8.5 4 4L7 21H3z" /><path d="M14 6l4 4" /><circle cx="18.5" cy="5.5" r="2" />
+                </svg>
+              </div>
+              <h3>Rebrand</h3>
+              <p>
+                Smart find-and-replace that's camelCase- and url-slug-aware, plus color maps, link
+                maps and asset swaps. Detected brand tokens are pre-filled. Every swap is previewed
+                before anything is built.
+              </p>
+              <div class="meta"><span class="chip chip-client">previewed</span><span class="chip">deterministic</span></div>
+            </article>
+
+            <!-- Build idempotently -->
+            <article class="feature reveal d2">
+              <div class="ficon" style="color: var(--jade)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 7a8 8 0 0 1 14-3l2 2" /><path d="M20 4v4h-4" /><path d="M20 17a8 8 0 0 1-14 3l-2-2" /><path d="M4 20v-4h4" />
+                </svg>
+              </div>
+              <h3>Build idempotently</h3>
+              <p>
+                Into a fresh guild, in dependency-correct order. Build twice and get no duplicates.
+                A crash resumes from the manifest instead of re-creating. Rate-limit-aware, with a
+                dry-run mode that writes nothing.
+              </p>
+              <div class="meta"><span class="chip chip-jade">idempotent</span><span class="chip chip-jade">resumable</span></div>
+            </article>
+
+            <!-- Deliver branded -->
+            <article class="feature reveal">
+              <div class="ficon" style="color: var(--gold)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 8l9-5 9 5-9 5-9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" />
+                </svg>
+              </div>
+              <h3>Deliver with a branded handover</h3>
+              <p>
+                A public delivery page in the client's logo and colors — optionally password-gated,
+                shareable as a link. Includes the scope delivered, one-click bot re-invites, and a
+                guided ownership transfer.
+              </p>
+              <div class="meta"><span class="chip chip-gold">client-facing</span><span class="chip">shareable</span></div>
+            </article>
+
+            <!-- Queue & economics -->
+            <article class="feature reveal d1">
+              <div class="ficon" style="color: var(--source)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="4" rx="1" /><rect x="3" y="10" width="18" height="4" rx="1" /><rect x="3" y="16" width="18" height="4" rx="1" /><path d="M7 6h.01M7 12h.01M7 18h.01" />
+                </svg>
+              </div>
+              <h3>Queue &amp; economics</h3>
+              <p>
+                A build queue with retry, resume and cancel, live cross-process logs, and per-step
+                timing — so you can see your real unit economics. A pre-flight authority check
+                confirms the bot can do the job before any live run.
+              </p>
+              <div class="meta"><span class="chip">retry / resume</span><span class="chip chip-gold">per-step timing</span></div>
+            </article>
+
+            <!-- Honest manual steps -->
+            <article class="feature reveal d2">
+              <div class="ficon" style="color: var(--client)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16h.01" />
+                </svg>
+              </div>
+              <h3>Honest manual steps</h3>
+              <p>
+                Anything Discord's API genuinely can't clone — third-party bot configs, member data,
+                boost perks, interactive panels — is surfaced as a manual step with a reason. Never
+                a silent half-build.
+              </p>
+              <div class="meta"><span class="chip chip-client">with a reason</span><span class="chip">never silent</span></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <div class="wrap"><div class="divider"></div></div>
+
+      <!-- ─────────────── HOW IT WORKS ─────────────── -->
+      <section id="how" aria-labelledby="how-title">
+        <div class="wrap">
+          <div class="section-head reveal" style="text-align: center; margin-left: auto; margin-right: auto;">
+            <p class="eyebrow">How it works</p>
+            <h2 id="how-title">Four steps along the transform spine.</h2>
+            <p style="margin-left: auto; margin-right: auto;">
+              The same source-to-client motion that runs through the whole product. Violet is the
+              template you start from; rose is the client you ship to.
+            </p>
+          </div>
+
+          <div class="steps">
+            <div class="step reveal">
+              <div class="node">1</div>
+              <div>
+                <span class="chip chip-source tag">source</span>
+                <h3>Snapshot</h3>
+                <p>Capture a finished server into a portable, versioned artifact — once.</p>
+              </div>
+            </div>
+            <div class="step reveal d1">
+              <div class="node">2</div>
+              <div>
+                <span class="chip chip-client tag">transform</span>
+                <h3>Rebrand</h3>
+                <p>Swap names, colors, links, copy and assets for the client. Preview every change.</p>
+              </div>
+            </div>
+            <div class="step reveal d2">
+              <div class="node">3</div>
+              <div>
+                <span class="chip chip-jade tag">apply</span>
+                <h3>Build</h3>
+                <p>Dry-run, then build into a fresh guild idempotently and in the right order.</p>
+              </div>
+            </div>
+            <div class="step reveal d3">
+              <div class="node">4</div>
+              <div>
+                <span class="chip chip-gold tag">deliver</span>
+                <h3>Deliver</h3>
+                <p>Hand over a branded delivery page with re-invites and ownership transfer.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="wrap"><div class="divider"></div></div>
+
+      <!-- ─────────────── PRICING ─────────────── -->
+      <section id="pricing" aria-labelledby="price-title">
+        <div class="wrap">
+          <div class="section-head reveal" style="text-align: center; margin-left: auto; margin-right: auto;">
+            <p class="eyebrow">Pricing</p>
+            <h2 id="price-title">Priced to the way you actually sell.</h2>
+            <p style="margin-left: auto; margin-right: auto;">
+              Start per-build, move to a retainer as volume grows, or run it fully under your own
+              brand. Every plan includes the full snapshot → rebrand → build → deliver pipeline.
+            </p>
+          </div>
+
+          <div class="price-grid">
+            <!-- per build -->
+            <div class="tier reveal">
+              <h3>Per-build</h3>
+              <div class="price">$49<span> / build</span></div>
+              <p class="sub">For your first deliveries. Pay only when you ship a server to a client.</p>
+              <ul>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Unlimited snapshots &amp; dry-runs</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Full rebrand &amp; idempotent build engine</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Branded delivery page per build</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Email support</li>
+              </ul>
+              <a class="btn btn-ghost" href="#book">Start per-build</a>
+            </div>
+
+            <!-- retainer -->
+            <div class="tier featured reveal d1">
+              <span class="badge">Most popular</span>
+              <h3>Monthly retainer</h3>
+              <div class="price">$399<span> / mo</span></div>
+              <p class="sub">For operators shipping regularly. Unlimited builds, the full queue, real unit economics.</p>
+              <ul>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Everything in Per-build, unlimited</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Build queue with retry / resume / cancel</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Per-step timing &amp; live activity pulse</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Client records &amp; upsell tracker</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Priority support</li>
+              </ul>
+              <a class="btn btn-primary" href="#book">Book a demo</a>
+            </div>
+
+            <!-- white label -->
+            <div class="tier reveal d2">
+              <h3>White-label</h3>
+              <div class="price scale">Let's talk</div>
+              <p class="sub">Run the entire platform under your own brand and domain for your team or clients.</p>
+              <ul>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Everything in Retainer</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Your brand on the dashboard &amp; delivery pages</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Custom domain &amp; SSO</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Self-host option &amp; SLA</li>
+              </ul>
+              <a class="btn btn-ghost" href="#book">Contact sales</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="wrap"><div class="divider"></div></div>
+
+      <!-- ─────────────── FAQ ─────────────── -->
+      <section id="faq" aria-labelledby="faq-title">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="eyebrow">Questions</p>
+            <h2 id="faq-title">The honest answers.</h2>
+          </div>
+
+          <div class="faq-grid">
+            <details class="faq reveal">
+              <summary>Will building twice create duplicate channels? <span class="plus">+</span></summary>
+              <p class="answer">No. Builds are idempotent — they key off a manifest, so running the same build again reconciles to the same state instead of re-creating. If a build crashes mid-way, the next run resumes from the manifest rather than starting over.</p>
+            </details>
+
+            <details class="faq reveal d1">
+              <summary>What can't be cloned automatically? <span class="plus">+</span></summary>
+              <p class="answer">Anything Discord's API can't reproduce — third-party bot configurations, member data, boost perks, interactive panels, and Discovery. Disco never pretends to clone these. Each is surfaced as a manual step with a clear reason, so you always know exactly what's left to do by hand.</p>
+            </details>
+
+            <details class="faq reveal">
+              <summary>Can I see what will happen before I commit? <span class="plus">+</span></summary>
+              <p class="answer">Always. Every build supports a dry-run that writes nothing and produces the full report: what would be created, what would be skipped, and the manual steps. A pre-flight authority check also confirms the bot has every permission needed before any live run.</p>
+            </details>
+
+            <details class="faq reveal d1">
+              <summary>Do I need to give Disco my Discord token? <span class="plus">+</span></summary>
+              <p class="answer">You bring your own bot. You invite it to the source and target guilds and run the authority check from the dashboard. Disco drives the build through your bot — and you can rehearse the whole pipeline against an in-memory mock guild before ever pointing it at a real server.</p>
+            </details>
+
+            <details class="faq reveal">
+              <summary>How does the rebrand avoid breaking things? <span class="plus">+</span></summary>
+              <p class="answer">Find-and-replace is camelCase- and url-slug-aware, brand tokens are detected and pre-filled, and color and link maps are explicit. Crucially, every swap is previewed before a single channel is built — nothing changes silently.</p>
+            </details>
+
+            <details class="faq reveal d1">
+              <summary>What does the client actually receive? <span class="plus">+</span></summary>
+              <p class="answer">A polished, branded delivery page in their logo and colors — optionally password-gated and shareable as a link. It lists the scope delivered, gives one-click bot re-invite URLs, and walks them through transferring ownership of the server to themselves.</p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────── FINAL CTA / BOOKING ─────────────── -->
+      <section id="book" aria-labelledby="cta-title">
+        <div class="wrap">
+          <div class="cta-band reveal">
+            <p class="eyebrow" style="text-align: center">Stop rebuilding. Start shipping.</p>
+            <h2 id="cta-title">Turn one great server into a hundred sales.</h2>
+            <p>
+              Book a 20-minute demo and we'll snapshot one of your servers live, rebrand it for a
+              made-up client, and build it into a fresh guild — start to delivered handover — while
+              you watch.
+            </p>
+            <div class="hero-cta">
+              <a class="btn btn-primary btn-lg" href="mailto:hello@disco.build?subject=Disco%20demo">Book a demo</a>
+              <a class="btn btn-ghost btn-lg" href="mailto:hello@disco.build?subject=Disco%20question">Email us a question →</a>
+            </div>
+            <p class="mono" style="margin-top: 1.6rem; font-size: 0.78rem; color: var(--faint)">
+              hello@disco.build · no credit card to see it run
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ─────────────── FOOTER ─────────────── -->
+    <footer class="site">
+      <div class="wrap">
+        <div class="foot-grid">
+          <a class="wordmark" href="#top" aria-label="Disco home">
+            <span class="glyph" aria-hidden="true">⟜→</span>
+            <span>Disco</span>
+          </a>
+          <nav class="foot-links" aria-label="Footer">
+            <a href="#how">How it works</a>
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#faq">FAQ</a>
+            <a href="#book">Book a demo</a>
+          </nav>
+        </div>
+        <p class="foot-fine">
+          ⟜→ snapshot once, rebrand-and-build many · © 2026 Disco · Not affiliated with Discord Inc.
+        </p>
+      </div>
+    </footer>
+
+    <script>
+      // sticky-nav shading on scroll
+      (function () {
+        var nav = document.getElementById('nav');
+        var onScroll = function () {
+          if (window.scrollY > 8) nav.classList.add('scrolled');
+          else nav.classList.remove('scrolled');
+        };
+        onScroll();
+        window.addEventListener('scroll', onScroll, { passive: true });
+      })();
+
+      // scroll-reveal (respects prefers-reduced-motion via CSS; here we just add .in)
+      (function () {
+        var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var els = document.querySelectorAll('.reveal');
+        if (reduce || !('IntersectionObserver' in window)) {
+          els.forEach(function (el) {
+            el.classList.add('in');
+          });
+          return;
+        }
+        var io = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (e) {
+              if (e.isIntersecting) {
+                e.target.classList.add('in');
+                io.unobserve(e.target);
+              }
+            });
+          },
+          { rootMargin: '0px 0px -8% 0px', threshold: 0.08 }
+        );
+        els.forEach(function (el) {
+          io.observe(el);
+        });
+      })();
+    </script>
+  </body>
+</html>
