@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, streamJobLogs, type JobEvent, type JobSummary } from '../api.js';
+import { api, streamJobLogs, type Job, type JobEvent, type JobSummary } from '../api.js';
+import { BuildSteps } from '../components/BuildSteps.js';
 import { cx, shortId } from '../util.js';
 
 const STATUS_CHIP: Record<string, string> = {
@@ -25,6 +26,7 @@ function failureTag(error: string | null): string | null {
 export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Job | null>(null);
   const [logs, setLogs] = useState<JobEvent[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -37,13 +39,18 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
     return () => clearInterval(h);
   }, []);
 
-  // Stream the expanded job's logs inline.
+  // Stream the expanded job's logs inline + load its full detail (manifest/steps for timing).
   useEffect(() => {
     stopRef.current?.();
     stopRef.current = null;
     setLogs([]);
+    setDetail(null);
     if (!expanded) return;
-    stopRef.current = streamJobLogs(expanded, (ev) => setLogs((prev) => [...prev, ev]));
+    api.job(expanded).then(setDetail).catch(() => {});
+    stopRef.current = streamJobLogs(expanded, (ev) => {
+      setLogs((prev) => [...prev, ev]);
+      if (ev.type === 'done' || ev.type === 'error') api.job(expanded).then(setDetail).catch(() => {});
+    });
     return () => {
       stopRef.current?.();
       stopRef.current = null;
@@ -145,7 +152,8 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
               </div>
 
               {isOpen && (
-                <div className="px-4 pb-4">
+                <div className="px-4 pb-4 space-y-3">
+                  {detail?.manifest && <BuildSteps manifest={detail.manifest} status={detail.status} />}
                   <div ref={logBoxRef} className="term" style={{ maxHeight: 200 }}>
                     {logs.length === 0 ? (
                       <span style={{ color: 'var(--color-faint)' }}>waiting for log…</span>

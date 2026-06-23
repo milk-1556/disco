@@ -199,15 +199,27 @@ export interface RebuildReport {
   warnings: string[];
   counts: Record<string, number>;
 }
+export interface StepState {
+  step: string;
+  status: 'pending' | 'running' | 'done' | 'failed';
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+export interface JobManifest {
+  steps: StepState[];
+  entries: { localRef: string; kind: string; newId: string | null; status: string }[];
+}
 export interface Job {
   id: string;
   kind: string;
   status: string;
   dryRun: boolean;
   progress: number;
+  manifest: JobManifest | null;
   report: RebuildReport | null;
   error: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 export interface JobSummary {
   id: string;
