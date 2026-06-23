@@ -10,6 +10,7 @@ import { Library } from './screens/Library.js';
 import { Login } from './screens/Login.js';
 import { PublicHandover } from './screens/PublicHandover.js';
 import { Queue } from './screens/Queue.js';
+import { Setup } from './screens/Setup.js';
 import { SnapshotDiff } from './screens/SnapshotDiff.js';
 
 function usePublicHandoverId(): string | null {
@@ -89,6 +90,8 @@ export default function App() {
         <Clients />
       ) : view === 'activity' ? (
         <Activity />
+      ) : view === 'setup' ? (
+        <Setup go={go} />
       ) : (
         <Invite applicationId={applicationId} />
       )}

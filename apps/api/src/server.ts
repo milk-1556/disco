@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { signSession, verifyCredentials, verifySession } from './auth.js';
 import { diffSnapshots } from './diff.js';
-import { env, isLiveMode, useQueue } from './env.js';
+import { env, isLiveMode, usePrisma, useQueue } from './env.js';
 import type { JobChannel, JobEvent } from './jobChannel.js';
 import { runBuild } from './jobs.js';
 import { buildInviteUrl } from './perms.js';
@@ -45,6 +45,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     mode: isLiveMode() ? 'live' : 'demo',
     applicationId: env.discordApplicationId || null,
     operatorEmail: env.operatorEmail,
+    hasToken: env.discordBotToken.length > 0,
+    storageDriver: process.env.STORAGE_DRIVER ?? 'disk',
+    persistence: usePrisma() ? 'postgres' : 'in-memory',
+    queue: useQueue() ? 'redis' : 'in-process',
   }));
 
   app.post('/auth/login', async (req, reply) => {

@@ -31,7 +31,16 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   base: BASE,
-  config: () => req<{ mode: string; applicationId: string | null; operatorEmail: string }>('/config'),
+  config: () =>
+    req<{
+      mode: string;
+      applicationId: string | null;
+      operatorEmail: string;
+      hasToken: boolean;
+      storageDriver: string;
+      persistence: string;
+      queue: string;
+    }>('/config'),
   login: (email: string, password: string) =>
     req<{ token: string; email: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   snapshots: () => req<SnapshotSummary[]>('/snapshots'),
