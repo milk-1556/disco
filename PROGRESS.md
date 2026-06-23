@@ -76,16 +76,23 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
       list, dedicated **Handover page** (included scope + Bot Setup Checklist + Ownership Transfer
       Checklist + manual steps + upsell tracker). Built by a 3-agent workflow; screenshot-verified.
 
-## Phase 9 — post-handover hardening (non-credentialed)   ✅ 6 of 8
+## Phase 9 — post-handover hardening (non-credentialed)   ✅ ALL 14 SHIPPED
 - ✅ #1 Resilience: engine weathers Discord 429s (Retry-After) + transient 5xx via `resilient(port)`;
       MockGuild `faultyPort` injects them + realistic snowflakes. Build-under-faults stays idempotent.
+- ✅ #2 Snapshot diff per-field expansion (role/channel/automod field-level) + search + automod section.
 - ✅ #3 Build Queue observability: retry/resume (manifest), cancel, inline live SSE log, failure tags.
 - ✅ #4 Bot Setup Checklist: per-bot OAuth re-invite URLs (bot's own app id) + reconfigure steps + copy-md.
+- ✅ #5 Handover templating: client logo upload + custom welcome + password-gated PUBLIC delivery page.
 - ✅ #6 Export/import `.discobundle` (snapshot + config + assets, checksummed; tamper-rejected).
 - ✅ #7 Live discord.js client coverage via undici MockAgent (correct routes/bodies, no guild needed).
-- ✅ #8 Responsive shell + grids (small-screen first); desktop + mobile frame-grab verified.
-- ⏳ #2 Snapshot diff per-field expansion + search/tags + promote-to-template.
-- ⏳ #5 Handover templating (client logo upload, custom welcome, password-gated public page).
+- ✅ #8 Pre-flight source-guild authority audit (Admin / granular bits) surfaced before a live run.
+- ✅ #9 Template library curation: favorite/star, sort (last-used/captured/name), tags + note, promote.
+- ✅ #10 Resumable-build visibility: per-step timeline + timing + "resume from step N/11".
+- ✅ #11 Safe-by-default build CLI: dry-run unless `--apply` (refused without real guild + token).
+- ✅ #12 HANDOFF.md as a selling doc — elevator pitch, real screenshots, value, testimonial space.
+- ✅ #13 Operator setup wizard (connect bot → storage → first template → client → build).
+- ✅ #14 Live status feed ("the system, breathing") — builds + snapshots, polled, color-coded.
+- ✅ Responsive shell + grids (small-screen first); desktop + mobile frame-grab verified.
 
 ## Phase 8 — production wire-up (Prisma + queue) + review hardening   ✅ DONE
 - ✅ PrismaRepo behind the async Repo + makeRepo() switch; POST /jobs → BullMQ → worker → Postgres →
