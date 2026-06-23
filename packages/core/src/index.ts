@@ -34,3 +34,6 @@ export * from './botSetup.js';
 
 // Portable export/import bundle (§7) — snapshot + config + assets, checksummed
 export * from './bundle.js';
+
+// Pre-flight authority audit (does the bot have the perms Disco needs?)
+export * from './authority.js';

@@ -1,6 +1,6 @@
-import { type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, parseBundle, rebrand } from '@disco/core';
+import { auditAuthority, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, parseBundle, rebrand } from '@disco/core';
 import { defaultOwnershipSteps, RebrandConfig, SnapshotMetaPatch } from '@disco/schema';
-import { DiscordGuildClient, DiskAssetStore, mockGuildFromSnapshot } from '@disco/sdk';
+import { DiscordGuildClient, DiskAssetStore, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
 import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -387,6 +387,19 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (useQueue()) await getQueue().remove(id).catch(() => {});
     await repo.updateJob(id, { status: 'canceled' });
     return { id, status: 'canceled' };
+  });
+
+  // Pre-flight authority audit: does the bot have the perms Disco needs in this guild? (§ before live)
+  app.get('/preflight/:guildId', { preHandler: requireAuth }, async (req, reply) => {
+    const guildId = (req.params as { guildId: string }).guildId;
+    try {
+      const perms = isLiveMode()
+        ? await new DiscordGuildClient({ token: env.discordBotToken, guildId, store }).getBotPermissions()
+        : await new MockGuild(guildId).getBotPermissions();
+      return { guildId, mode: isLiveMode() ? 'live' : 'demo', ...auditAuthority(perms) };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err), reachable: false });
+    }
   });
 
   // ── invite-link generator ──

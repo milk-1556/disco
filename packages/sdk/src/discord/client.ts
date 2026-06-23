@@ -261,6 +261,19 @@ export class DiscordGuildClient implements CapturePort, ApplyPort {
     }));
   }
 
+  /** The bot's effective permission bitfield in this guild (OR of its roles' perms + @everyone). */
+  async getBotPermissions(): Promise<string> {
+    const me = (await this.rest.get(Routes.user('@me'))) as Json;
+    const member = (await this.rest.get(Routes.guildMember(this.guildId, me.id))) as Json;
+    const roles = (await this.rest.get(Routes.guildRoles(this.guildId))) as Json[];
+    const myRoleIds = new Set<string>([this.guildId, ...((member.roles as string[]) ?? [])]); // include @everyone
+    let acc = 0n;
+    for (const r of roles) {
+      if (myRoleIds.has(r.id)) acc |= BigInt(String(r.permissions ?? '0'));
+    }
+    return acc.toString();
+  }
+
   async persistAsset(url: string): Promise<string> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`asset download failed (${res.status}): ${url}`);

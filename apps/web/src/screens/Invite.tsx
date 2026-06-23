@@ -18,6 +18,23 @@ export function Invite({ applicationId }: { applicationId: string | null }) {
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const [pfGuild, setPfGuild] = useState('');
+  const [pf, setPf] = useState<Awaited<ReturnType<typeof api.preflight>> | null>(null);
+  const [pfErr, setPfErr] = useState<string | null>(null);
+  const [pfBusy, setPfBusy] = useState(false);
+  async function runPreflight() {
+    setPfErr(null);
+    setPf(null);
+    setPfBusy(true);
+    try {
+      setPf(await api.preflight(pfGuild.trim()));
+    } catch (e) {
+      setPfErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPfBusy(false);
+    }
+  }
+
   async function generate() {
     setErr(null);
     try {
@@ -80,6 +97,47 @@ export function Invite({ applicationId }: { applicationId: string | null }) {
             <div className="mono text-xs break-all" style={{ color: 'var(--color-source)' }}>
               {result.url}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* pre-flight authority audit */}
+      <div className="panel p-5 mb-5">
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className="label">Pre-flight authority check</span>
+          <span className="text-[0.68rem]" style={{ color: 'var(--color-faint)' }}>
+            verify the bot can actually do the job — BEFORE a build touches the guild
+          </span>
+        </div>
+        <div className="flex items-end gap-2 mt-3">
+          <input className="input mono flex-1" placeholder="Guild ID to check" value={pfGuild} onChange={(e) => setPfGuild(e.target.value)} />
+          <button className="btn" onClick={runPreflight} disabled={!pfGuild.trim() || pfBusy}>
+            {pfBusy ? 'Checking…' : 'Run check'}
+          </button>
+        </div>
+        {pfErr && <div className="text-sm mt-3" style={{ color: 'var(--color-danger)' }}>Couldn’t reach the guild: {pfErr}</div>}
+        {pf && (
+          <div className="panel-soft p-3 mt-3">
+            {pf.ok ? (
+              <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-jade)' }}>
+                ✓ Ready — the bot {pf.hasAdmin ? 'has Administrator' : 'has every permission Disco needs'} in this guild.
+              </div>
+            ) : (
+              <>
+                <div className="text-sm mb-2" style={{ color: 'var(--color-danger)' }}>
+                  ✗ Not ready — {pf.missing.length} permission(s) missing. Re-invite with the right perms first.
+                </div>
+                <div className="space-y-1">
+                  {pf.missing.map((m) => (
+                    <div key={m.name} className="text-[0.78rem] flex gap-2">
+                      <span className="chip" style={{ color: 'var(--color-danger)', borderColor: 'color-mix(in srgb, var(--color-danger) 40%, transparent)' }}>{m.name}</span>
+                      <span style={{ color: 'var(--color-muted)' }}>{m.why}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="mono text-[0.66rem] mt-2" style={{ color: 'var(--color-faint)' }}>{pf.mode} mode · perms {pf.permissions}</div>
           </div>
         )}
       </div>

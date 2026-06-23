@@ -105,6 +105,11 @@ export class MockGuild implements CapturePort, ApplyPort {
   async fetchMessages(channelId: string): Promise<RawMessage[]> {
     return (this.messages.get(channelId) ?? []).map((m) => structuredClone(m));
   }
+  /** The mock bot is Administrator. */
+  async getBotPermissions(): Promise<string> {
+    return (1n << 3n).toString();
+  }
+
   async persistAsset(url: string): Promise<string> {
     // Deterministic content-addressed key from the url (stand-in for hashing the bytes).
     let h = 0;

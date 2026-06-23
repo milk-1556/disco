@@ -31,10 +31,10 @@ describe('DiscordGuildClient REST (mocked HTTP)', () => {
   });
 
   /** Intercept a route, record the request, and reply with `data`. */
-  const route = (method: 'GET' | 'POST' | 'PATCH' | 'PUT', match: RegExp, data: unknown) => {
+  const route = (method: 'GET' | 'POST' | 'PATCH' | 'PUT', match: RegExp, data: object) => {
     pool
       .intercept({ path: (p) => match.test(p), method })
-      .reply((opts) => {
+      .reply((opts: { path: string; body?: unknown }) => {
         requests.push({ method, path: String(opts.path), body: opts.body ? JSON.parse(String(opts.body)) : undefined });
         return { statusCode: 200, data, responseOptions: { headers: { 'content-type': 'application/json' } } };
       })

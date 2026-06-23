@@ -57,6 +57,10 @@ export const api = {
     req<{ url: string; permissions: string; mode: string }>(
       `/invite-url?applicationId=${encodeURIComponent(applicationId)}&mode=${mode}${guildId ? `&guildId=${guildId}` : ''}`,
     ),
+  preflight: (guildId: string) =>
+    req<{ guildId: string; mode: string; ok: boolean; hasAdmin: boolean; missing: { name: string; why: string }[]; permissions: string }>(
+      `/preflight/${encodeURIComponent(guildId)}`,
+    ),
   diff: (id: string, against: string) =>
     req<SnapshotDiff>(`/snapshots/${id}/diff?against=${encodeURIComponent(against)}`),
   exportBundle: (id: string) => req<Record<string, unknown>>(`/snapshots/${id}/export`),
