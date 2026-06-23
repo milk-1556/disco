@@ -22,3 +22,6 @@ export * from './snapshot/vendors.js';
 
 // Shared canonical sample (template server) for tests, demos & MockGuild seeding
 export * from './testing/sample.js';
+
+// Queue contract (name + payload + redis connection) shared by api producer and worker consumer
+export * from './queue.js';

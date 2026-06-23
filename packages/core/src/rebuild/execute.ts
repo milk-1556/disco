@@ -23,6 +23,14 @@ export interface RebuildOptions {
   serverIdentityName?: string;
   onLog?: (msg: string) => void;
   onProgress?: (pct: number, step: RebuildStep) => void;
+  /**
+   * Checkpoint callback fired after every object is committed and on each step completion, with a
+   * snapshot of the live manifest (entries + idMap). CRITICAL for crash-resume: the engine only
+   * writes `manifest.entries` back at the very end, so a persister relying on the returned manifest
+   * would lose all localRef→newId mappings mid-build and a retry would re-create (duplicate)
+   * everything. Persist this snapshot to survive a crash and resume idempotently.
+   */
+  onManifest?: (m: JobManifest) => void;
 }
 
 export interface RebuildOutcome {
@@ -68,6 +76,8 @@ export async function rebuildGuild(
   const skipped: Array<{ ref: string; reason: string }> = [];
 
   const idMap = () => ({ ...buildIdMap(entries), ...manifest.idMap });
+  /** Emit a live snapshot of the manifest (with the up-to-date local `entries`) for durable resume. */
+  const checkpoint = () => opts.onManifest?.({ ...manifest, entries, idMap: idMap() });
   const markStep = (step: RebuildStep, status: 'running' | 'done') => {
     const s = manifest.steps.find((x) => x.step === step);
     if (s) {
@@ -77,6 +87,7 @@ export async function rebuildGuild(
     }
     const done = manifest.steps.filter((x) => x.status === 'done').length;
     opts.onProgress?.(done / manifest.steps.length, step);
+    if (status === 'done') checkpoint();
   };
   const isDone = (step: RebuildStep) => manifest.steps.find((x) => x.step === step)?.status === 'done';
 
@@ -98,6 +109,7 @@ export async function rebuildGuild(
       if (item.action === 'update' && item.newId) {
         updated.push(`${kind}: ${item.name}`);
         entries = commitEntry(entries, item.localRef, item.newId, 'updated');
+        checkpoint();
         continue;
       }
       if (dry) {
@@ -108,6 +120,7 @@ export async function rebuildGuild(
       const newId = await create(item);
       created.push(`${kind}: ${item.name}`);
       entries = commitEntry(entries, item.localRef, newId, 'created');
+      checkpoint(); // persist the new localRef→newId BEFORE the next create, so a crash resumes here
     }
   };
 

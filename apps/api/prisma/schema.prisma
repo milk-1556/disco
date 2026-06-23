@@ -55,7 +55,7 @@ model Job {
   dryRun        Boolean   @default(false)
   progress      Float     @default(0)
   targetGuildId String?
-  rebrandConfig Json
+  rebrandConfig Json      @default("{}")
   manifest      Json?
   report        Json?
   error         String?

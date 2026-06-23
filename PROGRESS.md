@@ -50,15 +50,18 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
       asserting rebrand landed, managed roles skipped, member overwrites skipped, content copied,
       and building twice does not duplicate.
 
-## Phase 5 — apps/api + apps/worker (Fastify + BullMQ + Prisma)
-- ⏳ U5.1 Prisma schema (snapshots, jobs, clients, manifests, reports, handovers, users) — in-memory Repo
-      behind an interface now (Prisma drops in behind the same `Repo` interface).
-- ✅ U5.2 Auth (JWT + bcrypt operator) + REST routes + SSE job-log channel — BOOTS + HTTP-verified
-      (login, snapshots, diff, capture, rebrand/preview, jobs, report). Runs tokenless in DEMO mode.
-- ✅ U5.3 Job runner (`runBuild`) streams logs over SSE (in-process, verified). `@disco/worker`
-      BullMQ build worker added (consumes `disco:builds`, runs the SAME engine) — typecheck-verified.
-      Wiring `POST /jobs` to enqueue + read results from Postgres is the remaining production step.
-- ✅ U5.4 Invite-link/permission-integer generator (administrator=8 + granular set) — HTTP-verified.
+## Phase 5 — apps/api + apps/worker (Fastify + BullMQ + Prisma)   ✅ DONE (verified vs real Postgres+Redis)
+- ✅ U5.1 Prisma schema + **PrismaRepo** behind the async `Repo` interface (zod re-parse on read for
+      lossless Json round-trip); `makeRepo()` selects Postgres (DATABASE_URL) vs in-memory demo.
+- ✅ U5.2 Auth (JWT + bcrypt) + REST routes + SSE — HTTP-verified. Tokenless/dbless DEMO still boots.
+- ✅ U5.3 **Cross-process queue**: `POST /jobs` enqueues to BullMQ; `@disco/worker` consumes, runs the
+      SAME engine (shared `runBuildJob`), checkpoints the manifest (resume-safe), writes results to
+      Postgres BEFORE publishing `done`. SSE logs are cross-process + durable over a Redis pub/sub +
+      LIST transport (`JobChannel`), gap-free via INCR seq + RPUSH-before-PUBLISH, with a terminal
+      short-circuit. Crash-resume proven (onManifest checkpoint). Integration test 3/3 vs live PG+Redis.
+- ✅ U5.4 Invite-link/permission-integer generator — HTTP-verified.
+- ✅ U5.5 docker-compose: one-shot `migrate` service + api/worker wait on it; both run native too.
+      Design pressure-tested by a 4-agent workflow (caught the empty-manifest-on-resume bug pre-build).
 
 ## Phase 6 — apps/web (premium dashboard, §8)   ✅ CORE DONE (boots, screenshot-verified end-to-end)
 - ✅ U6.1 Vite+React+Tailwind v4 shell. Bespoke "cloning console" design system (read frontend-design

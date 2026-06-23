@@ -3,12 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./runtime": "./src/runtime.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "hash-password": "tsx src/scripts/hashPassword.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:migrate": "prisma migrate dev",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
@@ -16,13 +23,17 @@
     "@disco/schema": "workspace:*",
     "@disco/sdk": "workspace:*",
     "@fastify/cors": "^10.0.1",
+    "@prisma/client": "^6.1.0",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^5.34.5",
     "fastify": "^5.1.0",
+    "ioredis": "^5.4.2",
     "jsonwebtoken": "^9.0.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.7"
+    "@types/jsonwebtoken": "^9.0.7",
+    "prisma": "^6.1.0"
   }
 }

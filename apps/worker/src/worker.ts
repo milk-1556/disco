@@ -1,47 +1,42 @@
-import { rebrand, rebuildGuild } from '@disco/core';
+import { type BuildJobDeps, PrismaRepo, RedisJobChannel, runBuildJob } from '@disco/api/runtime';
+import { BUILD_QUEUE, type BuildJobData, redisConnection } from '@disco/core';
 import type { RebuildReport } from '@disco/schema';
-import { DiscordGuildClient, DiskAssetStore, MockGuild } from '@disco/sdk';
+import { DiskAssetStore } from '@disco/sdk';
 import { Worker } from 'bullmq';
-import { BUILD_QUEUE, redisConnection, type BuildJobData } from './queue.js';
 
 /**
  * The scale-out build worker (§2/§6). Consumes rebuild jobs off the Redis queue and runs the SAME
- * engine the API runs in-process — so a crash mid-build resumes via the manifest, and many client
- * builds can be processed concurrently. In demo mode the target is an in-memory MockGuild; in live
- * mode it's a DiscordGuildClient against the job's target guild.
- *
- * Returns the RebuildReport as the job result (BullMQ persists it). Wiring the report back into the
- * API's job records is the Postgres/Prisma step (both share the DB in production).
+ * engine (via the shared `runBuildJob`) the API runs in-process. DB-aware: resumes from the prior
+ * persisted manifest so a BullMQ retry never duplicates Discord objects.
  */
 export function startBuildWorker(): Worker<BuildJobData, RebuildReport> {
-  const store = new DiskAssetStore(process.env.STORAGE_DISK_PATH ?? './storage');
-  const token = process.env.DISCORD_BOT_TOKEN ?? '';
+  const deps: BuildJobDeps = {
+    repo: new PrismaRepo(),
+    channel: new RedisJobChannel(),
+    store: new DiskAssetStore(process.env.STORAGE_DISK_PATH ?? './storage'),
+    token: process.env.DISCORD_BOT_TOKEN ?? '',
+  };
 
   const worker = new Worker<BuildJobData, RebuildReport>(
     BUILD_QUEUE,
-    async (job) => {
-      const { jobId, snapshot, config, dryRun, targetGuildId, contentIdentity } = job.data;
-      const { snapshot: rebranded } = rebrand(snapshot, config);
-
-      const port =
-        token && targetGuildId
-          ? new DiscordGuildClient({ token, guildId: targetGuildId, store })
-          : new MockGuild('900000000000000000', rebranded.guild.name);
-
-      const { report } = await rebuildGuild(port, rebranded, {
-        jobId,
-        dryRun,
-        targetGuildId: targetGuildId ?? null,
-        contentIdentity: contentIdentity ?? 'server',
-        onLog: (m) => job.updateProgress({ log: m }).catch(() => {}),
-        onProgress: (pct) => job.updateProgress({ pct }).catch(() => {}),
-      });
-      return report;
+    (job) => runBuildJob(job.data, deps),
+    {
+      connection: redisConnection(),
+      concurrency: Number(process.env.WORKER_CONCURRENCY ?? 2),
+      maxStalledCount: 1, // a hard crash re-delivers exactly once → resume from the persisted manifest
     },
-    { connection: redisConnection(), concurrency: Number(process.env.WORKER_CONCURRENCY ?? 2) },
   );
 
   worker.on('completed', (job) => console.log(`[worker] build ${job.id} completed`));
-  worker.on('failed', (job, err) => console.error(`[worker] build ${job?.id} failed:`, err.message));
+  worker.on('failed', async (job, err) => {
+    const attempts = job?.opts.attempts ?? 1;
+    const isFinal = !job || job.attemptsMade >= attempts;
+    console.error(`[worker] build ${job?.id} attempt ${job?.attemptsMade}/${attempts} failed: ${err.message}`);
+    // Only expose 'failed' to the API after the LAST attempt — earlier attempts will be retried.
+    if (job && isFinal) {
+      await deps.repo.updateJob(job.data.jobId, { status: 'failed', error: err.message }).catch(() => {});
+      await Promise.resolve(deps.channel.publish(job.data.jobId, { type: 'error', message: err.message })).catch(() => {});
+    }
+  });
   return worker;
 }

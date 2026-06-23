@@ -30,6 +30,18 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot: apply the Prisma schema, then exit. The api waits for it to complete.
+  migrate:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    command: ['pnpm', '--filter', '@disco/api', 'prisma:push']
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-disco}:${POSTGRES_PASSWORD:-disco}@postgres:5432/${POSTGRES_DB:-disco}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build:
       context: ..
@@ -53,6 +65,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build:
@@ -67,8 +81,12 @@ services:
     volumes:
       - disco_storage:/data/storage
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   web:
     build:

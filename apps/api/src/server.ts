@@ -1,23 +1,25 @@
-import { captureSnapshot, rebrand } from '@disco/core';
+import { type BuildJobData, captureSnapshot, makeSampleSnapshot, rebrand } from '@disco/core';
 import { RebrandConfig } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, mockGuildFromSnapshot } from '@disco/sdk';
-import { makeSampleSnapshot } from '@disco/core';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { signSession, verifyCredentials, verifySession } from './auth.js';
 import { diffSnapshots } from './diff.js';
-import { env, isLiveMode } from './env.js';
-import { JobBus, runBuild } from './jobs.js';
+import { env, isLiveMode, useQueue } from './env.js';
+import type { JobChannel, JobEvent } from './jobChannel.js';
+import { runBuild } from './jobs.js';
 import { buildInviteUrl } from './perms.js';
-import { InMemoryRepo, type Repo } from './repo.js';
+import type { Repo } from './repo.js';
+import { getQueue, makeJobChannel, makeRepo } from './runtime.js';
 
 export interface BuildServerOptions {
   repo?: Repo;
+  channel?: JobChannel;
 }
 
 export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
-  const repo = opts.repo ?? new InMemoryRepo();
-  const bus = new JobBus();
+  const repo = opts.repo ?? makeRepo();
+  const channel: JobChannel = opts.channel ?? makeJobChannel();
   const store = new DiskAssetStore(env.storageDiskPath);
   const app = Fastify({ logger: false });
 
@@ -53,7 +55,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
 
   // ── snapshots ──
   app.get('/snapshots', { preHandler: requireAuth }, async () =>
-    repo.listSnapshots().map((s) => ({
+    (await repo.listSnapshots()).map((s) => ({
       id: s.id,
       name: s.name,
       version: s.version,
@@ -71,15 +73,15 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   );
 
   app.get('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
-    const rec = repo.getSnapshot((req.params as { id: string }).id);
+    const rec = await repo.getSnapshot((req.params as { id: string }).id);
     if (!rec) return reply.code(404).send({ error: 'not found' });
     return rec;
   });
 
   app.get('/snapshots/:id/diff', { preHandler: requireAuth }, async (req, reply) => {
-    const a = repo.getSnapshot((req.params as { id: string }).id);
+    const a = await repo.getSnapshot((req.params as { id: string }).id);
     const against = (req.query as { against?: string }).against;
-    const b = against ? repo.getSnapshot(against) : undefined;
+    const b = against ? await repo.getSnapshot(against) : undefined;
     if (!a || !b) return reply.code(404).send({ error: 'snapshot(s) not found' });
     return diffSnapshots(b.snapshot, a.snapshot);
   });
@@ -97,8 +99,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         const source = mockGuildFromSnapshot(makeSampleSnapshot());
         snapshot = await captureSnapshot(source, { ownerNote: 'demo capture' });
       }
-      const existing = repo.listSnapshots().filter((s) => s.sourceGuildId === snapshot.source.guildId);
-      const rec = repo.addSnapshot({
+      const existing = (await repo.listSnapshots()).filter((s) => s.sourceGuildId === snapshot.source.guildId);
+      const rec = await repo.addSnapshot({
         name: body.name ?? `${snapshot.guild.name} (v${existing.length + 1})`,
         version: existing.length + 1,
         sourceGuildId: snapshot.source.guildId,
@@ -130,7 +132,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // ── rebrand preview ──
   app.post('/rebrand/preview', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as { snapshotId?: string; config?: unknown };
-    const rec = body.snapshotId ? repo.getSnapshot(body.snapshotId) : undefined;
+    const rec = body.snapshotId ? await repo.getSnapshot(body.snapshotId) : undefined;
     if (!rec) return reply.code(404).send({ error: 'snapshot not found' });
     const parsed = RebrandConfig.safeParse(body.config);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid config', detail: parsed.error.flatten() });
@@ -141,30 +143,58 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // ── jobs ──
   app.post('/jobs', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as { snapshotId?: string; clientId?: string; config?: unknown; dryRun?: boolean };
-    const rec = body.snapshotId ? repo.getSnapshot(body.snapshotId) : undefined;
+    const rec = body.snapshotId ? await repo.getSnapshot(body.snapshotId) : undefined;
     if (!rec) return reply.code(404).send({ error: 'snapshot not found' });
     const parsed = RebrandConfig.safeParse(body.config);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid config', detail: parsed.error.flatten() });
 
-    const job = repo.addJob({
+    // Job.clientId is a real DB relation — only link a client that actually exists (the rebrand
+    // config's logical clientId lives in rebrandConfig, not here). Unknown/absent → null.
+    const clientId = body.clientId && (await repo.getClient(body.clientId)) ? body.clientId : null;
+
+    const job = await repo.addJob({
       kind: 'rebuild',
       status: 'queued',
       snapshotId: rec.id,
-      clientId: body.clientId ?? parsed.data.clientId ?? null,
+      clientId,
       targetGuildId: null,
       dryRun: body.dryRun ?? false,
+      rebrandConfig: parsed.data,
       progress: 0,
       manifest: null,
       report: null,
       error: null,
     });
-    // Run asynchronously; logs stream over SSE.
-    void runBuild(repo, bus, { jobId: job.id, snapshot: rec.snapshot, config: parsed.data, dryRun: job.dryRun });
+
+    if (useQueue()) {
+      // Cross-process: enqueue to BullMQ; the worker executes and writes results to Postgres.
+      // jobId === Postgres id === log channel, so a duplicate add is idempotent. The content step is
+      // not yet reconciled, so a real LIVE build runs with attempts:1 to avoid duplicate webhook posts.
+      const live = !job.dryRun && job.targetGuildId !== null;
+      const data: BuildJobData = {
+        jobId: job.id,
+        snapshot: rec.snapshot,
+        config: parsed.data,
+        dryRun: job.dryRun,
+        targetGuildId: job.targetGuildId,
+        contentIdentity: 'server',
+      };
+      await getQueue().add('rebuild', data, {
+        jobId: job.id,
+        attempts: live ? 1 : 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: { age: 86400 },
+        removeOnFail: false,
+      });
+    } else {
+      // In-process demo path; logs stream over the in-memory channel.
+      void runBuild(repo, channel, { jobId: job.id, snapshot: rec.snapshot, config: parsed.data, dryRun: job.dryRun });
+    }
     return { id: job.id, status: job.status };
   });
 
   app.get('/jobs', { preHandler: requireAuth }, async () =>
-    repo.listJobs().map((j) => ({
+    (await repo.listJobs()).map((j) => ({
       id: j.id,
       kind: j.kind,
       status: j.status,
@@ -177,14 +207,16 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   );
 
   app.get('/jobs/:id', { preHandler: requireAuth }, async (req, reply) => {
-    const j = repo.getJob((req.params as { id: string }).id);
+    const j = await repo.getJob((req.params as { id: string }).id);
     if (!j) return reply.code(404).send({ error: 'not found' });
     return j;
   });
 
-  // SSE live logs
+  // SSE live logs — works identically over the in-memory or Redis channel.
   app.get('/jobs/:id/logs', { preHandler: requireAuth }, async (req, reply) => {
     const jobId = (req.params as { id: string }).id;
+    // Take over the raw socket — Fastify must not also try to send/serialize a response.
+    reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -192,13 +224,48 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       // raw responses bypass the CORS plugin — set the header so the browser can read the stream.
       'Access-Control-Allow-Origin': req.headers.origin ?? env.webOrigin,
     });
-    const send = (ev: unknown) => reply.raw.write(`data: ${JSON.stringify(ev)}\n\n`);
-    for (const ev of bus.replay(jobId)) send(ev);
-    const unsub = bus.subscribe(jobId, (ev) => {
-      send(ev);
-      if (ev.type === 'done' || ev.type === 'error') reply.raw.end();
+
+    let closed = false;
+    const sent = new Set<number>(); // seq dedup for the replay↔live overlap
+    const end = () => {
+      if (!closed) {
+        closed = true;
+        reply.raw.end();
+      }
+    };
+    const send = (ev: JobEvent) => {
+      if (closed) return;
+      if (ev.seq !== undefined) {
+        if (sent.has(ev.seq)) return;
+        sent.add(ev.seq);
+      }
+      reply.raw.write(`data: ${JSON.stringify(ev)}\n\n`);
+      if (ev.type === 'done' || ev.type === 'error') end();
+    };
+
+    // Terminal short-circuit: if the job already finished (e.g. reconnect after the log TTL expired),
+    // emit a synthetic terminal event so the client never hangs waiting for a 'done' that won't come.
+    const existing = await repo.getJob(jobId);
+    if (existing && (existing.status === 'completed' || existing.status === 'failed')) {
+      for (const ev of await channel.replay(jobId)) send(ev);
+      if (!closed) {
+        send(
+          existing.status === 'completed'
+            ? { type: 'done', message: 'Build already complete.' }
+            : { type: 'error', message: existing.error ?? 'Build failed.' },
+        );
+      }
+      return;
+    }
+
+    // Subscribe FIRST, then replay — so an event landing in the gap is delivered live (and deduped
+    // by seq), never lost. Gap-free + duplicate-free.
+    const unsub = await channel.subscribe(jobId, send);
+    for (const ev of await channel.replay(jobId)) send(ev);
+    req.raw.on('close', () => {
+      unsub();
+      end();
     });
-    req.raw.on('close', unsub);
   });
 
   // ── invite-link generator ──

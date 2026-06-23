@@ -11,7 +11,15 @@ export const env = {
   discordApplicationId: process.env.DISCORD_APPLICATION_ID ?? '',
   storageDiskPath: process.env.STORAGE_DISK_PATH ?? './storage',
   webOrigin: process.env.WEB_ORIGIN ?? '*',
+  /** When set → PrismaRepo (Postgres). Otherwise the zero-setup in-memory demo store. */
+  databaseUrl: process.env.DATABASE_URL ?? '',
+  /** When set → builds enqueue to BullMQ + logs go cross-process over Redis. Otherwise in-process. */
+  redisUrl: process.env.REDIS_URL ?? '',
 };
 
 /** Live mode requires a real bot token; otherwise the API runs the safe in-memory demo. */
 export const isLiveMode = (): boolean => env.discordBotToken.length > 0;
+
+/** Persistence/queue switches — independent of demo/live Discord mode. */
+export const usePrisma = (): boolean => env.databaseUrl.length > 0;
+export const useQueue = (): boolean => env.redisUrl.length > 0;

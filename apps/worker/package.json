@@ -11,9 +11,11 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@disco/api": "workspace:*",
     "@disco/core": "workspace:*",
     "@disco/schema": "workspace:*",
     "@disco/sdk": "workspace:*",
+    "@prisma/client": "^6.1.0",
     "bullmq": "^5.34.5",
     "ioredis": "^5.4.2"
   }

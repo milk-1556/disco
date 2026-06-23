@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LocalRef, Snowflake } from './primitives.js';
+import { RebrandConfig } from './rebrand.js';
 
 /** The dependency-ordered rebuild steps (§6). Order is significant and enforced by the engine. */
 export const RebuildStep = z.enum([
@@ -49,7 +50,8 @@ export type JobStatus = z.infer<typeof JobStatus>;
 export const ManifestEntry = z.object({
   localRef: LocalRef,
   kind: z.enum(['role', 'category', 'channel', 'emoji', 'sticker', 'automod', 'webhook']),
-  newId: Snowflake.nullable().default(null),
+  /** Created/adopted id — a real Discord snowflake on a live build, or a `dry_*` placeholder in a dry-run. */
+  newId: z.string().nullable().default(null),
   status: z.enum(['pending', 'created', 'updated', 'skipped', 'failed']).default('pending'),
   /** Reason for skip/fail (e.g. "managed role", "member overwrite for nonexistent user"). */
   note: z.string().nullable().default(null),
@@ -71,8 +73,8 @@ export const JobManifest = z.object({
   dryRun: z.boolean().default(false),
   steps: z.array(StepState).default([]),
   entries: z.array(ManifestEntry).default([]),
-  /** localRef -> new Discord id, derived from entries for fast lookup during rewrites. */
-  idMap: z.record(LocalRef, Snowflake).default({}),
+  /** localRef -> new id (snowflake on live, `dry_*` placeholder in a dry-run), for fast rewrite lookup. */
+  idMap: z.record(LocalRef, z.string()).default({}),
 });
 export type JobManifest = z.infer<typeof JobManifest>;
 
@@ -112,6 +114,8 @@ export const Job = z.object({
   clientId: z.string().nullable().default(null),
   targetGuildId: Snowflake.nullable().default(null),
   dryRun: z.boolean().default(false),
+  /** The rebrand config that produced this build — persisted so the worker can resume self-sufficiently. */
+  rebrandConfig: RebrandConfig.optional(),
   progress: z.number().min(0).max(1).default(0),
   manifest: JobManifest.nullable().default(null),
   report: RebuildReport.nullable().default(null),

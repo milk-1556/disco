@@ -21,14 +21,19 @@ What I'm doing meanwhile: continuing with the API, worker, dashboard, infra, and
 ```
 
 ```
-🚧 BLOCKED — `docker` is not installed on this build machine
-What I need: nothing from you yet — just awareness. To run the full stack with one command you'll
-             need Docker Desktop (or colima) on the box that hosts Disco.
-Why: the `docker compose up` boot in the deliverables can't be executed here to prove it end-to-end.
-What I already tried: authored infra/docker-compose.yml so it is config-valid; each service also runs
-     directly via pnpm (api/worker/web on Node, Postgres/Redis are the only true container needs).
-What I'm doing meanwhile: documenting both paths (docker and direct) in the README + HANDOFF, and
-     wiring a tokenless/redisless demo mode so the dashboard boots without any infra.
+🚧 NOTE (not blocking) — `docker` is not installed on this build machine
+What I need: nothing from you — just run ONE command on a box with Docker to boot the whole stack:
+     docker compose -f infra/docker-compose.yml up --build
+Why: I couldn't execute `docker compose up` here to prove the containerized boot end-to-end.
+What I already did INSTEAD: installed native Postgres 16 + Redis via brew and verified the FULL
+     production path locally — API enqueues → BullMQ(Redis) → separate worker process executes via
+     @disco/core → writes results to Postgres(Prisma) → API reads back, with cross-process SSE logs.
+     This is covered by an automated integration test (apps/api test:integration, 3/3 passing against
+     real Postgres+Redis) AND a manual two-process run. So the wiring is proven; only the docker
+     packaging of it is unverified-here.
+What's authored: infra/docker-compose.yml (web/api/worker/postgres/redis + a one-shot `migrate`
+     service the api/worker wait on) + per-service Dockerfiles. Each service also runs directly via
+     pnpm; the tokenless/dbless/redisless demo still boots with zero infra.
 ```
 
 ---

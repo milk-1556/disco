@@ -2,25 +2,26 @@ import { extractBrandTokens, makeSampleSnapshot } from '@disco/core';
 import type { Client, Job, SnapshotRecord } from '@disco/schema';
 
 /**
- * Persistence abstraction. The default is an in-memory store seeded with a sample snapshot + client
- * so the dashboard is useful on first boot with zero setup. A Prisma-backed implementation drops in
- * behind the same interface for production (see infra/ + apps/api/prisma).
+ * Persistence abstraction (async — Prisma-ready). The default is an in-memory store seeded with a
+ * sample snapshot + client so the dashboard is useful on first boot with zero setup. The
+ * Prisma-backed implementation (prismaRepo.ts) drops in behind this same interface for production,
+ * selected by DATABASE_URL.
  */
 export interface Repo {
-  listSnapshots(): SnapshotRecord[];
-  getSnapshot(id: string): SnapshotRecord | undefined;
-  addSnapshot(rec: Omit<SnapshotRecord, 'id'>): SnapshotRecord;
-  listClients(): Client[];
-  getClient(id: string): Client | undefined;
-  addClient(c: Omit<Client, 'id' | 'createdAt'>): Client;
-  listJobs(): Job[];
-  getJob(id: string): Job | undefined;
-  addJob(j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>): Job;
-  updateJob(id: string, patch: Partial<Job>): Job | undefined;
+  listSnapshots(): Promise<SnapshotRecord[]>;
+  getSnapshot(id: string): Promise<SnapshotRecord | undefined>;
+  addSnapshot(rec: Omit<SnapshotRecord, 'id'>): Promise<SnapshotRecord>;
+  listClients(): Promise<Client[]>;
+  getClient(id: string): Promise<Client | undefined>;
+  addClient(c: Omit<Client, 'id' | 'createdAt'>): Promise<Client>;
+  listJobs(): Promise<Job[]>;
+  getJob(id: string): Promise<Job | undefined>;
+  addJob(j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>): Promise<Job>;
+  updateJob(id: string, patch: Partial<Job>): Promise<Job | undefined>;
 }
 
 let seq = 1;
-const id = (p: string) => `${p}_${(seq++).toString(36)}${Date.now().toString(36)}`;
+export const newId = (p: string) => `${p}_${(seq++).toString(36)}${Date.now().toString(36)}`;
 const now = () => new Date().toISOString();
 
 export class InMemoryRepo implements Repo {
@@ -59,42 +60,42 @@ export class InMemoryRepo implements Repo {
     this.clients.set(client.id, client);
   }
 
-  listSnapshots() {
+  async listSnapshots() {
     return [...this.snapshots.values()].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
   }
-  getSnapshot(sid: string) {
+  async getSnapshot(sid: string) {
     return this.snapshots.get(sid);
   }
-  addSnapshot(rec: Omit<SnapshotRecord, 'id'>) {
-    const full: SnapshotRecord = { ...rec, id: id('snap') };
+  async addSnapshot(rec: Omit<SnapshotRecord, 'id'>) {
+    const full: SnapshotRecord = { ...rec, id: newId('snap') };
     this.snapshots.set(full.id, full);
     return full;
   }
 
-  listClients() {
+  async listClients() {
     return [...this.clients.values()];
   }
-  getClient(cid: string) {
+  async getClient(cid: string) {
     return this.clients.get(cid);
   }
-  addClient(c: Omit<Client, 'id' | 'createdAt'>) {
-    const full: Client = { ...c, id: id('client'), createdAt: now() };
+  async addClient(c: Omit<Client, 'id' | 'createdAt'>) {
+    const full: Client = { ...c, id: newId('client'), createdAt: now() };
     this.clients.set(full.id, full);
     return full;
   }
 
-  listJobs() {
+  async listJobs() {
     return [...this.jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
-  getJob(jid: string) {
+  async getJob(jid: string) {
     return this.jobs.get(jid);
   }
-  addJob(j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) {
-    const full: Job = { ...j, id: id('job'), createdAt: now(), updatedAt: now() };
+  async addJob(j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) {
+    const full: Job = { ...j, id: newId('job'), createdAt: now(), updatedAt: now() };
     this.jobs.set(full.id, full);
     return full;
   }
-  updateJob(jid: string, patch: Partial<Job>) {
+  async updateJob(jid: string, patch: Partial<Job>) {
     const j = this.jobs.get(jid);
     if (!j) return undefined;
     const next = { ...j, ...patch, updatedAt: now() };
