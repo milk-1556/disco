@@ -51,10 +51,13 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
       and building twice does not duplicate.
 
 ## Phase 5 — apps/api + apps/worker (Fastify + BullMQ + Prisma)
-- ⏳ U5.1 Prisma schema (snapshots, jobs, clients, manifests, reports, handovers, users).
-- ⏳ U5.2 Auth (JWT + bcrypt operator), REST routes, SSE/WS job-log channel.
-- ⏳ U5.3 BullMQ worker running snapshot/build jobs resumably; live log streaming.
-- ⏳ U5.4 Invite-link/permission-integer generator endpoint.
+- ⏳ U5.1 Prisma schema (snapshots, jobs, clients, manifests, reports, handovers, users) — in-memory Repo
+      behind an interface now (Prisma drops in behind the same `Repo` interface).
+- ✅ U5.2 Auth (JWT + bcrypt operator) + REST routes + SSE job-log channel — BOOTS + HTTP-verified
+      (login, snapshots, diff, capture, rebrand/preview, jobs, report). Runs tokenless in DEMO mode.
+- 🔨 U5.3 Job runner (`runBuild`) is queue-ready and streams logs over SSE; runs in-process now.
+      BullMQ+Redis worker wrapper still to add (calls the same `runBuild`).
+- ✅ U5.4 Invite-link/permission-integer generator (administrator=8 + granular set) — HTTP-verified.
 
 ## Phase 6 — apps/web (premium dashboard, §8)
 - ⏳ U6.1 Vite+React+Tailwind shell, design system (read frontend-design SKILL first).
