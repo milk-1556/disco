@@ -10,3 +10,4 @@ export * from './guild.js';
 export * from './snapshot.js';
 export * from './rebrand.js';
 export * from './job.js';
+export * from './handover.js';

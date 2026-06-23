@@ -473,10 +473,12 @@ export class DiscordGuildClient implements CapturePort, ApplyPort {
     });
   }
 
-  async listExisting(kind: 'role' | 'channel' | 'emoji' | 'sticker' | 'automod'): Promise<Array<{ id: string; name: string }>> {
+  async listExisting(kind: 'role' | 'category' | 'channel' | 'emoji' | 'sticker' | 'automod'): Promise<Array<{ id: string; name: string }>> {
     switch (kind) {
       case 'role': return (await this.listRoles()).map((r) => ({ id: r.id, name: r.name }));
-      case 'channel': return (await this.listChannels()).map((c) => ({ id: c.id, name: c.name }));
+      // Categories (type 4) and channels are distinct keyspaces so reconcile can't cross-adopt.
+      case 'category': return (await this.listChannels()).filter((c) => c.type === 4).map((c) => ({ id: c.id, name: c.name }));
+      case 'channel': return (await this.listChannels()).filter((c) => c.type !== 4).map((c) => ({ id: c.id, name: c.name }));
       case 'emoji': return (await this.listEmojis()).map((e) => ({ id: e.id, name: e.name }));
       case 'sticker': return (await this.listStickers()).map((s) => ({ id: s.id, name: s.name }));
       case 'automod': return (await this.listAutoModRules()).map((a) => ({ id: a.id, name: a.name }));

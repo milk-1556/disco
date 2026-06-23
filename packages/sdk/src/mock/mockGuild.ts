@@ -234,13 +234,11 @@ export class MockGuild implements CapturePort, ApplyPort {
     list.push(structuredClone(message));
     this.posted.set(hook.channelId, list);
   }
-  async listExisting(kind: 'role' | 'channel' | 'emoji' | 'sticker' | 'automod'): Promise<Array<{ id: string; name: string }>> {
-    const src =
-      kind === 'role' ? this.roles
-      : kind === 'channel' ? this.channels
-      : kind === 'emoji' ? this.emojis
-      : kind === 'sticker' ? this.stickers
-      : this.automod;
+  async listExisting(kind: 'role' | 'category' | 'channel' | 'emoji' | 'sticker' | 'automod'): Promise<Array<{ id: string; name: string }>> {
+    // Categories (type 4) and channels are DISTINCT keyspaces so reconcile can't cross-adopt.
+    if (kind === 'category') return [...this.channels.values()].filter((c) => c.type === 4).map((c) => ({ id: c.id, name: c.name }));
+    if (kind === 'channel') return [...this.channels.values()].filter((c) => c.type !== 4).map((c) => ({ id: c.id, name: c.name }));
+    const src = kind === 'role' ? this.roles : kind === 'emoji' ? this.emojis : kind === 'sticker' ? this.stickers : this.automod;
     return [...src.values()].map((o) => ({ id: o.id, name: o.name }));
   }
 }

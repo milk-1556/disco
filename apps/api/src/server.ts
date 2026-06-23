@@ -1,7 +1,8 @@
 import { type BuildJobData, captureSnapshot, makeSampleSnapshot, rebrand } from '@disco/core';
-import { RebrandConfig } from '@disco/schema';
+import { defaultOwnershipSteps, RebrandConfig } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, mockGuildFromSnapshot } from '@disco/sdk';
 import cors from '@fastify/cors';
+import bcrypt from 'bcryptjs';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { signSession, verifyCredentials, verifySession } from './auth.js';
 import { diffSnapshots } from './diff.js';
@@ -9,7 +10,7 @@ import { env, isLiveMode, useQueue } from './env.js';
 import type { JobChannel, JobEvent } from './jobChannel.js';
 import { runBuild } from './jobs.js';
 import { buildInviteUrl } from './perms.js';
-import type { Repo } from './repo.js';
+import type { HandoverPatch, Repo } from './repo.js';
 import { getQueue, makeJobChannel, makeRepo } from './runtime.js';
 
 export interface BuildServerOptions {
@@ -168,9 +169,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
 
     if (useQueue()) {
       // Cross-process: enqueue to BullMQ; the worker executes and writes results to Postgres.
-      // jobId === Postgres id === log channel, so a duplicate add is idempotent. The content step is
-      // not yet reconciled, so a real LIVE build runs with attempts:1 to avoid duplicate webhook posts.
-      const live = !job.dryRun && job.targetGuildId !== null;
+      // jobId === Postgres id === log channel, so a duplicate add is idempotent. Retries are safe to
+      // resume because the whole build — including the content/webhook step — is reconciled and
+      // checkpointed in the manifest, so a retry never duplicates Discord objects or re-posts content.
       const data: BuildJobData = {
         jobId: job.id,
         snapshot: rec.snapshot,
@@ -181,7 +182,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       };
       await getQueue().add('rebuild', data, {
         jobId: job.id,
-        attempts: live ? 1 : 3,
+        attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: { age: 86400 },
         removeOnFail: false,
@@ -226,13 +227,22 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     });
 
     let closed = false;
+    let unsub: (() => void) | undefined;
     const sent = new Set<number>(); // seq dedup for the replay↔live overlap
-    const end = () => {
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      unsub?.();
       if (!closed) {
         closed = true;
         reply.raw.end();
       }
     };
+    // Register teardown BEFORE any await — a client that disconnects during the awaits below would
+    // otherwise emit 'close' before we attach the handler, leaking the Redis subscriber connection.
+    req.raw.on('close', cleanup);
+
     const send = (ev: JobEvent) => {
       if (closed) return;
       if (ev.seq !== undefined) {
@@ -240,32 +250,40 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         sent.add(ev.seq);
       }
       reply.raw.write(`data: ${JSON.stringify(ev)}\n\n`);
-      if (ev.type === 'done' || ev.type === 'error') end();
+      if (ev.type === 'done' || ev.type === 'error') cleanup();
     };
 
-    // Terminal short-circuit: if the job already finished (e.g. reconnect after the log TTL expired),
-    // emit a synthetic terminal event so the client never hangs waiting for a 'done' that won't come.
-    const existing = await repo.getJob(jobId);
-    if (existing && (existing.status === 'completed' || existing.status === 'failed')) {
-      for (const ev of await channel.replay(jobId)) send(ev);
-      if (!closed) {
-        send(
-          existing.status === 'completed'
-            ? { type: 'done', message: 'Build already complete.' }
-            : { type: 'error', message: existing.error ?? 'Build failed.' },
-        );
+    try {
+      // Terminal short-circuit: if the job already finished (e.g. reconnect after the log TTL expired),
+      // emit a synthetic terminal event so the client never hangs waiting for a 'done' that won't come.
+      const existing = await repo.getJob(jobId);
+      if (existing && (existing.status === 'completed' || existing.status === 'failed')) {
+        for (const ev of await channel.replay(jobId)) send(ev);
+        if (!closed) {
+          send(
+            existing.status === 'completed'
+              ? { type: 'done', message: 'Build already complete.' }
+              : { type: 'error', message: existing.error ?? 'Build failed.' },
+          );
+        }
+        cleanup();
+        return;
       }
-      return;
-    }
 
-    // Subscribe FIRST, then replay — so an event landing in the gap is delivered live (and deduped
-    // by seq), never lost. Gap-free + duplicate-free.
-    const unsub = await channel.subscribe(jobId, send);
-    for (const ev of await channel.replay(jobId)) send(ev);
-    req.raw.on('close', () => {
-      unsub();
-      end();
-    });
+      // Subscribe FIRST, then replay — so an event landing in the gap is delivered live (and deduped
+      // by seq), never lost. Gap-free + duplicate-free.
+      unsub = await channel.subscribe(jobId, send);
+      if (cleaned) {
+        unsub(); // client disconnected during subscribe — tear down immediately
+        return;
+      }
+      for (const ev of await channel.replay(jobId)) send(ev);
+    } catch (err) {
+      // Post-hijack rejection: Fastify can't send an error response on a hijacked reply, so surface it
+      // as a synthetic SSE error and close the socket ourselves.
+      send({ type: 'error', message: err instanceof Error ? err.message : 'log stream error' });
+      cleanup();
+    }
   });
 
   // ── invite-link generator ──
@@ -274,6 +292,68 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const applicationId = q.applicationId || env.discordApplicationId;
     if (!applicationId) return reply.code(400).send({ error: 'applicationId required (set DISCORD_APPLICATION_ID or pass ?applicationId=)' });
     return buildInviteUrl({ applicationId, mode: q.mode ?? 'administrator', guildId: q.guildId });
+  });
+
+  // ── handover (delivery) ──
+  // Create-or-fetch a handover for a completed job (idempotent per job).
+  app.post('/handovers', { preHandler: requireAuth }, async (req, reply) => {
+    const body = (req.body ?? {}) as { jobId?: string };
+    const job = body.jobId ? await repo.getJob(body.jobId) : undefined;
+    if (!job) return reply.code(404).send({ error: 'job not found' });
+    const existing = await repo.getHandoverByJob(job.id);
+    if (existing) return existing;
+    return repo.addHandover({
+      jobId: job.id,
+      clientId: job.clientId,
+      state: 'draft',
+      ownershipSteps: defaultOwnershipSteps(),
+      upsellStatus: 'none',
+    });
+  });
+
+  // Operator view: the handover + its job (with report = included scope + bot checklist + manual steps).
+  app.get('/handovers/:id', { preHandler: requireAuth }, async (req, reply) => {
+    const h = await repo.getHandover((req.params as { id: string }).id);
+    if (!h) return reply.code(404).send({ error: 'not found' });
+    const job = await repo.getJob(h.jobId);
+    return { handover: h, job };
+  });
+
+  app.patch('/handovers/:id', { preHandler: requireAuth }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const b = (req.body ?? {}) as { state?: HandoverPatch['state']; ownershipSteps?: HandoverPatch['ownershipSteps']; upsellStatus?: HandoverPatch['upsellStatus']; password?: string | null };
+    const patch: HandoverPatch = {};
+    if (b.state !== undefined) patch.state = b.state;
+    if (b.ownershipSteps !== undefined) patch.ownershipSteps = b.ownershipSteps;
+    if (b.upsellStatus !== undefined) patch.upsellStatus = b.upsellStatus;
+    if (b.password !== undefined) patch.passwordHash = b.password ? bcrypt.hashSync(b.password, 10) : null;
+    const h = await repo.updateHandover(id, patch);
+    if (!h) return reply.code(404).send({ error: 'not found' });
+    return h;
+  });
+
+  // Public, shareable, read-only delivery page (optionally password-gated). No auth.
+  app.get('/h/:id', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const h = await repo.getHandover(id);
+    if (!h) return reply.code(404).send({ error: 'not found' });
+    if (h.hasPassword) {
+      const pw = (req.query as { pw?: string }).pw ?? '';
+      const hash = await repo.getHandoverPasswordHash(id);
+      if (!hash || !bcrypt.compareSync(pw, hash)) return reply.code(401).send({ error: 'password required', needsPassword: true });
+    }
+    const job = await repo.getJob(h.jobId);
+    const snap = job?.snapshotId ? await repo.getSnapshot(job.snapshotId) : undefined;
+    return {
+      serverName: job?.rebrandConfig?.serverName ?? snap?.snapshot.guild.name ?? null,
+      sourceName: snap?.name ?? null,
+      state: h.state,
+      scope: job?.report?.counts ?? {},
+      created: job?.report?.created ?? [],
+      botChecklist: job?.report?.botChecklist ?? [],
+      manualSteps: job?.report?.manualSteps ?? [],
+      ownershipSteps: h.ownershipSteps,
+    };
   });
 
   return app;

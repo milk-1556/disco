@@ -74,8 +74,8 @@ model Handover {
   id              String   @id @default(cuid())
   job             Job      @relation(fields: [jobId], references: [id])
   jobId           String   @unique
-  client          Client   @relation(fields: [clientId], references: [id])
-  clientId        String
+  client          Client?  @relation(fields: [clientId], references: [id])
+  clientId        String?
   /// hash of an optional password protecting the public handover page
   passwordHash    String?
   state           String   @default("draft") // draft | ready | handed_over

@@ -1,14 +1,16 @@
 import {
   type Client,
+  type Handover,
   type Job,
   JobManifest,
+  type OwnershipStep,
   RebrandConfig,
   RebuildReport,
   Snapshot,
   type SnapshotRecord,
 } from '@disco/schema';
 import { Prisma, PrismaClient } from '@prisma/client';
-import type { Repo } from './repo.js';
+import type { HandoverCreate, HandoverPatch, Repo } from './repo.js';
 
 let _prisma: PrismaClient | undefined;
 /** Memoized singleton PrismaClient (one pool per process). */
@@ -18,6 +20,12 @@ export function getPrisma(): PrismaClient {
 
 const iso = (d: Date) => d.toISOString();
 const asJson = (v: unknown): Prisma.InputJsonValue => v as Prisma.InputJsonValue;
+/** Tolerant read: parse a Json column through its zod schema, returning null on any mismatch. */
+function safe<T>(schema: { safeParse(v: unknown): { success: true; data: T } | { success: false } }, v: unknown): T | null {
+  if (v === null || v === undefined) return null;
+  const r = schema.safeParse(v);
+  return r.success ? r.data : null;
+}
 /** Nullable Json column setter: JS null must become a DB NULL, not a JSON `null` literal. */
 const nullableJson = (v: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull =>
   v === null || v === undefined ? Prisma.DbNull : (v as Prisma.InputJsonValue);
@@ -116,10 +124,11 @@ export class PrismaRepo implements Repo {
     clientId: r.clientId,
     targetGuildId: r.targetGuildId,
     dryRun: r.dryRun,
-    rebrandConfig: r.rebrandConfig ? RebrandConfig.parse(r.rebrandConfig) : undefined,
+    // safeParse + fallback: a single legacy/partial Json row must not 500 a whole listJobs().
+    rebrandConfig: safe(RebrandConfig, r.rebrandConfig) ?? undefined,
     progress: r.progress,
-    manifest: r.manifest ? JobManifest.parse(r.manifest) : null,
-    report: r.report ? RebuildReport.parse(r.report) : null,
+    manifest: safe(JobManifest, r.manifest) ?? null,
+    report: safe(RebuildReport, r.report) ?? null,
     error: r.error,
     createdAt: iso(r.createdAt),
     updatedAt: iso(r.updatedAt),
@@ -166,5 +175,59 @@ export class PrismaRepo implements Repo {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') return undefined;
       throw err;
     }
+  }
+
+  // ── handovers ──
+  private toHandover = (r: {
+    id: string; jobId: string; clientId: string | null; passwordHash: string | null; state: string;
+    ownershipSteps: Prisma.JsonValue; upsellStatus: string; createdAt: Date;
+  }): Handover => ({
+    id: r.id,
+    jobId: r.jobId,
+    clientId: r.clientId,
+    state: r.state as Handover['state'],
+    hasPassword: !!r.passwordHash,
+    ownershipSteps: (r.ownershipSteps as OwnershipStep[]) ?? [],
+    upsellStatus: r.upsellStatus as Handover['upsellStatus'],
+    createdAt: iso(r.createdAt),
+  });
+
+  async getHandover(id: string) {
+    const r = await this.db.handover.findUnique({ where: { id } });
+    return r ? this.toHandover(r) : undefined;
+  }
+  async getHandoverByJob(jobId: string) {
+    const r = await this.db.handover.findUnique({ where: { jobId } });
+    return r ? this.toHandover(r) : undefined;
+  }
+  async addHandover(h: HandoverCreate) {
+    const r = await this.db.handover.create({
+      data: {
+        jobId: h.jobId,
+        clientId: h.clientId,
+        state: h.state,
+        passwordHash: h.passwordHash ?? null,
+        ownershipSteps: asJson(h.ownershipSteps),
+        upsellStatus: h.upsellStatus,
+      },
+    });
+    return this.toHandover(r);
+  }
+  async updateHandover(id: string, patch: HandoverPatch) {
+    const data: Prisma.HandoverUpdateInput = {};
+    if (patch.state !== undefined) data.state = patch.state;
+    if (patch.upsellStatus !== undefined) data.upsellStatus = patch.upsellStatus;
+    if (patch.ownershipSteps !== undefined) data.ownershipSteps = asJson(patch.ownershipSteps);
+    if (patch.passwordHash !== undefined) data.passwordHash = patch.passwordHash;
+    try {
+      return this.toHandover(await this.db.handover.update({ where: { id }, data }));
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') return undefined;
+      throw err;
+    }
+  }
+  async getHandoverPasswordHash(id: string) {
+    const r = await this.db.handover.findUnique({ where: { id }, select: { passwordHash: true } });
+    return r ? r.passwordHash : undefined;
   }
 }

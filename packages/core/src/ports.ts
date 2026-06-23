@@ -236,6 +236,10 @@ export interface ApplyPort {
   /** Create a webhook in a channel for content copy; returns its id+token. */
   createWebhook(channelId: string, name: string): Promise<{ id: string; token: string }>;
   executeWebhook(webhook: { id: string; token: string }, message: RawMessage): Promise<void>;
-  /** Existing target objects of a kind, by id+name — drives idempotent reconciliation. */
-  listExisting(kind: 'role' | 'channel' | 'emoji' | 'sticker' | 'automod'): Promise<Array<{ id: string; name: string }>>;
+  /**
+   * Existing target objects of a kind, by id+name — drives idempotent reconciliation. `category` and
+   * `channel` are DISTINCT keyspaces (on Discord a category is a channel of type 4, so they must not
+   * share a name-keyspace or a category could adopt a channel's id by name).
+   */
+  listExisting(kind: 'role' | 'category' | 'channel' | 'emoji' | 'sticker' | 'automod'): Promise<Array<{ id: string; name: string }>>;
 }

@@ -97,7 +97,7 @@ export async function rebuildGuild(
     desired: DesiredObject[],
     create: (d: DesiredObject) => Promise<string>,
   ) => {
-    const existing = dry ? [] : await port.listExisting(kind === 'webhook' ? 'channel' : kind as never).catch(() => []);
+    const existing = dry ? [] : await port.listExisting(kind === 'webhook' ? 'channel' : kind).catch(() => []);
     const existingByKey = new Map(existing.map((e) => [`${kind}:${e.name.toLowerCase()}`, e.id]));
     const { items, entries: planned } = reconcile(desired, { entries }, existingByKey);
     // merge planned entries into the running entry list
@@ -192,7 +192,7 @@ export async function rebuildGuild(
       }
 
       case 'categories': {
-        await runReconciled('channel', snap.categories.map((c) => ({ localRef: c.localRef, kind: 'channel', name: c.name })), async (d) => {
+        await runReconciled('category', snap.categories.map((c) => ({ localRef: c.localRef, kind: 'category', name: c.name })), async (d) => {
           const c = snap.categories.find((x) => x.localRef === d.localRef)!;
           return port.createChannel({ type: 4, name: c.name, parentId: null, position: c.position });
         });
@@ -302,6 +302,8 @@ export async function rebuildGuild(
       }
 
       case 'content': {
+        // Reconciled + resumable so a crash mid-content (or a stalled re-delivery, which BullMQ does
+        // regardless of `attempts`) never re-creates the webhook or re-posts already-sent messages.
         if (!dry) {
           const map = idMap();
           for (const cc of snap.content) {
@@ -309,8 +311,28 @@ export async function rebuildGuild(
             if (!ch?.copyContent) continue;
             const channelId = map[cc.channelRef];
             if (!channelId) continue;
-            const hook = await port.createWebhook(channelId, opts.serverIdentityName ?? 'Disco');
-            for (const m of cc.messages) {
+
+            // Adopt the webhook from the manifest if a prior attempt created it; else create + record it.
+            const hookRef = `webhook_${cc.channelRef}`;
+            const priorHook = entries.find((e) => e.localRef === hookRef && e.newId);
+            let hook: { id: string; token: string };
+            if (priorHook?.newId) {
+              const sep = priorHook.newId.indexOf(':');
+              hook = { id: priorHook.newId.slice(0, sep), token: priorHook.newId.slice(sep + 1) };
+            } else {
+              hook = await port.createWebhook(channelId, opts.serverIdentityName ?? 'Disco');
+              entries = [
+                ...entries.filter((e) => e.localRef !== hookRef),
+                { localRef: hookRef, kind: 'webhook', newId: `${hook.id}:${hook.token}`, status: 'created', note: null },
+              ];
+              checkpoint();
+            }
+
+            // Resume from the count of already-posted messages (persisted in idMap under a content_ key).
+            const postedKey = `content_${cc.channelRef}`;
+            const already = Number(manifest.idMap[postedKey] ?? '0');
+            for (let i = already; i < cc.messages.length; i++) {
+              const m = cc.messages[i]!;
               const identityName = opts.contentIdentity === 'server' ? (opts.serverIdentityName ?? 'Server') : m.authorName;
               const msg: RawMessage = {
                 id: '',
@@ -333,6 +355,9 @@ export async function rebuildGuild(
                 createdAt: m.createdAt,
               };
               await port.executeWebhook(hook, msg);
+              // Checkpoint the posted count BEFORE the next post, so a crash resumes at i+1.
+              manifest.idMap[postedKey] = String(i + 1);
+              checkpoint();
             }
           }
         }

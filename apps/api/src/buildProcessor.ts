@@ -56,8 +56,12 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
     },
   });
 
-  // Enqueued last → applied last (chain), and awaited so the row is terminal before we publish 'done'.
-  await persist({ status: 'completed', progress: 1, manifest, report });
+  // Drain the (swallowed) checkpoint writes to preserve ordering, THEN write the terminal row WITHOUT
+  // swallowing — 'done' must be gated on a confirmed terminal write. If this throws (transient PG
+  // failure), it propagates: BullMQ retries (resuming idempotently from the checkpointed manifest) or
+  // the worker's failed-handler records status:'failed'. Never publish a false 'done'.
+  await chain;
+  await repo.updateJob(jobId, { status: 'completed', progress: 1, manifest, report });
   await Promise.resolve(
     channel.publish(jobId, {
       type: 'done',

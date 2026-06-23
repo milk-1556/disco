@@ -1,5 +1,21 @@
 import { extractBrandTokens, makeSampleSnapshot } from '@disco/core';
-import type { Client, Job, SnapshotRecord } from '@disco/schema';
+import type { Client, Handover, Job, SnapshotRecord } from '@disco/schema';
+
+/** Creation/patch shapes for handovers (passwordHash is write-only; never on the domain type). */
+export interface HandoverCreate {
+  jobId: string;
+  clientId: string | null;
+  state: Handover['state'];
+  ownershipSteps: Handover['ownershipSteps'];
+  upsellStatus: Handover['upsellStatus'];
+  passwordHash?: string | null;
+}
+export type HandoverPatch = Partial<{
+  state: Handover['state'];
+  ownershipSteps: Handover['ownershipSteps'];
+  upsellStatus: Handover['upsellStatus'];
+  passwordHash: string | null;
+}>;
 
 /**
  * Persistence abstraction (async — Prisma-ready). The default is an in-memory store seeded with a
@@ -18,6 +34,12 @@ export interface Repo {
   getJob(id: string): Promise<Job | undefined>;
   addJob(j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>): Promise<Job>;
   updateJob(id: string, patch: Partial<Job>): Promise<Job | undefined>;
+  getHandover(id: string): Promise<Handover | undefined>;
+  getHandoverByJob(jobId: string): Promise<Handover | undefined>;
+  addHandover(h: HandoverCreate): Promise<Handover>;
+  updateHandover(id: string, patch: HandoverPatch): Promise<Handover | undefined>;
+  /** The stored password hash for a handover, for public-link verification (never on the domain type). */
+  getHandoverPasswordHash(id: string): Promise<string | null | undefined>;
 }
 
 let seq = 1;
@@ -101,5 +123,49 @@ export class InMemoryRepo implements Repo {
     const next = { ...j, ...patch, updatedAt: now() };
     this.jobs.set(jid, next);
     return next;
+  }
+
+  private handovers = new Map<string, Handover & { passwordHash: string | null }>();
+  async getHandover(id: string) {
+    const h = this.handovers.get(id);
+    return h ? this.publicHandover(h) : undefined;
+  }
+  async getHandoverByJob(jobId: string) {
+    const h = [...this.handovers.values()].find((x) => x.jobId === jobId);
+    return h ? this.publicHandover(h) : undefined;
+  }
+  async addHandover(h: HandoverCreate) {
+    const full: Handover & { passwordHash: string | null } = {
+      id: newId('handover'),
+      jobId: h.jobId,
+      clientId: h.clientId,
+      state: h.state,
+      hasPassword: !!h.passwordHash,
+      ownershipSteps: h.ownershipSteps,
+      upsellStatus: h.upsellStatus,
+      createdAt: now(),
+      passwordHash: h.passwordHash ?? null,
+    };
+    this.handovers.set(full.id, full);
+    return this.publicHandover(full);
+  }
+  async updateHandover(id: string, patch: HandoverPatch) {
+    const h = this.handovers.get(id);
+    if (!h) return undefined;
+    const next = {
+      ...h,
+      ...patch,
+      passwordHash: patch.passwordHash !== undefined ? patch.passwordHash : h.passwordHash,
+      hasPassword: patch.passwordHash !== undefined ? !!patch.passwordHash : h.hasPassword,
+    };
+    this.handovers.set(id, next);
+    return this.publicHandover(next);
+  }
+  async getHandoverPasswordHash(id: string) {
+    return this.handovers.get(id)?.passwordHash;
+  }
+  private publicHandover(h: Handover & { passwordHash: string | null }): Handover {
+    const { passwordHash: _ph, ...rest } = h;
+    return rest;
   }
 }
