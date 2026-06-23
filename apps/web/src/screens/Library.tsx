@@ -64,11 +64,42 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
     }
   }
 
+  // Two-step import: parse + PREVIEW the bundle structure, then confirm → import (→ optionally build).
+  const [pending, setPending] = useState<{ raw: unknown; name: string; counts: Record<string, number>; hasConfig: boolean } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
   async function importFile(file: File) {
     setErr(null);
     try {
-      await api.importBundle(JSON.parse(await file.text()));
+      const raw = JSON.parse(await file.text());
+      const snap = raw?.snapshot;
+      if (!raw?.discobundle || !snap) throw new Error('Not a .discobundle file.');
+      setPending({
+        raw,
+        name: raw.name || snap.guild?.name || 'imported',
+        counts: {
+          roles: snap.roles?.length ?? 0,
+          channels: snap.channels?.length ?? 0,
+          categories: snap.categories?.length ?? 0,
+          emojis: snap.emojis?.length ?? 0,
+          automod: snap.automod?.length ?? 0,
+          bots: snap.bots?.length ?? 0,
+        },
+        hasConfig: !!raw.config,
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function confirmImport(thenBuild: boolean) {
+    if (!pending) return;
+    setErr(null);
+    try {
+      const r = await api.importBundle(pending.raw);
+      setPending(null);
       await load();
+      if (thenBuild) onBuild(r.id);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -92,7 +123,49 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
   }, [snaps, search, tag, sort]);
 
   return (
-    <div className="p-8 max-w-6xl rise">
+    <div
+      className="p-8 max-w-6xl rise"
+      style={dragging ? { outline: '2px dashed var(--color-source)', outlineOffset: -8, borderRadius: 16 } : undefined}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        const f = e.dataTransfer.files?.[0];
+        if (f) void importFile(f);
+      }}
+    >
+      {pending && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(8,7,12,0.7)', backdropFilter: 'blur(4px)', zIndex: 50, display: 'grid', placeItems: 'center', padding: 24 }}
+          onClick={() => setPending(null)}
+        >
+          <div className="panel p-6 rise" style={{ width: '100%', maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="eyebrow mb-2">import bundle</div>
+            <h2 className="text-lg mb-1">{pending.name}</h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+              A portable, checksum-verified snapshot{pending.hasConfig ? ' (with a saved rebrand config)' : ''}. Review before importing.
+            </p>
+            <div className="grid grid-cols-3 gap-2 mb-5">
+              {Object.entries(pending.counts).map(([k, v]) => (
+                <div key={k} className="panel-soft px-2.5 py-2">
+                  <div className="text-lg leading-none" style={{ fontFamily: 'var(--font-display)' }}>{v}</div>
+                  <div className="text-[0.62rem] mono mt-1" style={{ color: 'var(--color-faint)' }}>{k}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button className="btn btn-primary flex-1 justify-center" onClick={() => confirmImport(true)}>Import & build →</button>
+              <button className="btn" onClick={() => confirmImport(false)}>Import</button>
+              <button className="btn btn-ghost" onClick={() => setPending(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="flex items-end justify-between mb-5 gap-4 flex-wrap">
         <div>
           <div className="eyebrow mb-2">snapshot library</div>
