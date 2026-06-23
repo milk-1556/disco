@@ -12,24 +12,24 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
 - ✅ U0.1 Toolchain check (node20, pnpm via corepack, git, gh authed as milk-1556). docker absent — noted.
 - ✅ U0.2 Repo cloned, git identity set.
 - ✅ U0.3 Root workspace: package.json, pnpm-workspace, turbo.json, tsconfig.base, .gitignore, .npmrc, .env.example, prettier.
-- 🔨 U0.4 README skeleton + "What Disco cannot do and why".
+- ✅ U0.4 README skeleton + "What Disco cannot do and why".
 
-## Phase 1 — `@disco/schema` (the spine, §3)  ← everything depends on this
-- 🔨 U1.1 Primitives: localRef, permission bitfield, color, snowflake, asset key, url, hex.
-- 🔨 U1.2 Roles, channels (text/voice/forum/announcement/stage/media + overwrites + forum tags), categories.
-- 🔨 U1.3 Guild settings, welcome screen, emojis, stickers, automod, detected bots, channel content.
-- 🔨 U1.4 Brand tokens. Top-level Snapshot + schemaVersion.
-- ⏳ U1.5 RebrandConfig schema (§4).
-- ⏳ U1.6 Job + JobManifest + RebuildReport schemas (§6/§7).
-- 🔨 U1.7 Unit tests: parse/round-trip a representative snapshot fixture; reject malformed.
+## Phase 1 — `@disco/schema` (the spine, §3)  ← everything depends on this   ✅ DONE (typechecks, 4 tests)
+- ✅ U1.1 Primitives: localRef, permission bitfield, color, snowflake, asset key, url, hex.
+- ✅ U1.2 Roles, channels (text/voice/forum/announcement/stage/media + overwrites + forum tags), categories.
+- ✅ U1.3 Guild settings, welcome screen, emojis, stickers, automod, detected bots, channel content.
+- ✅ U1.4 Brand tokens. Top-level Snapshot + schemaVersion.
+- ✅ U1.5 RebrandConfig schema (§4).
+- ✅ U1.6 Job + JobManifest + RebuildReport schemas (§6/§7).
+- ✅ U1.7 Unit tests: parse/round-trip a representative snapshot fixture; reject malformed.
 
-## Phase 2 — `@disco/core` pure engines (§4, §5, §6 logic — no Discord I/O)
-- 🔨 U2.1 Rebrand transform `Snapshot + RebrandConfig → RebrandedSnapshot` (deterministic, idempotent, reversible).
-- ⏳ U2.2 Brand-token auto-extraction (proper nouns, hex colors, urls).
-- ⏳ U2.3 Channel content classification heuristics (system_content vs member_chat).
-- ⏳ U2.4 Manifest reconciliation (idempotency: build twice → no duplicates) — pure planner over manifest state.
-- ⏳ U2.5 Rebuild **plan** ordering (dependency-ordered step list + dry-run report), Discord-free.
-- 🔨 U2.6 Golden-file tests for rebrand; idempotency tests for manifest; classification tests.
+## Phase 2 — `@disco/core` pure engines (§4, §5, §6 logic — no Discord I/O)   ✅ DONE (typechecks, 22 tests)
+- ✅ U2.1 Rebrand transform `Snapshot + RebrandConfig → RebrandedSnapshot` (deterministic, idempotent, reversible).
+- ✅ U2.2 Brand-token auto-extraction (proper nouns, hex colors, urls).
+- ✅ U2.3 Channel content classification heuristics (system_content vs member_chat).
+- ✅ U2.4 Manifest reconciliation (idempotency: build twice → no duplicates) — pure planner over manifest state.
+- ✅ U2.5 Rebuild **plan** ordering (dependency-ordered step list + dry-run report), Discord-free.
+- ✅ U2.6 Golden-file tests for rebrand; idempotency tests for manifest; classification tests.
 
 ## Phase 3 — `@disco/sdk` (typed Discord wrapper, discord.js v14)
 - ⏳ U3.1 REST/gateway client wrapper, intents, rate-limit aware queue surface.

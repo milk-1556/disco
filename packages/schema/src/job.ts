@@ -62,6 +62,7 @@ export const StepState = z.object({
   startedAt: z.string().nullable().default(null),
   finishedAt: z.string().nullable().default(null),
 });
+export type StepState = z.infer<typeof StepState>;
 
 /** Persisted per-job progress that makes builds resumable (§6). */
 export const JobManifest = z.object({

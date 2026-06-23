@@ -30,6 +30,15 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.43)
 
+  packages/core:
+    dependencies:
+      '@disco/schema':
+        specifier: workspace:*
+        version: link:../schema
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
   packages/schema:
     dependencies:
       zod:
