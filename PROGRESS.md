@@ -32,16 +32,22 @@ Living task list. Updated every cycle. Legend: ✅ done & verified · 🔨 in pr
 - ✅ U2.6 Golden-file tests for rebrand; idempotency tests for manifest; classification tests.
 
 ## Phase 3 — `@disco/sdk` (typed Discord wrapper, discord.js v14)
-- ⏳ U3.1 REST/gateway client wrapper, intents, rate-limit aware queue surface.
-- ⏳ U3.2 Capture adapters (guild→snapshot reads) behind an interface, with a **MockGuild** impl.
-- ⏳ U3.3 Apply adapters (snapshot→guild writes) behind an interface, with a **MockGuild** impl.
-- ⏳ U3.4 Bot detection + readable-trace scraping.
-- ⏳ U3.5 Webhook content re-post (system channels only).
+- ⏳ U3.1 Real discord.js v14 REST/gateway client implementing CapturePort+ApplyPort (LIVE-GATED: needs a token).
+- ✅ U3.2 Capture port + **MockGuild** read impl (in-memory, structuredClone reads).
+- ✅ U3.3 Apply port + **MockGuild** write impl (create/edit/reorder/overwrites/webhook/listExisting).
+- ✅ U3.4 Bot detection + readable-trace scraping (vendor recognition by app-id/username).
+- ✅ U3.5 Webhook content re-post (system channels only; preserve-author OR generic-server identity).
 
-## Phase 4 — `@disco/core` engines wired to SDK
-- ⏳ U4.1 Snapshot engine (capture → typed artifact, assets to object storage).
-- ⏳ U4.2 Rebuild engine (dependency-ordered, resumable, rate-limited, dry-run) over SDK adapters.
-- ⏳ U4.3 Integration test: mock-guild snapshot → dry-run → build → report, asserted end-to-end.
+> Port interfaces (CapturePort/ApplyPort) + capture/rebuild engines live in `@disco/core`; `@disco/sdk`
+> provides the MockGuild impl now and the real discord.js client (U3.1) next.
+
+## Phase 4 — capture + rebuild engines (over the ports)   ✅ DONE (typechecks, 4 integration tests)
+- ✅ U4.1 Snapshot engine: capture → typed artifact, localRef assignment, classification, bot detect,
+      mention rewriting, brand-token extraction, asset persistence; schema-validated output.
+- ✅ U4.2 Rebuild engine: dependency-ordered, idempotent (reconcile), resumable (manifest/steps), dry-run.
+- ✅ U4.3 Integration test: mock-guild capture → rebrand → dry-run → build → report → re-capture,
+      asserting rebrand landed, managed roles skipped, member overwrites skipped, content copied,
+      and building twice does not duplicate.
 
 ## Phase 5 — apps/api + apps/worker (Fastify + BullMQ + Prisma)
 - ⏳ U5.1 Prisma schema (snapshots, jobs, clients, manifests, reports, handovers, users).
