@@ -51,6 +51,7 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
   const [report, setReport] = useState<RebuildReport | null>(null);
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [feasibility, setFeasibility] = useState<Awaited<ReturnType<typeof api.feasibility>> | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -67,6 +68,7 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
       setEvents([]);
       setProgress(0);
     });
+    api.feasibility(snapshotId).then(setFeasibility).catch(() => setFeasibility(null));
   }, [snapshotId]);
 
   const config: RebrandConfig = useMemo(
@@ -223,12 +225,38 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
             </div>
           )}
 
+          {feasibility && feasibility.findings.length > 0 && (
+            <div className="panel-soft p-3" style={{ borderColor: feasibility.ok ? 'var(--color-line)' : 'color-mix(in srgb, var(--color-danger) 40%, transparent)' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="label">pre-flight</span>
+                <span className={feasibility.ok ? 'chip chip-jade' : 'chip'} style={feasibility.ok ? undefined : { color: 'var(--color-danger)' }}>
+                  {feasibility.ok ? 'fits Discord limits' : 'over a hard limit'}
+                </span>
+              </div>
+              <div className="space-y-1">
+                {feasibility.findings.map((f, i) => (
+                  <div key={i} className="text-[0.74rem] flex gap-2">
+                    <span className="mono" style={{ color: f.severity === 'block' ? 'var(--color-danger)' : 'var(--color-gold)', minWidth: 56 }}>
+                      {f.severity === 'block' ? '✗ block' : '⚠ warn'}
+                    </span>
+                    <span style={{ color: 'var(--color-muted)' }}>{f.detail}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="panel p-5">
             <div className="flex items-center gap-3">
               <button className="btn" onClick={() => run(true)} disabled={running}>
                 {running ? 'Running…' : '◐ Dry-run'}
               </button>
-              <button className="btn btn-primary" onClick={() => run(false)} disabled={running}>
+              <button
+                className="btn btn-primary"
+                onClick={() => run(false)}
+                disabled={running || feasibility?.ok === false}
+                title={feasibility?.ok === false ? 'Resolve the pre-flight blocks first' : undefined}
+              >
                 Build the server →
               </button>
               <div className="ml-auto mono text-xs" style={{ color: 'var(--color-faint)' }}>

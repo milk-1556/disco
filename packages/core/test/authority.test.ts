@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { auditAuthority, combineRolePermissions, REQUIRED_PERMISSIONS } from '../src/index.js';
+import { auditAuthority, auditBuildLimits, combineRolePermissions, makeSampleSnapshot, REQUIRED_PERMISSIONS } from '../src/index.js';
 
 describe('pre-flight authority audit (§ before live)', () => {
   it('passes when the bot has Administrator', () => {
@@ -32,5 +32,28 @@ describe('pre-flight authority audit (§ before live)', () => {
   it('combines role permission bitfields (OR)', () => {
     expect(combineRolePermissions(['1', '2', '4'])).toBe('7');
     expect(combineRolePermissions(['8', 'garbage', '0'])).toBe('8');
+  });
+});
+
+describe('build feasibility audit (§ pre-flight build limits)', () => {
+  it('the sample snapshot fits within Discord limits (boost-tier perk warning aside)', () => {
+    const a = auditBuildLimits(makeSampleSnapshot());
+    expect(a.ok).toBe(true); // no hard blocks
+    expect(a.findings.some((f) => f.name === 'Boost perks')).toBe(true); // tier 2 → boost warning
+  });
+
+  it('blocks when roles exceed the 250-role limit', () => {
+    const snap = makeSampleSnapshot();
+    snap.roles = Array.from({ length: 260 }, (_, i) => ({ ...snap.roles[0]!, localRef: `r${i}`, name: `r${i}` }));
+    const a = auditBuildLimits(snap);
+    expect(a.ok).toBe(false);
+    expect(a.findings.find((f) => f.name === 'Roles')?.severity).toBe('block');
+  });
+
+  it('warns when AutoMod keyword rules exceed 6 per type', () => {
+    const snap = makeSampleSnapshot();
+    snap.automod = Array.from({ length: 8 }, (_, i) => ({ ...snap.automod[0]!, localRef: `am${i}`, triggerType: 1 as const }));
+    const a = auditBuildLimits(snap);
+    expect(a.findings.some((f) => f.name === 'AutoMod')).toBe(true);
   });
 });

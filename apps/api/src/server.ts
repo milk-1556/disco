@@ -1,4 +1,4 @@
-import { auditAuthority, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, parseBundle, rebrand } from '@disco/core';
+import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, parseBundle, rebrand } from '@disco/core';
 import { defaultOwnershipSteps, RebrandConfig, SnapshotMetaPatch } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
 import cors from '@fastify/cors';
@@ -94,6 +94,13 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const rec = await repo.getSnapshot((req.params as { id: string }).id);
     if (!rec) return reply.code(404).send({ error: 'not found' });
     return rec;
+  });
+
+  // Build-feasibility pre-flight: does this snapshot fit within Discord's hard limits?
+  app.get('/snapshots/:id/feasibility', { preHandler: requireAuth }, async (req, reply) => {
+    const rec = await repo.getSnapshot((req.params as { id: string }).id);
+    if (!rec) return reply.code(404).send({ error: 'not found' });
+    return auditBuildLimits(rec.snapshot);
   });
 
   app.get('/snapshots/:id/diff', { preHandler: requireAuth }, async (req, reply) => {
