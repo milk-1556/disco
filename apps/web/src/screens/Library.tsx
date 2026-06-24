@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, type JoinedGuild, type SnapshotSummary } from '../api.js';
+import { api, type JoinedGuild, type SnapshotSummary, type StarterPack } from '../api.js';
 import { Modal } from '../components/Modal.js';
 import { SkeletonCard } from '../components/Skeleton.js';
 import { SnapshotTimeline } from '../components/SnapshotTimeline.js';
@@ -113,6 +113,30 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
   const [editing, setEditing] = useState<string | null>(null);
   const [timelineFor, setTimelineFor] = useState<{ templateName: string; sourceGuildId: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Starter packs (#15): curated, sellable templates to clone into the library.
+  const [packsOpen, setPacksOpen] = useState(false);
+  const [packs, setPacks] = useState<StarterPack[] | null>(null);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [importingPack, setImportingPack] = useState<string | null>(null);
+  async function openPacks() {
+    setPacksOpen(true);
+    if (!packs) setPacks(await api.starterPacks().catch(() => []));
+  }
+  async function importPack(key: string) {
+    setImportingPack(key);
+    try {
+      await api.importStarterPack(key);
+      await load();
+      setPacksOpen(false);
+      setPreviewKey(null);
+      setNote('Starter pack added to your library as a template.');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportingPack(null);
+    }
+  }
 
   // Bulk multi-select management.
   const [selectMode, setSelectMode] = useState(false);
@@ -325,6 +349,65 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
         <SnapshotTimeline templateName={timelineFor.templateName} sourceGuildId={timelineFor.sourceGuildId} onClose={() => setTimelineFor(null)} />
       )}
 
+      {packsOpen && (
+        <Modal title="Starter packs" onClose={() => { setPacksOpen(false); setPreviewKey(null); }}>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+            Curated, sellable server blueprints. Add one to your library as a reusable template, then rebrand &amp; build it for a client.
+          </p>
+          {!packs ? (
+            <div className="text-sm" style={{ color: 'var(--color-faint)' }}>Loading packs…</div>
+          ) : packs.length === 0 ? (
+            <div className="text-sm" style={{ color: 'var(--color-faint)' }}>No starter packs available.</div>
+          ) : (
+            <div className="space-y-3">
+              {packs.map((p) => {
+                const open = previewKey === p.key;
+                return (
+                  <div key={p.key} className="panel-soft p-4">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-base font-medium" style={{ fontFamily: 'var(--font-display)' }}>{p.title}</span>
+                          <span className="chip chip-source">{p.niche}</span>
+                        </div>
+                        <p className="text-sm mt-1" style={{ color: 'var(--color-muted)' }}>{p.pitch}</p>
+                        <div className="text-[0.72rem] mono mt-2" style={{ color: 'var(--color-faint)' }}>
+                          {p.counts.categories} categories · {p.counts.channels} channels · {p.counts.roles} roles · {p.counts.emojis} emojis
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button className="btn btn-ghost text-xs" onClick={() => setPreviewKey(open ? null : p.key)} aria-expanded={open}>
+                          {open ? 'Hide' : 'Preview'}
+                        </button>
+                        <button className="btn btn-primary text-xs" disabled={importingPack === p.key} onClick={() => importPack(p.key)}>
+                          {importingPack === p.key ? 'Adding…' : '＋ Add to library'}
+                        </button>
+                      </div>
+                    </div>
+                    {open && (
+                      <div className="mt-3 pt-3 grid gap-3" style={{ borderTop: '1px solid var(--color-line)', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+                        <div>
+                          <div className="label mb-1">categories</div>
+                          <div className="flex flex-wrap gap-1">{p.categories.map((c) => <span key={c} className="chip">{c}</span>)}</div>
+                        </div>
+                        <div>
+                          <div className="label mb-1">channels</div>
+                          <div className="flex flex-wrap gap-1">{p.sampleChannels.map((c) => <span key={c} className="chip">#{c}</span>)}{p.counts.channels > p.sampleChannels.length && <span className="chip" style={{ color: 'var(--color-faint)' }}>+{p.counts.channels - p.sampleChannels.length}</span>}</div>
+                        </div>
+                        <div>
+                          <div className="label mb-1">roles</div>
+                          <div className="flex flex-wrap gap-1">{p.roles.map((rr) => <span key={rr} className="chip chip-gold">{rr}</span>)}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {importOpen && (
         <Modal
           title="Pick a server to snapshot into your library"
@@ -428,6 +511,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
             }}
           />
           <button className="btn" onClick={() => fileRef.current?.click()}>↑ Import file</button>
+          <button className="btn" onClick={openPacks}>✨ Starter packs</button>
           <button className="btn btn-primary" onClick={openImport}>
             ＋ Snapshot a server
           </button>
@@ -582,6 +666,14 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
                   <button className="btn btn-primary justify-center flex-1" onClick={() => onBuild(s.id)}>
                     Rebrand & build →
                   </button>
+                  <button
+                    className="btn btn-ghost"
+                    title={s.isTemplate ? 'Unmark as reusable template' : 'Save as a reusable template'}
+                    aria-label={s.isTemplate ? `Unmark ${s.name} as template` : `Save ${s.name} as a reusable template`}
+                    aria-pressed={s.isTemplate}
+                    onClick={async () => { await api.updateSnapshot(s.id, { isTemplate: !s.isTemplate }).catch((e) => setErr(e instanceof Error ? e.message : String(e))); await load(); }}
+                    style={s.isTemplate ? { color: 'var(--color-jade)' } : undefined}
+                  >{s.isTemplate ? '★' : '☆'}</button>
                   <button className="btn btn-ghost" title="Version history & provenance" aria-label={`View version history for ${s.name}`} onClick={() => setTimelineFor({ templateName: s.name, sourceGuildId: s.sourceGuildId })}>🕓</button>
                   <button className="btn btn-ghost" title="Edit tags / note / template" aria-label={`Edit tags, note and template settings for ${s.name}`} onClick={() => setEditing(s.id)}>✎</button>
                   <button className="btn btn-ghost" title="Export .discobundle" aria-label={`Export ${s.name} as a .discobundle file`} onClick={() => exportOne(s)}>↓</button>

@@ -55,6 +55,8 @@ export const api = {
   status: () => req<StatusInfo>('/health'),
   audit: () => req<AuditEntry[]>('/audit'),
   buildEvents: (jobId?: string) => req<BuildEventEntry[]>(`/events${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ''}`),
+  starterPacks: () => req<StarterPack[]>('/starter-packs'),
+  importStarterPack: (key: string) => req<{ id: string; name: string; version: number }>(`/starter-packs/${encodeURIComponent(key)}/import`, { method: 'POST' }),
   handoverViews: (id: string) => req<{ count: number; recent: HandoverViewEntry[] }>(`/handovers/${id}/views`),
   rebrandPreview: (snapshotId: string, config: RebrandConfig) =>
     req<{ preview: RebrandPreview; rebrandedGuildName: string; brandTokens: BrandToken[] }>('/rebrand/preview', {
@@ -354,6 +356,17 @@ export interface BuildEventEntry {
   at: string;
   kind: string;
   detail: string;
+}
+export interface StarterPack {
+  key: string;
+  title: string;
+  pitch: string;
+  niche: string;
+  guildName: string;
+  counts: { roles: number; channels: number; categories: number; emojis: number };
+  categories: string[];
+  sampleChannels: string[];
+  roles: string[];
 }
 export interface HandoverViewEntry {
   id: string;

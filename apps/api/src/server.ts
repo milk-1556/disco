@@ -1,4 +1,4 @@
-import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, parseBundle, rebrand } from '@disco/core';
+import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, makeStarterPacks, parseBundle, rebrand } from '@disco/core';
 import { defaultOwnershipSteps, RebrandConfig, SnapshotMetaPatch } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, listJoinedGuilds, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
 import { demoGuildSnapshot, listDemoGuilds } from './demoGuilds.js';
@@ -330,6 +330,47 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       console.error('bundle import failed:', err); // detail server-side; generic to the client
       return reply.code(500).send({ error: 'could not import bundle' });
     }
+  });
+
+  // ── starter packs (#15): curated, sellable template snapshots an operator clones into their library ──
+  app.get('/starter-packs', { preHandler: requireAuth }, async () =>
+    makeStarterPacks().map((p) => ({
+      key: p.key,
+      title: p.title,
+      pitch: p.pitch,
+      niche: p.niche,
+      guildName: p.snapshot.guild.name,
+      counts: {
+        roles: p.snapshot.roles.length,
+        channels: p.snapshot.channels.length,
+        categories: p.snapshot.categories.length,
+        emojis: p.snapshot.emojis.length,
+      },
+      // enough structure for a browse/preview without shipping the whole artifact
+      categories: p.snapshot.categories.map((c) => c.name),
+      sampleChannels: p.snapshot.channels.slice(0, 10).map((c) => c.name),
+      roles: p.snapshot.roles.filter((r) => !r.isEveryone).map((r) => r.name),
+    })),
+  );
+
+  app.post('/starter-packs/:key/import', { preHandler: requireAuth }, async (req, reply) => {
+    const pack = makeStarterPacks().find((p) => p.key === (req.params as { key: string }).key);
+    if (!pack) return reply.code(404).send({ error: 'unknown starter pack' });
+    const r = scoped(req);
+    const existing = (await r.listSnapshots()).filter((s) => s.sourceGuildId === pack.snapshot.source.guildId);
+    const rec = await r.addSnapshot({
+      name: pack.title,
+      version: existing.length + 1,
+      sourceGuildId: pack.snapshot.source.guildId,
+      capturedAt: pack.snapshot.capturedAt,
+      schemaVersion: pack.snapshot.schemaVersion,
+      snapshot: pack.snapshot,
+      ownerEmail: operatorOf(req),
+    });
+    // Clones land as reusable templates, tagged + noted with the pack pitch.
+    await r.updateSnapshot(rec.id, { isTemplate: true, tags: [pack.key, 'starter-pack'], note: pack.pitch });
+    pingActivity('imported');
+    return { id: rec.id, name: rec.name, version: rec.version };
   });
 
   // ── clients ──
