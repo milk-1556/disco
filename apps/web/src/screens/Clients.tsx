@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Client } from '../api.js';
+import { EmptyArt } from '../components/EmptyArt.js';
 import { NewClient } from './NewClient.js';
 
 export function Clients() {
@@ -69,6 +70,7 @@ export function Clients() {
         </div>
       ) : clients.length === 0 ? (
         <div className="panel p-10 text-center">
+          <EmptyArt name="clients" className="mx-auto mb-4" />
           <div className="eyebrow mb-2" style={{ color: 'var(--color-client)' }}>your roster is empty</div>
           <h2 className="text-lg">Add your first creator</h2>
           <p className="text-sm mt-2 mx-auto" style={{ color: 'var(--color-muted)', maxWidth: 360 }}>

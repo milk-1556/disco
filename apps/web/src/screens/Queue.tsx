@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, streamJobLogs, type Job, type JobEvent, type JobSummary } from '../api.js';
 import { BuildSteps } from '../components/BuildSteps.js';
+import { EmptyArt } from '../components/EmptyArt.js';
 import { SkeletonRows } from '../components/Skeleton.js';
 import { cx } from '../util.js';
 
@@ -118,6 +119,7 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
 
       {jobs.length === 0 && loaded && (
         <div className="panel p-8 text-center">
+          <EmptyArt name="queue" className="mx-auto mb-3" />
           <div className="text-base mb-1" style={{ color: 'var(--color-bone)' }}>No builds yet</div>
           <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
             Snapshot a template, then build it for a client — every run shows up here, on the record.
