@@ -30,6 +30,30 @@ model AuditLog {
   @@index([at])
 }
 
+/// Build-lifecycle event log (#12) — the operator-facing "webhook event log": one row per build
+/// transition (started / completed / failed / resumed), with a short human detail.
+model BuildEvent {
+  id     String   @id @default(cuid())
+  jobId  String
+  at     DateTime @default(now())
+  kind   String
+  detail String   @default("")
+
+  @@index([jobId])
+  @@index([at])
+}
+
+/// One anonymous open of a public handover page (#14). Referrer ORIGIN only — never an IP or any
+/// other identifier — an engagement signal, not surveillance.
+model HandoverView {
+  id          String   @id @default(cuid())
+  handoverId  String
+  at          DateTime @default(now())
+  referrer    String   @default("")
+
+  @@index([handoverId])
+}
+
 /// A versioned, captured template. The full typed artifact lives in `artifact` (Snapshot JSON).
 model Snapshot {
   id            String    @id @default(cuid())

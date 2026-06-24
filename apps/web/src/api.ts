@@ -54,6 +54,8 @@ export const api = {
   deleteSnapshot: (id: string) => req<{ ok: boolean }>(`/snapshots/${id}`, { method: 'DELETE' }),
   status: () => req<StatusInfo>('/health'),
   audit: () => req<AuditEntry[]>('/audit'),
+  buildEvents: (jobId?: string) => req<BuildEventEntry[]>(`/events${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ''}`),
+  handoverViews: (id: string) => req<{ count: number; recent: HandoverViewEntry[] }>(`/handovers/${id}/views`),
   rebrandPreview: (snapshotId: string, config: RebrandConfig) =>
     req<{ preview: RebrandPreview; rebrandedGuildName: string; brandTokens: BrandToken[] }>('/rebrand/preview', {
       method: 'POST',
@@ -346,10 +348,33 @@ export interface FieldChange {
   before: string;
   after: string;
 }
+export interface BuildEventEntry {
+  id: string;
+  jobId: string;
+  at: string;
+  kind: string;
+  detail: string;
+}
+export interface HandoverViewEntry {
+  id: string;
+  handoverId: string;
+  at: string;
+  referrer: string;
+}
+export interface PermissionDelta {
+  added: string[];
+  removed: string[];
+}
 export interface CategoryDiff {
   added: string[];
   removed: string[];
-  changed: { name: string; fields: FieldChange[] }[];
+  changed: { name: string; fields: FieldChange[]; permissionDelta?: PermissionDelta }[];
+}
+export interface OverwriteChange {
+  container: string;
+  target: string;
+  allow: PermissionDelta;
+  deny: PermissionDelta;
 }
 export interface SnapshotDiff {
   guildNameChanged: { before: string; after: string } | null;
@@ -358,6 +383,7 @@ export interface SnapshotDiff {
   categories: CategoryDiff;
   emojis: CategoryDiff;
   automod: CategoryDiff;
+  overwriteChanges: OverwriteChange[];
   counts: Record<string, { before: number; after: number }>;
 }
 export interface OwnershipStep {

@@ -340,6 +340,18 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return (session?.role === 'admin' ? all : all.filter((a) => a.operator === session?.email)).slice(0, 200);
   });
 
+  // Build-lifecycle event log (#12): every build's started/resumed/completed/failed transitions.
+  app.get('/events', { preHandler: requireAuth }, async (req) => {
+    const jobId = (req.query as { jobId?: string }).jobId;
+    return repo.listBuildEvents(jobId, 200);
+  });
+
+  // Engagement signal for a delivered handover (#14): how many times the client opened it + when.
+  app.get('/handovers/:id/views', { preHandler: requireAuth }, async (req) => {
+    const views = await repo.listHandoverViews((req.params as { id: string }).id);
+    return { count: views.length, recent: views.slice(0, 50) };
+  });
+
   // ── rebrand preview ──
   app.post('/rebrand/preview', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as { snapshotId?: string; config?: unknown };
@@ -698,6 +710,14 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       const hash = await repo.getHandoverPasswordHash(id);
       if (!hash || !bcrypt.compareSync(pw, hash)) return reply.code(401).send({ error: 'password required', needsPassword: true });
     }
+    // Record an anonymous open (#14) — referrer ORIGIN only, never an IP or any identifier.
+    const referrer = (() => {
+      const r = req.headers.referer;
+      if (!r) return 'direct';
+      try { return new URL(r).origin; } catch { return 'direct'; }
+    })();
+    void repo.recordHandoverView(id, referrer);
+
     const job = await repo.getJob(h.jobId);
     const snap = job?.snapshotId ? await repo.getSnapshot(job.snapshotId) : undefined;
     return {

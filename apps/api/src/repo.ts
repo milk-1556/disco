@@ -14,6 +14,24 @@ export interface AuditEntry {
   operator: string;
 }
 
+/** A build-lifecycle event (the operator-facing "webhook event log": started / done / failed / resumed). */
+export interface BuildEventEntry {
+  id: string;
+  jobId: string;
+  at: string;
+  kind: string; // queued | running | completed | failed | resumed | delivered
+  detail: string;
+}
+
+/** One anonymous open of a public handover page. We store the referrer ORIGIN only — never an IP or
+ *  any other identifier — so the operator gets an engagement signal without compiling personal data. */
+export interface HandoverViewEntry {
+  id: string;
+  handoverId: string;
+  at: string;
+  referrer: string;
+}
+
 /** Creation/patch shapes for handovers (passwordHash is write-only; never on the domain type). */
 export interface HandoverCreate {
   jobId: string;
@@ -65,6 +83,12 @@ export interface Repo {
   /** Append a destructive-op accountability record; list the most recent first. */
   addAudit(e: Omit<AuditEntry, 'id' | 'at'>): Promise<void>;
   listAudit(limit?: number): Promise<AuditEntry[]>;
+  /** Build-lifecycle event log (#12). `listBuildEvents()` is global; pass a jobId to scope to one build. */
+  addBuildEvent(e: Omit<BuildEventEntry, 'id' | 'at'>): Promise<void>;
+  listBuildEvents(jobId?: string, limit?: number): Promise<BuildEventEntry[]>;
+  /** Record + read anonymous public-handover opens (#14 engagement signal; referrer-origin only). */
+  recordHandoverView(handoverId: string, referrer: string): Promise<void>;
+  listHandoverViews(handoverId: string): Promise<HandoverViewEntry[]>;
 }
 
 let seq = 1;
@@ -234,5 +258,24 @@ export class InMemoryRepo implements Repo {
   }
   async listAudit(limit = 200) {
     return [...this.audits].reverse().slice(0, limit);
+  }
+
+  private buildEvents: BuildEventEntry[] = [];
+  async addBuildEvent(e: Omit<BuildEventEntry, 'id' | 'at'>) {
+    this.buildEvents.push({ ...e, id: newId('evt'), at: now() });
+    if (this.buildEvents.length > 2000) this.buildEvents.shift();
+  }
+  async listBuildEvents(jobId?: string, limit = 200) {
+    const all = jobId ? this.buildEvents.filter((e) => e.jobId === jobId) : this.buildEvents;
+    return [...all].reverse().slice(0, limit);
+  }
+
+  private handoverViews: HandoverViewEntry[] = [];
+  async recordHandoverView(handoverId: string, referrer: string) {
+    this.handoverViews.push({ id: newId('view'), handoverId, at: now(), referrer });
+    if (this.handoverViews.length > 5000) this.handoverViews.shift();
+  }
+  async listHandoverViews(handoverId: string) {
+    return this.handoverViews.filter((v) => v.handoverId === handoverId).reverse();
   }
 }

@@ -11,7 +11,7 @@ import {
   type SnapshotRecord,
 } from '@disco/schema';
 import { Prisma, PrismaClient } from '@prisma/client';
-import type { AuditEntry, HandoverCreate, HandoverPatch, Repo, SnapshotCreate } from './repo.js';
+import type { AuditEntry, BuildEventEntry, HandoverCreate, HandoverPatch, Repo, SnapshotCreate } from './repo.js';
 
 let _prisma: PrismaClient | undefined;
 /** Memoized singleton PrismaClient (one pool per process). */
@@ -289,6 +289,21 @@ export class PrismaRepo implements Repo {
   async listAudit(limit = 200) {
     const rows = await this.db.auditLog.findMany({ orderBy: { at: 'desc' }, take: limit });
     return rows.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: r.target, detail: r.detail, operator: r.operator }));
+  }
+
+  async addBuildEvent(e: Omit<BuildEventEntry, 'id' | 'at'>) {
+    await this.db.buildEvent.create({ data: { jobId: e.jobId, kind: e.kind, detail: e.detail } });
+  }
+  async listBuildEvents(jobId?: string, limit = 200) {
+    const rows = await this.db.buildEvent.findMany({ where: jobId ? { jobId } : undefined, orderBy: { at: 'desc' }, take: limit });
+    return rows.map((r) => ({ id: r.id, jobId: r.jobId, at: iso(r.at), kind: r.kind, detail: r.detail }));
+  }
+  async recordHandoverView(handoverId: string, referrer: string) {
+    await this.db.handoverView.create({ data: { handoverId, referrer } });
+  }
+  async listHandoverViews(handoverId: string) {
+    const rows = await this.db.handoverView.findMany({ where: { handoverId }, orderBy: { at: 'desc' } });
+    return rows.map((r) => ({ id: r.id, handoverId: r.handoverId, at: iso(r.at), referrer: r.referrer }));
   }
 
   async getHandoverPasswordHash(id: string) {

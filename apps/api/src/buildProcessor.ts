@@ -24,6 +24,8 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
 
   const pub = (ev: Parameters<JobChannel['publish']>[1]) =>
     void Promise.resolve(channel.publish(jobId, ev)).catch(() => {});
+  // Fire-and-forget build-lifecycle event (#12). Never let event-logging failure affect the build.
+  const emit = (kind: string, detail: string) => void Promise.resolve(repo.addBuildEvent({ jobId, kind, detail })).catch(() => {});
 
   // Serialize all DB writes for this job so the fire-and-forget progress/manifest checkpoints can't
   // land AFTER the terminal write and clobber the final status/progress (ordering, not just timing).
@@ -37,6 +39,8 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
   persist({ status: 'running' });
   const prior = (await repo.getJob(jobId))?.manifest ?? undefined;
   const { snapshot: rebranded } = rebrand(snapshot, config);
+  const label = dryRun ? 'Dry-run' : 'Build';
+  emit(prior ? 'resumed' : 'running', prior ? `${label} resumed from a checkpoint` : `${label} started → ${rebranded.guild.name}`);
   const rawPort =
     token && targetGuildId
       ? new DiscordGuildClient({ token, guildId: targetGuildId, store })
@@ -46,6 +50,7 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
   const port = resilient(meter.port, { onLog: (m) => pub({ type: 'log', message: m }) });
   const startMs = Date.now();
 
+  try {
   const { manifest, report } = await rebuildGuild(port, rebranded, {
     jobId,
     dryRun,
@@ -68,6 +73,7 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
   await chain;
   const metrics = { apiCalls: meter.count(), durationMs: Date.now() - startMs, objectsCreated: report.created.length };
   await repo.updateJob(jobId, { status: 'completed', progress: 1, manifest, report, metrics });
+  emit('completed', `${label} complete · ${report.created.length} created · ${report.manualSteps.length} manual · ${report.skipped.length} skipped`);
   await Promise.resolve(
     channel.publish(jobId, {
       type: 'done',
@@ -79,4 +85,8 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
   // fan out a live-activity ping (reserved key) so the Activity feed refreshes the instant a build lands
   void Promise.resolve(channel.publish('__activity__', { type: 'log', message: 'build-done' })).catch(() => {});
   return report;
+  } catch (err) {
+    emit('failed', err instanceof Error ? err.message : String(err));
+    throw err; // preserve existing behavior: BullMQ retries / the worker records status:'failed'
+  }
 }
