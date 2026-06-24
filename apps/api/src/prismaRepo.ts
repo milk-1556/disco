@@ -262,6 +262,9 @@ export class PrismaRepo implements Repo {
     const r = await this.db.handover.findUnique({ where: { jobId } });
     return r ? this.toHandover(r) : undefined;
   }
+  async listHandovers() {
+    return (await this.db.handover.findMany({ orderBy: { createdAt: 'desc' } })).map(this.toHandover);
+  }
   async addHandover(h: HandoverCreate) {
     const r = await this.db.handover.create({
       data: {

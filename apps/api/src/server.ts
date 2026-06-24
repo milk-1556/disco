@@ -428,6 +428,34 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { count: views.length, recent: views.slice(0, 50) };
   });
 
+  // Operator productivity widgets (#6): read-only rollups over this operator's own data (scoped).
+  app.get('/dashboard', { preHandler: requireAuth }, async (req) => {
+    const r = scoped(req);
+    const now = Date.now();
+    const WEEK = 7 * 24 * 3600 * 1000;
+    const H72 = 72 * 3600 * 1000;
+    const [jobs, clients, handovers] = await Promise.all([r.listJobs(), r.listClients(), r.listHandovers()]);
+    const builds = jobs.filter((j) => j.status === 'completed' && !j.dryRun);
+    const buildsThisWeek = builds.filter((j) => now - new Date(j.createdAt).getTime() < WEEK).length;
+    const durations = builds.map((j) => j.metrics?.durationMs ?? 0).filter((d) => d > 0);
+    const avgBuildMs = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+    // Stuck = a DELIVERED handover (not a draft) that's >72h old and the client has never opened.
+    let stuckHandovers = 0;
+    for (const h of handovers) {
+      if (h.state === 'draft' || now - new Date(h.createdAt).getTime() < H72) continue;
+      if ((await r.listHandoverViews(h.id)).length === 0) stuckHandovers += 1;
+    }
+    const retainedClients = clients.filter((c) => c.monthlyRetainer > 0).length;
+    return {
+      buildsThisWeek,
+      avgBuildMs,
+      stuckHandovers,
+      totalClients: clients.length,
+      retainedClients,
+      clientRetentionRate: clients.length ? Math.round((retainedClients / clients.length) * 100) : 0,
+    };
+  });
+
   // ── rebrand preview ──
   app.post('/rebrand/preview', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as { snapshotId?: string; config?: unknown };

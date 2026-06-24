@@ -62,6 +62,7 @@ export function scopeRepo(base: Repo, actor: Actor): Repo {
     // ── handovers ──
     getHandover: async (id) => gate(await base.getHandover(id)),
     getHandoverByJob: async (jobId) => gate(await base.getHandoverByJob(jobId)),
+    listHandovers: async () => (await base.listHandovers()).filter(owns),
     addHandover: (h) => base.addHandover(h), // route stamps ownerEmail
     updateHandover: async (id, patch) => (owns(await base.getHandover(id)) ? base.updateHandover(id, patch) : undefined),
     getHandoverPasswordHash: (id) => base.getHandoverPasswordHash(id), // public verification path

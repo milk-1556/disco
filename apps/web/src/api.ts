@@ -55,6 +55,7 @@ export const api = {
   status: () => req<StatusInfo>('/health'),
   audit: () => req<AuditEntry[]>('/audit'),
   buildEvents: (jobId?: string) => req<BuildEventEntry[]>(`/events${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ''}`),
+  dashboard: () => req<DashboardStats>('/dashboard'),
   starterPacks: () => req<StarterPack[]>('/starter-packs'),
   importStarterPack: (key: string) => req<{ id: string; name: string; version: number }>(`/starter-packs/${encodeURIComponent(key)}/import`, { method: 'POST' }),
   handoverViews: (id: string) => req<{ count: number; recent: HandoverViewEntry[] }>(`/handovers/${id}/views`),
@@ -356,6 +357,14 @@ export interface BuildEventEntry {
   at: string;
   kind: string;
   detail: string;
+}
+export interface DashboardStats {
+  buildsThisWeek: number;
+  avgBuildMs: number;
+  stuckHandovers: number;
+  totalClients: number;
+  retainedClients: number;
+  clientRetentionRate: number;
 }
 export interface StarterPack {
   key: string;

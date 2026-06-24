@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { api, type Client, type JobSummary, type SnapshotSummary } from '../api.js';
+import { api, type Client, type DashboardStats, type JobSummary, type SnapshotSummary } from '../api.js';
 import type { View } from '../components/Shell.js';
 import { SkeletonCard } from '../components/Skeleton.js';
 import { usePoll } from '../usePoll.js';
 
 const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+const fmtDuration = (ms: number) => (ms < 1000 ? `${ms}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms / 60_000)}m`);
 const STALE_DAYS = 30;
 
 /**
@@ -17,11 +18,17 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [snaps, setSnaps] = useState<SnapshotSummary[]>([]);
+  const [dash, setDash] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   usePoll(
     () =>
-      void Promise.allSettled([api.jobs().then(setJobs), api.clients().then(setClients), api.snapshots().then(setSnaps)]).finally(() => setLoading(false)),
+      void Promise.allSettled([
+        api.jobs().then(setJobs),
+        api.clients().then(setClients),
+        api.snapshots().then(setSnaps),
+        api.dashboard().then(setDash),
+      ]).finally(() => setLoading(false)),
     4000,
   );
 
@@ -59,6 +66,22 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
         <button className="btn" onClick={() => go('library')}>＋ Snapshot a server</button>
         <button className="btn" onClick={() => go('economics')}>Review pipeline →</button>
       </div>
+
+      {/* operator productivity widgets (#6) — read-only rollups over your own work */}
+      {dash && (
+        <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+          <Widget label="builds this week" value={String(dash.buildsThisWeek)} />
+          <Widget label="avg build time" value={dash.avgBuildMs ? fmtDuration(dash.avgBuildMs) : '—'} />
+          <Widget
+            label="stuck handovers"
+            value={String(dash.stuckHandovers)}
+            hint=">72h, unopened"
+            tone={dash.stuckHandovers > 0 ? 'gold' : 'muted'}
+            onClick={dash.stuckHandovers > 0 ? () => go('queue') : undefined}
+          />
+          <Widget label="client retention" value={`${dash.clientRetentionRate}%`} hint={`${dash.retainedClients}/${dash.totalClients} on retainer`} tone="jade" />
+        </div>
+      )}
 
       {loading ? (
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
@@ -150,6 +173,23 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
         </div>
       )}
     </div>
+  );
+}
+
+const TONE: Record<'jade' | 'gold' | 'muted', string> = { jade: 'var(--color-jade)', gold: 'var(--color-gold)', muted: 'var(--color-bone)' };
+function Widget({ label, value, hint, tone = 'muted', onClick }: { label: string; value: string; hint?: string; tone?: 'jade' | 'gold' | 'muted'; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      className="panel-soft p-4 text-left"
+      onClick={onClick}
+      disabled={!onClick}
+      style={{ cursor: onClick ? 'pointer' : 'default', borderColor: tone === 'gold' ? 'color-mix(in srgb, var(--color-gold) 40%, transparent)' : undefined }}
+    >
+      <div className="text-2xl leading-none" style={{ fontFamily: 'var(--font-display)', color: TONE[tone] }}>{value}</div>
+      <div className="label mt-2">{label}</div>
+      {hint && <div className="text-[0.66rem] mono mt-1" style={{ color: 'var(--color-faint)' }}>{hint}</div>}
+    </button>
   );
 }
 

@@ -78,6 +78,8 @@ export interface Repo {
   updateJob(id: string, patch: Partial<Job>): Promise<Job | undefined>;
   getHandover(id: string): Promise<Handover | undefined>;
   getHandoverByJob(jobId: string): Promise<Handover | undefined>;
+  /** All handovers (for the operator dashboard's stuck-handover widget); scoped by the wrapper. */
+  listHandovers(): Promise<Handover[]>;
   addHandover(h: HandoverCreate): Promise<Handover>;
   updateHandover(id: string, patch: HandoverPatch): Promise<Handover | undefined>;
   /** The stored password hash for a handover, for public-link verification (never on the domain type). */
@@ -227,6 +229,9 @@ export class InMemoryRepo implements Repo {
   async getHandoverByJob(jobId: string) {
     const h = [...this.handovers.values()].find((x) => x.jobId === jobId);
     return h ? this.publicHandover(h) : undefined;
+  }
+  async listHandovers() {
+    return [...this.handovers.values()].map((h) => this.publicHandover(h));
   }
   async addHandover(h: HandoverCreate) {
     const full: Handover & { passwordHash: string | null } = {
