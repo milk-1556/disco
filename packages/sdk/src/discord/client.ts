@@ -31,6 +31,39 @@ export interface DiscordGuildClientOptions {
 
 const CDN = 'https://cdn.discordapp.com';
 
+export interface JoinedGuild {
+  id: string;
+  name: string;
+  iconUrl: string | null;
+  /** Whether the bot's account is the guild owner (it never is, but Discord returns the flag). */
+  owner: boolean;
+  /** Whether the bot has Administrator (or Manage Guild) in this guild — enough to capture fully. */
+  canManage: boolean;
+}
+
+const MANAGE_GUILD = 1n << 5n;
+const ADMINISTRATOR = 1n << 3n;
+
+/**
+ * List every guild the bot account has joined (Discord `GET /users/@me/guilds`) so the operator can
+ * pick a source server from a dropdown instead of pasting a raw guild ID. Read-only; needs only the
+ * bot token (no per-guild scope). `canManage` flags whether the bot can capture the full structure.
+ */
+export async function listJoinedGuilds(token: string, rest?: REST): Promise<JoinedGuild[]> {
+  const r = rest ?? new REST({ version: '10' }).setToken(token);
+  const guilds = (await r.get(Routes.userGuilds(), { query: new URLSearchParams({ limit: '200' }) })) as Json[];
+  return guilds.map((g) => {
+    const perms = BigInt((g.permissions as string) ?? '0');
+    return {
+      id: g.id as string,
+      name: g.name as string,
+      iconUrl: g.icon ? `${CDN}/icons/${g.id}/${g.icon}.${(g.icon as string).startsWith('a_') ? 'gif' : 'png'}?size=64` : null,
+      owner: !!g.owner,
+      canManage: (perms & ADMINISTRATOR) !== 0n || (perms & MANAGE_GUILD) !== 0n,
+    };
+  });
+}
+
 /**
  * The live discord.js v14 implementation of both ports, talking to the official Discord REST API via
  * discord.js's REST client — which provides the global + per-route rate-limit queue and adaptive 429

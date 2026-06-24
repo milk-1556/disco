@@ -47,6 +47,7 @@ export const api = {
   snapshot: (id: string) => req<SnapshotRecord>(`/snapshots/${id}`),
   capture: (body: { sourceGuildId?: string; name?: string }) =>
     req<{ id: string; name: string; version: number; unchanged?: boolean }>('/snapshots/capture', { method: 'POST', body: JSON.stringify(body) }),
+  guilds: () => req<{ live: boolean; guilds: JoinedGuild[] }>('/guilds'),
   updateSnapshot: (id: string, patch: SnapshotMetaPatch) =>
     req<{ id: string; favorite: boolean; isTemplate: boolean }>(`/snapshots/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   rebrandPreview: (snapshotId: string, config: RebrandConfig) =>
@@ -130,6 +131,13 @@ export function streamJobLogs(jobId: string, onEvent: (ev: JobEvent) => void): (
 }
 
 // ── shared types (mirror @disco/schema shapes the UI consumes) ──
+export interface JoinedGuild {
+  id: string;
+  name: string;
+  iconUrl: string | null;
+  owner: boolean;
+  canManage: boolean;
+}
 export interface SnapshotSummary {
   id: string;
   name: string;

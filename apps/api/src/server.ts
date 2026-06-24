@@ -1,6 +1,7 @@
 import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, parseBundle, rebrand } from '@disco/core';
 import { defaultOwnershipSteps, RebrandConfig, SnapshotMetaPatch } from '@disco/schema';
-import { DiscordGuildClient, DiskAssetStore, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
+import { DiscordGuildClient, DiskAssetStore, listJoinedGuilds, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
+import { demoGuildSnapshot, listDemoGuilds } from './demoGuilds.js';
 import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -112,18 +113,32 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return diffSnapshots(b.snapshot, a.snapshot);
   });
 
+  // List the servers the bot can import from — its real joined guilds (live) or the demo set.
+  app.get('/guilds', { preHandler: requireAuth }, async (_req, reply) => {
+    try {
+      const guilds = isLiveMode() ? await listJoinedGuilds(env.discordBotToken) : listDemoGuilds();
+      return { live: isLiveMode(), guilds };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : 'failed to list guilds' });
+    }
+  });
+
   app.post('/snapshots/capture', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as { sourceGuildId?: string; name?: string };
     try {
       let snapshot;
       if (isLiveMode()) {
-        if (!body.sourceGuildId) return reply.code(400).send({ error: 'sourceGuildId required in live mode' });
+        if (!body.sourceGuildId) return reply.code(400).send({ error: 'Pick a server to import.' });
         const client = new DiscordGuildClient({ token: env.discordBotToken, guildId: body.sourceGuildId, store });
         snapshot = await captureSnapshot(client, { ownerNote: 'captured live' });
+      } else if (body.sourceGuildId) {
+        // demo: import the chosen demo server (each backed by a fixture, re-stamped name + id)
+        const source = demoGuildSnapshot(body.sourceGuildId);
+        if (!source) return reply.code(404).send({ error: 'Unknown server.' });
+        snapshot = await captureSnapshot(mockGuildFromSnapshot(source), { ownerNote: 'demo import' });
       } else {
-        // demo: re-snapshot the seeded sample template via the MockGuild
-        const source = mockGuildFromSnapshot(makeSampleSnapshot());
-        snapshot = await captureSnapshot(source, { ownerNote: 'demo capture' });
+        // demo back-compat: re-snapshot the seeded sample template
+        snapshot = await captureSnapshot(mockGuildFromSnapshot(makeSampleSnapshot()), { ownerNote: 'demo capture' });
       }
       const existing = (await repo.listSnapshots()).filter((s) => s.sourceGuildId === snapshot.source.guildId);
       // Delta optimization: if the latest version is structurally identical, don't bloat the library

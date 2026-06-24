@@ -54,9 +54,9 @@ export function Setup({ go }: { go: (v: View) => void }) {
         },
         {
           done: snaps.length > 0,
-          title: 'Capture your first template',
-          detail: snaps.length > 0 ? `${snaps.length} snapshot(s) in the library.` : 'Snapshot a finished server into a reusable, versioned template.',
-          cta: { label: 'Go to Library', view: 'library' },
+          title: 'Import your first server',
+          detail: snaps.length > 0 ? `${snaps.length} template(s) in the library.` : 'Add the bot to a server, then copy it into your library as a reusable template.',
+          cta: { label: 'Import a server', view: 'library' },
         },
         {
           done: clients.length > 0,

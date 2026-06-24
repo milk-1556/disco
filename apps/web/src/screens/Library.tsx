@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, type SnapshotSummary } from '../api.js';
+import { api, type JoinedGuild, type SnapshotSummary } from '../api.js';
 import { cx, shortId } from '../util.js';
 
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
@@ -7,7 +7,6 @@ type Sort = 'used' | 'captured' | 'name';
 
 export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) => void; onCompare: () => void }) {
   const [snaps, setSnaps] = useState<SnapshotSummary[]>([]);
-  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState<string | null>(null);
@@ -23,19 +22,39 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
   }, []);
 
   const [note, setNote] = useState<string | null>(null);
-  async function capture() {
-    setBusy(true);
+
+  // Import-a-server flow: pick a guild the bot is in → capture it into the library.
+  const [importOpen, setImportOpen] = useState(false);
+  const [guilds, setGuilds] = useState<JoinedGuild[] | null>(null);
+  const [guildsLive, setGuildsLive] = useState(false);
+  const [importingId, setImportingId] = useState<string | null>(null);
+
+  async function openImport() {
+    setImportOpen(true);
+    setGuilds(null);
     setErr(null);
-    setNote(null);
     try {
-      const r = await api.capture({});
-      setNote(r.unchanged ? `No changes since v${r.version} — nothing to re-capture.` : `Captured ${r.name}.`);
-      setTimeout(() => setNote(null), 4000);
+      const r = await api.guilds();
+      setGuilds(r.guilds);
+      setGuildsLive(r.live);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function importGuild(g: JoinedGuild) {
+    setImportingId(g.id);
+    setErr(null);
+    try {
+      const r = await api.capture({ sourceGuildId: g.id });
+      setNote(r.unchanged ? `${g.name} is already in your library (v${r.version}, no changes).` : `Imported ${r.name} into your library.`);
+      setTimeout(() => setNote(null), 5000);
       await load();
+      setImportOpen(false);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setImportingId(null);
     }
   }
 
@@ -138,6 +157,52 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
         if (f) void importFile(f);
       }}
     >
+      {importOpen && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(8,7,12,0.7)', backdropFilter: 'blur(4px)', zIndex: 50, display: 'grid', placeItems: 'center' }}
+          className="p-4"
+          onClick={() => !importingId && setImportOpen(false)}
+        >
+          <div className="panel p-5 md:p-6 rise w-full max-w-lg" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div className="eyebrow mb-2">import a server</div>
+            <h2 className="text-lg mb-1">Pick a server to copy into your library</h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+              {guildsLive
+                ? 'These are the servers your bot has joined. Importing copies the whole structure — channels, roles, permissions, emojis, automod — into a reusable template.'
+                : 'Demo mode — these are sample servers. Add a bot token and invite the bot to your real servers to import them for real.'}
+            </p>
+            {!guilds && !err && <div className="text-sm py-4" style={{ color: 'var(--color-faint)' }}>Loading your servers…</div>}
+            {guilds && guilds.length === 0 && (
+              <div className="panel-soft p-4 text-sm" style={{ color: 'var(--color-muted)' }}>
+                The bot isn’t in any servers yet. Invite it from the <strong>Invite</strong> tab, then it’ll show up here.
+              </div>
+            )}
+            <div className="space-y-2">
+              {guilds?.map((g) => (
+                <div key={g.id} className="panel-soft px-4 py-3 flex items-center gap-3">
+                  <div className="grid place-items-center shrink-0" style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--color-line)', overflow: 'hidden' }}>
+                    {g.iconUrl ? <img src={g.iconUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="mono text-sm" style={{ color: 'var(--color-source)' }}>{g.name.slice(0, 2).toUpperCase()}</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{g.name}</div>
+                    <div className="text-[0.68rem] mono" style={{ color: g.canManage ? 'var(--color-faint)' : 'var(--color-gold)' }}>
+                      {g.canManage ? 'ready to import' : 'needs Manage Server permission'}
+                    </div>
+                  </div>
+                  <button className="btn btn-primary shrink-0" disabled={!!importingId || !g.canManage} onClick={() => importGuild(g)}>
+                    {importingId === g.id ? 'Importing…' : 'Import →'}
+                  </button>
+                </div>
+              ))}
+            </div>
+            {err && <div className="text-sm mt-3" style={{ color: 'var(--color-danger)' }}>{err}</div>}
+            <div className="flex justify-end mt-4">
+              <button className="btn btn-ghost" disabled={!!importingId} onClick={() => setImportOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pending && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(8,7,12,0.7)', backdropFilter: 'blur(4px)', zIndex: 50, display: 'grid', placeItems: 'center', padding: 24 }}
@@ -186,9 +251,9 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
               e.target.value = '';
             }}
           />
-          <button className="btn" onClick={() => fileRef.current?.click()}>↑ Import</button>
-          <button className="btn btn-primary" onClick={capture} disabled={busy}>
-            {busy ? 'Capturing…' : '↻ New snapshot'}
+          <button className="btn" onClick={() => fileRef.current?.click()}>↑ Import file</button>
+          <button className="btn btn-primary" onClick={openImport}>
+            ＋ Import a server
           </button>
         </div>
       </header>
