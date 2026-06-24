@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api, assetUrl, type HandoverBundle, type OwnershipStep } from '../api.js';
 import { BotSetupList } from '../components/BotSetupList.js';
+import { deliveredScope } from '../scope.js';
 import { cx } from '../util.js';
-
-const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
 
 const UPSELL_OPTIONS: { value: HandoverBundle['handover']['upsellStatus']; label: string }[] = [
   { value: 'none', label: 'No upsell' },
@@ -147,16 +146,16 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
             className="grid gap-2"
             style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}
           >
-            {COUNT_ORDER.map((k) => (
-              <div key={k} className="panel-soft px-3 py-3 text-center">
+            {deliveredScope(report.created, report.botSetup.length).map((t) => (
+              <div key={t.label} className="panel-soft px-3 py-3 text-center">
                 <div
                   className="text-2xl leading-none"
                   style={{ fontFamily: 'var(--font-display)', color: 'var(--color-jade)' }}
                 >
-                  {report.counts[k] ?? 0}
+                  {t.value}
                 </div>
                 <div className="text-[0.62rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>
-                  {k}
+                  {t.label}
                 </div>
               </div>
             ))}

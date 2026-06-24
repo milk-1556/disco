@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, assetUrl, type PublicHandover as PublicHandoverData } from '../api.js';
 import { BotSetupList } from '../components/BotSetupList.js';
 import { Logo } from '../components/Logo.js';
-
-const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
+import { deliveredScope } from '../scope.js';
 
 /** The shareable, client-facing delivery page (unauthenticated, optionally password-gated). */
 export function PublicHandover({ id }: { id: string }) {
@@ -79,10 +78,10 @@ export function PublicHandover({ id }: { id: string }) {
         <section className="panel p-5 mb-6">
           <div className="eyebrow mb-3">what's included</div>
           <div className="grid grid-cols-3 gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(90px,1fr))' }}>
-            {COUNT_ORDER.map((k) => (
-              <div key={k} className="panel-soft px-3 py-3 text-center">
-                <div className="text-2xl leading-none" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-jade)' }}>{data.scope[k] ?? 0}</div>
-                <div className="text-[0.62rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>{k}</div>
+            {deliveredScope(data.created, data.botSetup.length).map((t) => (
+              <div key={t.label} className="panel-soft px-3 py-3 text-center">
+                <div className="text-2xl leading-none" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-jade)' }}>{t.value}</div>
+                <div className="text-[0.62rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>{t.label}</div>
               </div>
             ))}
           </div>
