@@ -81,7 +81,11 @@ export function verifyStripeSignature(rawBody: string, signatureHeader: string, 
   });
 }
 
-export function registerStripeRoutes(app: FastifyInstance, repo: Repo): void {
+export function registerStripeRoutes(
+  app: FastifyInstance,
+  repo: Repo,
+  rateLimited: (key: string, limit: number, windowMs: number) => boolean = () => false,
+): void {
   // ── raw-body capture for the webhook ──
   // Stripe signs the EXACT bytes it sent; any re-serialization (JSON.parse→stringify) changes the
   // payload and breaks verification. So we register a content-type parser that keeps the raw string
@@ -195,7 +199,11 @@ export function registerStripeRoutes(app: FastifyInstance, repo: Repo): void {
 
   // ── POST /stripe/webhook (NO auth) ──
   // Stripe → us. We must (1) verify the signature against the RAW body, then (2) fulfil the order.
-  app.post('/stripe/webhook', async (req, reply) => {
+  app.post('/stripe/webhook', { bodyLimit: 262_144 }, async (req, reply) => {
+    // Public, signature-gated endpoint — add a per-IP cap so an unauthenticated client can't flood it
+    // (each hit costs an HMAC + JSON.parse). Stripe's own retry cadence is well under this.
+    if (rateLimited(`stripe-wh:${req.ip}`, 120, 60_000)) return reply.code(429).send({ error: 'rate limited' });
+
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
     const sig = (req.headers['stripe-signature'] as string | undefined) ?? '';
     const rawBody = (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
@@ -210,8 +218,14 @@ export function registerStripeRoutes(app: FastifyInstance, repo: Repo): void {
       // (Scaffold convenience must never disable signature checks on a real money path.)
       app.log.error('STRIPE_WEBHOOK_SECRET missing while live — rejecting unsigned webhook');
       return reply.code(400).send({ error: 'webhook signing secret not configured' });
+    } else if (process.env.NODE_ENV === 'production') {
+      // No keys at all in PRODUCTION is a misconfiguration, not a test — refuse rather than accept a
+      // forged unsigned event that would create a client record. The unsigned-accept path below is
+      // strictly a local/dev convenience.
+      app.log.error('Stripe webhook hit with no keys configured in production — rejecting unsigned event');
+      return reply.code(400).send({ error: 'stripe not configured' });
     }
-    // else: pure scaffold (no keys at all) → accept unverified so the flow is testable locally.
+    // else: local/dev scaffold (no keys, non-prod) → accept unverified so the flow is testable.
 
     const event = (req.body ?? {}) as StripeEvent;
 

@@ -73,6 +73,12 @@ describe('e2e: import → rebrand → build → handover → deliver → share',
     expect(handover.statusCode).toBe(200);
     const hid = (handover.json() as { id: string }).id;
 
+    // a fresh handover is 'draft' — the public link must NOT expose work-in-progress (SEC fix)
+    expect((await app.inject({ method: 'GET', url: `/h/${hid}` })).statusCode).toBe(404);
+
+    // operator marks it ready → now the public delivery link resolves
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: auth, payload: JSON.stringify({ state: 'ready' }) });
+
     // public, unauthenticated delivery payload (no auth header)
     const pub = await app.inject({ method: 'GET', url: `/h/${hid}` });
     expect(pub.statusCode).toBe(200);

@@ -172,6 +172,16 @@ export class InMemoryRepo implements Repo {
     return this.clients.get(cid);
   }
   async addClient(c: Omit<Client, 'id' | 'createdAt'>) {
+    // Mirror the Prisma @unique(stripeSessionId) atomically: a synchronous duplicate check (Node is
+    // single-threaded, so this closes the await-interleaved race) makes Stripe fulfilment exactly-once
+    // on the in-memory backend too — the webhook's catch then dedups instead of double-creating.
+    if (c.stripeSessionId) {
+      for (const existing of this.clients.values()) {
+        if (existing.stripeSessionId === c.stripeSessionId) {
+          throw new Error(`duplicate stripeSessionId: ${c.stripeSessionId}`);
+        }
+      }
+    }
     const full: Client = { ...c, id: newId('client'), createdAt: now() };
     this.clients.set(full.id, full);
     return full;

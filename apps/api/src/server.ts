@@ -38,6 +38,15 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   const allowedOrigins = env.webOrigin === '*' ? null : env.webOrigin.split(',').map((o) => o.trim()).filter(Boolean);
   app.register(cors, { origin: allowedOrigins ?? true, credentials: false });
 
+  // Baseline security headers on every response. The API is JSON + a couple of public HTML/SVG routes;
+  // these stop MIME-sniffing, clickjacking, and referrer leakage. Per-route CSP is tightened on the
+  // HTML (/share) and user-asset (/assets/*) routes where untrusted bytes are served.
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  });
+
   // ── brute-force guard: in-memory fixed-window rate limiter (per process) for the unauthenticated,
   // secret-guessing surfaces (login + the password-gated handover). Returns true when over the cap. ──
   const rlBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -259,7 +268,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       pingActivity('imported');
       return { id: rec.id, name: rec.name, version: rec.version, unchanged: false };
     } catch (err) {
-      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+      console.error('snapshot capture failed:', err); // detail server-side; generic to the client
+      return reply.code(500).send({ error: 'capture failed' });
     }
   });
 
@@ -301,8 +311,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       });
       return { id: rec.id, name: rec.name, version: rec.version };
     } catch (err) {
-      if (err instanceof BundleError) return reply.code(400).send({ error: err.message });
-      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+      if (err instanceof BundleError) return reply.code(400).send({ error: err.message }); // controlled, safe
+      console.error('bundle import failed:', err); // detail server-side; generic to the client
+      return reply.code(500).send({ error: 'could not import bundle' });
     }
   });
 
@@ -311,14 +322,17 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   app.post('/clients', { preHandler: requireAuth }, async (req) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
     pingActivity('client');
+    // Bound free-text lengths (defense-in-depth — keep unbounded operator input out of the DB).
+    const clamp = (v: unknown, max: number) => String(v ?? '').slice(0, max);
+    const arr = (v: unknown, max: number) => (Array.isArray(v) ? v.slice(0, max) : []);
     return repo.addClient({
-      creatorName: String(b.creatorName ?? 'New Client'),
-      handle: String(b.handle ?? ''),
-      brandColors: Array.isArray(b.brandColors) ? (b.brandColors as string[]) : [],
-      links: Array.isArray(b.links) ? (b.links as string[]) : [],
+      creatorName: clamp(b.creatorName || 'New Client', 120),
+      handle: clamp(b.handle, 120),
+      brandColors: arr(b.brandColors, 24) as string[],
+      links: arr(b.links, 24) as string[],
       assets: {},
-      termSwaps: Array.isArray(b.termSwaps) ? (b.termSwaps as { from: string; to: string }[]) : [],
-      notes: String(b.notes ?? ''),
+      termSwaps: arr(b.termSwaps, 200) as { from: string; to: string }[],
+      notes: clamp(b.notes, 5000),
       // clamp to non-negative — a negative price would corrupt every Economics/Today money figure
       buildPrice: Math.max(0, Number(b.buildPrice) || 0),
       monthlyRetainer: Math.max(0, Number(b.monthlyRetainer) || 0),
@@ -451,6 +465,22 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   app.get('/jobs/:id', { preHandler: requireAuth }, async (req, reply) => {
     const j = await repo.getJob((req.params as { id: string }).id);
     if (!j) return reply.code(404).send({ error: 'not found' });
+    // Redact Discord webhook tokens before returning the manifest. A content-step webhook entry stores
+    // newId = `${webhookId}:${webhookToken}`; that token is a live, unauthenticated post-to-channel
+    // credential for the CLIENT's guild — it must never reach the browser (or a DB backup taken via API).
+    if (j.manifest?.entries?.some((e) => e.kind === 'webhook')) {
+      return {
+        ...j,
+        manifest: {
+          ...j.manifest,
+          entries: j.manifest.entries.map((e) =>
+            e.kind === 'webhook' && typeof e.newId === 'string' && e.newId.includes(':')
+              ? { ...e, newId: `${e.newId.slice(0, e.newId.indexOf(':'))}:***redacted***` }
+              : e,
+          ),
+        },
+      };
+    }
     return j;
   });
 
@@ -615,7 +645,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         : await new MockGuild(guildId).getBotPermissions();
       return { guildId, mode: isLiveMode() ? 'live' : 'demo', ...auditAuthority(perms) };
     } catch (err) {
-      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err), reachable: false });
+      console.error('preflight/guild fetch failed:', err); // detail server-side; generic to the client
+      return reply.code(502).send({ error: 'could not reach Discord', reachable: false });
     }
   });
 
@@ -628,7 +659,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   });
 
   // ── Stripe sales-flow scaffold (checkout + webhook → auto-create client) ──
-  registerStripeRoutes(app, repo);
+  registerStripeRoutes(app, repo, rateLimited);
 
   // ── handover (delivery) ──
   // Create-or-fetch a handover for a completed job (idempotent per job).
@@ -696,6 +727,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       const ext = key.split('.').pop() ?? 'png';
       reply.header('Content-Type', ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`);
       reply.header('Cache-Control', 'public, max-age=86400');
+      // A user-supplied SVG served as image/svg+xml can execute script if opened top-level — lock it
+      // down so it can only ever be an inert image, never an XSS vector.
+      reply.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
       return reply.send(bytes);
     } catch {
       return reply.code(404).send({ error: 'not found' });
@@ -707,6 +741,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const id = (req.params as { id: string }).id;
     const h = await repo.getHandover(id);
     if (!h) return reply.code(404).send({ error: 'not found' });
+    // A draft handover is work-in-progress — never expose its build scope/manual-steps publicly. The
+    // operator marks it ready/handed_over before the share link resolves. (Opaque 404, no WIP leak.)
+    if (h.state === 'draft') return reply.code(404).send({ error: 'not found' });
     if (h.hasPassword) {
       if (rateLimited(`h:${req.ip}:${id}`, 10, 60_000)) return reply.code(429).send({ error: 'Too many attempts — wait a minute.' });
       const pw = (req.query as { pw?: string }).pw ?? '';
@@ -839,6 +876,12 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
 </html>`;
 
     reply.header('Content-Type', 'text/html; charset=utf-8');
+    // The share card is server-rendered HTML with an inline <style> + Google Fonts + an OG image. No
+    // scripts at all, so default-src 'none' with only style/font/img allowances closes injection.
+    reply.header(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src https: data:; base-uri 'none'; form-action 'none'",
+    );
     return reply.send(html);
   });
 

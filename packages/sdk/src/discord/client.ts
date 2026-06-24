@@ -308,6 +308,21 @@ export class DiscordGuildClient implements CapturePort, ApplyPort {
   }
 
   async persistAsset(url: string): Promise<string> {
+    // SSRF defense-in-depth: only ever fetch Discord's own CDNs over https. Today every caller builds
+    // these URLs from hardcoded CDN literals, but pinning the host here hard-stops the SSRF class for
+    // any future caller that might pass a snapshot/bundle-derived URL straight in.
+    let host: string;
+    let scheme: string;
+    try {
+      const u = new URL(url);
+      host = u.hostname.toLowerCase();
+      scheme = u.protocol;
+    } catch {
+      throw new Error(`invalid asset url: ${url}`);
+    }
+    if (scheme !== 'https:' || !['cdn.discordapp.com', 'media.discordapp.net'].includes(host)) {
+      throw new Error(`refusing to fetch asset from a non-Discord host: ${host}`);
+    }
     const res = await fetch(url);
     if (!res.ok) throw new Error(`asset download failed (${res.status}): ${url}`);
     const bytes = new Uint8Array(await res.arrayBuffer());

@@ -240,4 +240,45 @@ describe('stripe webhook idempotency (unique session-id dedup)', () => {
       await app.close();
     }
   });
+
+  it('CONCURRENT identical webhooks still create exactly ONE client (in-memory atomic dedup)', async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    const repo = new InMemoryRepo(true);
+    const app = buildServer({ repo });
+    await app.ready();
+    try {
+      const before = (await repo.listClients()).length;
+      const payload = JSON.stringify({ type: 'checkout.session.completed', data: { object: { id: 'cs_race_1', payment_status: 'paid', metadata: { clientName: 'Race Co' } } } });
+      // Fire them concurrently — the read-then-create check interleaves; only the addClient uniqueness
+      // guard prevents a double-create. All requests still ack 200 (the dedup is swallowed).
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => app.inject({ method: 'POST', url: '/stripe/webhook', headers: { 'content-type': 'application/json' }, payload })),
+      );
+      expect(results.every((r) => r.statusCode === 200)).toBe(true);
+      expect((await repo.listClients()).filter((c) => c.creatorName === 'Race Co').length).toBe(1);
+      expect((await repo.listClients()).length).toBe(before + 1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('production with NO stripe keys rejects an unsigned webhook (no forged client)', async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    const repo = new InMemoryRepo(true);
+    const app = buildServer({ repo });
+    await app.ready();
+    try {
+      const before = (await repo.listClients()).length;
+      const res = await app.inject({ method: 'POST', url: '/stripe/webhook', headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ type: 'checkout.session.completed', data: { object: { id: 'cs_forged', payment_status: 'paid', metadata: { clientName: 'Forged Prod' } } } }) });
+      expect(res.statusCode).toBe(400); // refuse to fulfil a forged unsigned event in prod
+      expect((await repo.listClients()).length).toBe(before);
+    } finally {
+      process.env.NODE_ENV = prev;
+      await app.close();
+    }
+  });
 });
