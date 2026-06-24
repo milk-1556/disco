@@ -3,20 +3,32 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Disco — Snapshot a server once. Rebrand and build it a hundred times.</title>
+    <title>Disco — done-for-you Discord communities for casino & betting creators</title>
     <meta
       name="description"
-      content="Disco turns a finished Discord community into a product line. Snapshot a server once, rebrand it for any client in a few clicks, and build it into a fresh guild idempotently — then deliver a branded handover page."
+      content="Disco builds and runs custom Discord communities for casino and betting creators. We snapshot a proven server once, rebrand it for your channel, and build it into a fresh guild — delivered ready for handover. Builds from ~$2k; monthly management from $750/mo."
     />
     <meta name="theme-color" content="#0e0d13" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://disco.build/" />
 
     <!-- Open Graph -->
-    <meta property="og:title" content="Disco — snapshot once, rebrand-and-build many" />
+    <meta property="og:title" content="Disco — done-for-you Discord communities for casino creators" />
     <meta
       property="og:description"
-      content="The assembly line for selling custom-branded Discord communities."
+      content="Snapshot a proven server once, rebrand it for your channel, build it clean. Done-for-you Discord communities for gambling creators — built fast, delivered ready to hand over."
     />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://disco.build/" />
+    <meta property="og:site_name" content="Disco" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Disco — done-for-you Discord for casino creators" />
+    <meta
+      name="twitter:description"
+      content="We snapshot a proven server once, rebrand it for your channel, and build it clean — delivered ready for handover."
+    />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -661,6 +673,81 @@
         flex-wrap: wrap;
       }
 
+      /* ────────── PROOF ────────── */
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.1rem;
+        margin-bottom: 1.1rem;
+      }
+      @media (max-width: 720px) {
+        .stat-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .stat {
+        padding: 1.6rem 1.5rem;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: var(--ink-raised);
+      }
+      .stat .num {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: clamp(2rem, 5vw, 2.7rem);
+        letter-spacing: -0.03em;
+        line-height: 1;
+        background: linear-gradient(100deg, var(--source), var(--client));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .stat .cap {
+        margin-top: 0.7rem;
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.5;
+      }
+      .case {
+        padding: 1.9rem;
+        border-radius: 18px;
+        background:
+          linear-gradient(var(--ink-raised), var(--ink-raised)) padding-box,
+          linear-gradient(140deg, var(--source), var(--client)) border-box;
+        border: 1px solid transparent;
+      }
+      .case-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 1.4rem;
+      }
+      @media (max-width: 720px) {
+        .case-row {
+          grid-template-columns: 1fr;
+          gap: 1.1rem;
+        }
+      }
+      .case-row .col .label {
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .case-row .col p {
+        margin-top: 0.5rem;
+        color: var(--bone);
+        font-size: 0.95rem;
+        line-height: 1.55;
+      }
+      .case-foot {
+        margin-top: 1.5rem;
+        padding-top: 1.3rem;
+        border-top: 1px solid var(--line-soft);
+        font-size: 0.82rem;
+        color: var(--faint);
+      }
+
       /* ────────── HOW IT WORKS — transform spine strip ────────── */
       .steps {
         position: relative;
@@ -1004,13 +1091,13 @@
         </a>
         <nav class="nav-links" aria-label="Primary">
           <a class="navlink" href="#how">How it works</a>
-          <a class="navlink" href="#features">Features</a>
+          <a class="navlink" href="#features">What you get</a>
           <a class="navlink" href="#pricing">Pricing</a>
           <a class="navlink" href="#faq">FAQ</a>
         </nav>
         <div class="nav-cta">
           <a class="btn btn-ghost" href="/app">Sign in</a>
-          <a class="btn btn-primary" href="#book">Book a demo</a>
+          <a class="btn btn-primary" href="#book">Book a build</a>
         </div>
       </div>
     </header>
@@ -1020,24 +1107,24 @@
       <section class="hero" aria-labelledby="hero-title">
         <div class="wrap hero-grid">
           <div>
-            <p class="eyebrow reveal">The assembly line for branded Discord communities</p>
+            <p class="eyebrow reveal">Done-for-you Discord for casino &amp; betting creators</p>
             <h1 id="hero-title" class="reveal d1">
-              Snapshot a server once.
-              <span class="transform-text">Rebrand and build it a hundred times.</span>
+              A proven casino Discord,
+              <span class="transform-text">rebuilt clean under your brand.</span>
             </h1>
             <p class="lede reveal d2">
-              You craft polished Discord communities and sell them to creators. Today every sale
-              means rebuilding the whole thing by hand. <strong>Disco turns that craft into a
-              product line</strong> — capture once, rebrand in clicks, build idempotently, deliver
-              branded.
+              You run a gambling channel. Your community lives on Discord — and a sloppy server
+              costs you retention, subs and sponsor deals. <strong>We snapshot a server that already
+              works, rebrand every channel, role and link for you, and build it fresh</strong> —
+              delivered ready to hand over.
             </p>
             <div class="hero-cta reveal d2">
-              <a class="btn btn-primary btn-lg" href="#book">Book a demo</a>
+              <a class="btn btn-primary btn-lg" href="#book">Book a build</a>
               <a class="btn btn-ghost btn-lg" href="#how">See how it works →</a>
             </div>
             <div class="hero-note reveal d3">
               <span class="live-dot" aria-hidden="true"></span>
-              <span>Dry-run before every commit · idempotent · resumable · honest manual steps</span>
+              <span>Most builds delivered in days · you keep full ownership · honest manual steps, never a half-build</span>
             </div>
           </div>
 
@@ -1048,7 +1135,7 @@
                 <span class="dot" style="background: var(--source)"></span>
                 <span class="dot" style="background: var(--gold)"></span>
                 <span class="dot" style="background: var(--client)"></span>
-                <span class="label">build-console · acme-slots-hq → client</span>
+                <span class="label">build-console · proven-slots-hq → your-channel</span>
               </div>
 
               <div class="swap-row">
@@ -1089,22 +1176,23 @@
         <div class="wrap">
           <div class="section-head reveal">
             <p class="eyebrow">The problem → the unlock</p>
-            <h2 id="pu-title">A template should be a SKU you sell — not a thing you rebuild.</h2>
+            <h2 id="pu-title">Your community is your business. A messy server quietly bleeds it.</h2>
             <p>
-              The work is real and the demand is there. What's missing is leverage: a way to make
-              the second, tenth, and hundredth build cost almost nothing.
+              For a casino creator, Discord is where subs, VIPs and sponsor proof all live. Building
+              one that actually retains is a job — and most creators are doing it on a Friday night
+              between streams.
             </p>
           </div>
 
           <div class="pu-grid">
             <div class="pu-card problem reveal d1">
-              <span class="chip" style="border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger)">today · by hand</span>
-              <h3>Every sale is a full rebuild</h3>
+              <span class="chip" style="border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger)">DIY · most creators today</span>
+              <h3>The server you cobbled together</h3>
               <ul class="pu-list">
-                <li><span class="pu-mark">✕</span> Re-create every channel and category, in order, from memory.</li>
-                <li><span class="pu-mark">✕</span> Re-apply every role and permission overwrite — and hope nothing drifts.</li>
-                <li><span class="pu-mark">✕</span> Re-skin names, colors, links and copy by hand, one client at a time.</li>
-                <li><span class="pu-mark">✕</span> Hours per delivery. Inconsistent results. A hard ceiling on volume.</li>
+                <li><span class="pu-mark">✕</span> Channels and roles bolted on over months — confusing for new members on day one.</li>
+                <li><span class="pu-mark">✕</span> Permissions nobody fully understands, so leaks and mod drama keep happening.</li>
+                <li><span class="pu-mark">✕</span> No clean VIP / sub structure to point a sponsor or affiliate manager at.</li>
+                <li><span class="pu-mark">✕</span> Rebuilding it properly means weeks you'd rather spend making content.</li>
               </ul>
             </div>
 
@@ -1113,13 +1201,13 @@
             </div>
 
             <div class="pu-card unlock reveal d2">
-              <span class="chip chip-jade">with Disco · snapshot once</span>
-              <h3>Rebrand-and-build, many</h3>
+              <span class="chip chip-jade">with Disco · built for you</span>
+              <h3>A server that's ready to scale</h3>
               <ul class="pu-list unlock">
-                <li><span class="pu-mark">✓</span> Capture the finished server once into a typed, versioned, diffable artifact.</li>
-                <li><span class="pu-mark">✓</span> Rebrand deterministically — names, colors, links, copy, assets, all previewed.</li>
-                <li><span class="pu-mark">✓</span> Build into a fresh guild idempotently, resumably, in dependency-correct order.</li>
-                <li><span class="pu-mark">✓</span> Minutes per delivery. Zero drift. The same template sells again and again.</li>
+                <li><span class="pu-mark">✓</span> Start from a layout proven on real casino communities — not a blank guild.</li>
+                <li><span class="pu-mark">✓</span> Every channel, role and permission rebuilt clean and rebranded to your channel.</li>
+                <li><span class="pu-mark">✓</span> Clear VIP, sub and affiliate structure you can show any sponsor with confidence.</li>
+                <li><span class="pu-mark">✓</span> Delivered in days, handed to you with full ownership — then we run it if you want.</li>
               </ul>
             </div>
           </div>
@@ -1132,11 +1220,11 @@
       <section id="features" aria-labelledby="feat-title">
         <div class="wrap">
           <div class="section-head reveal">
-            <p class="eyebrow">What's in the box</p>
-            <h2 id="feat-title">Built like an engine, not a macro.</h2>
+            <p class="eyebrow">What you get</p>
+            <h2 id="feat-title">Built like an engine, not a copy-paste job.</h2>
             <p>
-              Every part of the pipeline is designed for the thing that actually matters when you're
-              selling: trust, consistency, and the volume that comes from both.
+              Behind every Disco build is a real pipeline — the same one we use on every casino
+              community we ship. It's why your server comes out consistent, clean and yours.
             </p>
           </div>
 
@@ -1196,11 +1284,11 @@
                   <path d="M3 8l9-5 9 5-9 5-9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" />
                 </svg>
               </div>
-              <h3>Deliver with a branded handover</h3>
+              <h3>Branded handover, full ownership</h3>
               <p>
-                A public delivery page in the client's logo and colors — optionally password-gated,
-                shareable as a link. Includes the scope delivered, one-click bot re-invites, and a
-                guided ownership transfer.
+                You get a private delivery page in your logo and colors — optionally password-gated.
+                It lists exactly what was built, gives one-click bot re-invites, and walks you
+                through taking full ownership of the server. It's yours, not ours.
               </p>
               <div class="meta"><span class="chip chip-gold">client-facing</span><span class="chip">shareable</span></div>
             </article>
@@ -1212,13 +1300,13 @@
                   <rect x="3" y="4" width="18" height="4" rx="1" /><rect x="3" y="10" width="18" height="4" rx="1" /><rect x="3" y="16" width="18" height="4" rx="1" /><path d="M7 6h.01M7 12h.01M7 18h.01" />
                 </svg>
               </div>
-              <h3>Queue &amp; economics</h3>
+              <h3>Tracked, resumable builds</h3>
               <p>
-                A build queue with retry, resume and cancel, live cross-process logs, and per-step
-                timing — so you can see your real unit economics. A pre-flight authority check
-                confirms the bot can do the job before any live run.
+                Every build runs through a queue with retry and resume, live logs, and per-step
+                timing — so nothing gets half-done and we can show you exactly what happened. A
+                pre-flight authority check confirms the bot can do the job before any live run.
               </p>
-              <div class="meta"><span class="chip">retry / resume</span><span class="chip chip-gold">per-step timing</span></div>
+              <div class="meta"><span class="chip">retry / resume</span><span class="chip chip-gold">fully logged</span></div>
             </article>
 
             <!-- Honest manual steps -->
@@ -1231,11 +1319,65 @@
               <h3>Honest manual steps</h3>
               <p>
                 Anything Discord's API genuinely can't clone — third-party bot configs, member data,
-                boost perks, interactive panels — is surfaced as a manual step with a reason. Never
-                a silent half-build.
+                boost perks, interactive panels — is handed to you as a labeled manual step with a
+                reason. We never fake an endpoint or leave you a silent half-build.
               </p>
               <div class="meta"><span class="chip chip-client">with a reason</span><span class="chip">never silent</span></div>
             </article>
+          </div>
+        </div>
+      </section>
+
+      <div class="wrap"><div class="divider"></div></div>
+
+      <!-- ─────────────── PROOF ─────────────── -->
+      <section id="proof" aria-labelledby="proof-title">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <p class="eyebrow">Why it works</p>
+            <h2 id="proof-title">Less guesswork, more retention.</h2>
+            <p>
+              A clean, well-structured community keeps members around and gives sponsors something
+              to trust. The figures below are illustrative targets we design toward — not specific
+              client results.
+            </p>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat reveal">
+              <div class="num">Days</div>
+              <p class="cap">Typical turnaround from snapshot to a finished, branded server — not the weeks a careful DIY rebuild takes.</p>
+            </div>
+            <div class="stat reveal d1">
+              <div class="num">1 → ∞</div>
+              <p class="cap">One proven layout, rebuilt clean for any creator. The structure that works doesn't get reinvented each time.</p>
+            </div>
+            <div class="stat reveal d2">
+              <div class="num">100%</div>
+              <p class="cap">Of what we can't clone is labeled as a manual step with a reason. No faked endpoints, no silent gaps.</p>
+            </div>
+          </div>
+
+          <div class="case reveal d1">
+            <span class="chip chip-gold" style="margin-bottom: 1.1rem">Illustrative scenario · not a named client</span>
+            <div class="case-row">
+              <div class="col">
+                <span class="label">Before</span>
+                <p>A slots streamer's server: 40+ channels added ad-hoc, unclear VIP tiers, permission leaks, no clean place to show affiliate proof.</p>
+              </div>
+              <div class="col">
+                <span class="label">The build</span>
+                <p>Snapshot a proven casino layout, rebrand every name, color and link to the channel, rebuild clean with VIP and sub tiers structured properly.</p>
+              </div>
+              <div class="col">
+                <span class="label">After handover</span>
+                <p>A server that reads clearly to new members and to sponsors — owned outright by the creator, with optional monthly management on top.</p>
+              </div>
+            </div>
+            <p class="case-foot">
+              Illustrative of how a Disco build is structured. We don't publish or fabricate named
+              testimonials — book a build and we'll walk you through real work on a call.
+            </p>
           </div>
         </div>
       </section>
@@ -1247,10 +1389,10 @@
         <div class="wrap">
           <div class="section-head reveal" style="text-align: center; margin-left: auto; margin-right: auto;">
             <p class="eyebrow">How it works</p>
-            <h2 id="how-title">Four steps along the transform spine.</h2>
+            <h2 id="how-title">Four steps from proven server to yours.</h2>
             <p style="margin-left: auto; margin-right: auto;">
-              The same source-to-client motion that runs through the whole product. Violet is the
-              template you start from; rose is the client you ship to.
+              The same motion runs through every build. Violet is the proven template we start from;
+              rose is your channel — the brand we ship it to.
             </p>
           </div>
 
@@ -1268,7 +1410,7 @@
               <div>
                 <span class="chip chip-client tag">transform</span>
                 <h3>Rebrand</h3>
-                <p>Swap names, colors, links, copy and assets for the client. Preview every change.</p>
+                <p>Swap every name, color, link, copy line and asset to your channel. Every change previewed.</p>
               </div>
             </div>
             <div class="step reveal d2">
@@ -1283,8 +1425,8 @@
               <div class="node">4</div>
               <div>
                 <span class="chip chip-gold tag">deliver</span>
-                <h3>Deliver</h3>
-                <p>Hand over a branded delivery page with re-invites and ownership transfer.</p>
+                <h3>Hand over</h3>
+                <p>You get a branded delivery page, bot re-invites and full ownership of the server.</p>
               </div>
             </div>
           </div>
@@ -1298,58 +1440,64 @@
         <div class="wrap">
           <div class="section-head reveal" style="text-align: center; margin-left: auto; margin-right: auto;">
             <p class="eyebrow">Pricing</p>
-            <h2 id="price-title">Priced to the way you actually sell.</h2>
+            <h2 id="price-title">A build to start. Management when you want it.</h2>
             <p style="margin-left: auto; margin-right: auto;">
-              Start per-build, move to a retainer as volume grows, or run it fully under your own
-              brand. Every plan includes the full snapshot → rebrand → build → deliver pipeline.
+              Pay once for the build, then optionally keep us on monthly to run and grow the server.
+              Final pricing is scoped to your channel size and how custom you go — quoted on the
+              call, no surprises.
             </p>
           </div>
 
           <div class="price-grid">
-            <!-- per build -->
+            <!-- one-off build -->
             <div class="tier reveal">
-              <h3>Per-build</h3>
-              <div class="price">$49<span> / build</span></div>
-              <p class="sub">For your first deliveries. Pay only when you ship a server to a client.</p>
+              <h3>Starter build</h3>
+              <div class="price">$2k<span>+ one-time</span></div>
+              <p class="sub">A complete, rebranded community delivered ready to hand over. Best for a focused single-channel server.</p>
               <ul>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Unlimited snapshots &amp; dry-runs</li>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Full rebrand &amp; idempotent build engine</li>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Branded delivery page per build</li>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Email support</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Snapshot of a proven casino layout, rebranded to you</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Full channel, role &amp; permission build, clean</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Branded handover page + ownership transfer</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Labeled manual steps for anything the API can't clone</li>
               </ul>
-              <a class="btn btn-ghost" href="#book">Start per-build</a>
+              <a class="btn btn-ghost" href="#book">Book a build</a>
             </div>
 
-            <!-- retainer -->
+            <!-- premium build + management -->
             <div class="tier featured reveal d1">
               <span class="badge">Most popular</span>
-              <h3>Monthly retainer</h3>
-              <div class="price">$399<span> / mo</span></div>
-              <p class="sub">For operators shipping regularly. Unlimited builds, the full queue, real unit economics.</p>
+              <h3>Custom build + management</h3>
+              <div class="price scale">$5k–$7.5k+<span> build · from $750/mo</span></div>
+              <p class="sub">A bespoke server built to your brand, then run by us so it keeps growing while you make content.</p>
               <ul>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Everything in Per-build, unlimited</li>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Build queue with retry / resume / cancel</li>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Per-step timing &amp; live activity pulse</li>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Client records &amp; upsell tracker</li>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Priority support</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Everything in Starter, fully customized</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> VIP / sub / affiliate tiers structured for sponsors</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Monthly management: updates, moderation setup, tuning</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Add-on bot &amp; integration setup as you grow</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Priority support, cancel management anytime</li>
               </ul>
-              <a class="btn btn-primary" href="#book">Book a demo</a>
+              <a class="btn btn-primary" href="#book">Book a build</a>
             </div>
 
-            <!-- white label -->
+            <!-- agency / network -->
             <div class="tier reveal d2">
-              <h3>White-label</h3>
+              <h3>Network &amp; white-label</h3>
               <div class="price scale">Let's talk</div>
-              <p class="sub">Run the entire platform under your own brand and domain for your team or clients.</p>
+              <p class="sub">For agencies, casino networks and teams shipping branded servers for multiple creators.</p>
               <ul>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Everything in Retainer</li>
-                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Your brand on the dashboard &amp; delivery pages</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Volume pricing across many builds</li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Your brand on the dashboard &amp; handover pages</li>
                 <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Custom domain &amp; SSO</li>
                 <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg> Self-host option &amp; SLA</li>
               </ul>
-              <a class="btn btn-ghost" href="#book">Contact sales</a>
+              <a class="btn btn-ghost" href="#book">Talk to us</a>
             </div>
           </div>
+
+          <p class="reveal d2" style="text-align: center; margin-top: 1.8rem; font-size: 0.85rem; color: var(--faint); max-width: 60ch; margin-left: auto; margin-right: auto;">
+            Ranges are starting points, not a checkout. Every build is quoted to your scope on the
+            call — server size, how custom the brand and structure go, and which add-ons you want.
+          </p>
         </div>
       </section>
 
@@ -1365,33 +1513,33 @@
 
           <div class="faq-grid">
             <details class="faq reveal">
-              <summary>Will building twice create duplicate channels? <span class="plus">+</span></summary>
-              <p class="answer">No. Builds are idempotent — they key off a manifest, so running the same build again reconciles to the same state instead of re-creating. If a build crashes mid-way, the next run resumes from the manifest rather than starting over.</p>
+              <summary>Is this against Discord's ToS? <span class="plus">+</span></summary>
+              <p class="answer">No. We build the structure of a server — channels, categories, roles and permissions — using a bot you authorize, the same way any community manager sets up a guild. We don't scrape members, copy another creator's private server without permission, or automate user accounts. You're responsible for running a community that follows Discord's Terms and Community Guidelines, including the rules around gambling and paid content; we'll flag anything in your scope that looks risky.</p>
             </details>
 
             <details class="faq reveal d1">
-              <summary>What can't be cloned automatically? <span class="plus">+</span></summary>
-              <p class="answer">Anything Discord's API can't reproduce — third-party bot configurations, member data, boost perks, interactive panels, and Discovery. Disco never pretends to clone these. Each is surfaced as a manual step with a clear reason, so you always know exactly what's left to do by hand.</p>
+              <summary>Do I own the server after handover? <span class="plus">+</span></summary>
+              <p class="answer">Completely. The build happens in your guild, and at handover we walk you through transferring full server ownership to your own account. Disco and our bot can be removed entirely — nothing keeps you locked in. The community is yours, including if you cancel monthly management later.</p>
             </details>
 
             <details class="faq reveal">
-              <summary>Can I see what will happen before I commit? <span class="plus">+</span></summary>
-              <p class="answer">Always. Every build supports a dry-run that writes nothing and produces the full report: what would be created, what would be skipped, and the manual steps. A pre-flight authority check also confirms the bot has every permission needed before any live run.</p>
+              <summary>How long does a build take? <span class="plus">+</span></summary>
+              <p class="answer">Most builds are delivered within days of the scoping call, not weeks. The actual build into Discord runs in minutes — the time is in agreeing the brand, structure and any custom work up front. Bigger, fully-custom networks take longer; we'll give you a date on the call.</p>
             </details>
 
             <details class="faq reveal d1">
-              <summary>Do I need to give Disco my Discord token? <span class="plus">+</span></summary>
-              <p class="answer">You bring your own bot. You invite it to the source and target guilds and run the authority check from the dashboard. Disco drives the build through your bot — and you can rehearse the whole pipeline against an in-memory mock guild before ever pointing it at a real server.</p>
+              <summary>What transfers automatically, and what's manual? <span class="plus">+</span></summary>
+              <p class="answer">Channels, categories, roles, permission overwrites, emojis, stickers, AutoMod and welcome screens rebuild automatically. What Discord's API genuinely can't clone — third-party bot configs, existing member data, boost perks, and interactive panels — is handed to you as a labeled manual step with a reason. We never fake an endpoint or imply a capability that doesn't exist.</p>
             </details>
 
             <details class="faq reveal">
-              <summary>How does the rebrand avoid breaking things? <span class="plus">+</span></summary>
-              <p class="answer">Find-and-replace is camelCase- and url-slug-aware, brand tokens are detected and pre-filled, and color and link maps are explicit. Crucially, every swap is previewed before a single channel is built — nothing changes silently.</p>
+              <summary>Do you need my Discord login or token? <span class="plus">+</span></summary>
+              <p class="answer">Never your login. We use a bot that you invite to your server and authorize, and a pre-flight check confirms it has the permissions needed before any live run. You stay in control of access the whole time and can revoke the bot the moment we're done.</p>
             </details>
 
             <details class="faq reveal d1">
-              <summary>What does the client actually receive? <span class="plus">+</span></summary>
-              <p class="answer">A polished, branded delivery page in their logo and colors — optionally password-gated and shareable as a link. It lists the scope delivered, gives one-click bot re-invite URLs, and walks them through transferring ownership of the server to themselves.</p>
+              <summary>What's the difference between a build and management? <span class="plus">+</span></summary>
+              <p class="answer">A build is the one-time work of standing up your community, clean and branded. Monthly management is optional and ongoing — we keep the server updated, help with moderation setup, structure VIP and affiliate tiers as sponsors come in, and set up add-on bots as you grow. Take the build alone, or keep us on to run it. Management can be cancelled anytime.</p>
             </details>
           </div>
         </div>
@@ -1401,19 +1549,19 @@
       <section id="book" aria-labelledby="cta-title">
         <div class="wrap">
           <div class="cta-band reveal">
-            <p class="eyebrow" style="text-align: center">Stop rebuilding. Start shipping.</p>
-            <h2 id="cta-title">Turn one great server into a hundred sales.</h2>
+            <p class="eyebrow" style="text-align: center">Stop duct-taping your server together.</p>
+            <h2 id="cta-title">Get a casino community built right — and yours.</h2>
             <p>
-              Book a 20-minute demo and we'll snapshot one of your servers live, rebrand it for a
-              made-up client, and build it into a fresh guild — start to delivered handover — while
-              you watch.
+              Book a 20-minute call. We'll look at your channel, show you the proven layout we'd
+              start from, scope the build to your brand, and give you a firm price and turnaround —
+              no obligation.
             </p>
             <div class="hero-cta">
-              <a class="btn btn-primary btn-lg" href="mailto:hello@disco.build?subject=Disco%20demo">Book a demo</a>
-              <a class="btn btn-ghost btn-lg" href="mailto:hello@disco.build?subject=Disco%20question">Email us a question →</a>
+              <a class="btn btn-primary btn-lg" href="mailto:hello@disco.build?subject=Disco%20build%20enquiry">Book a build</a>
+              <a class="btn btn-ghost btn-lg" href="#how">See how it works →</a>
             </div>
             <p class="mono" style="margin-top: 1.6rem; font-size: 0.78rem; color: var(--faint)">
-              hello@disco.build · no credit card to see it run
+              hello@disco.build · scoped quote on the call, no obligation
             </p>
           </div>
         </div>
@@ -1430,14 +1578,16 @@
           </a>
           <nav class="foot-links" aria-label="Footer">
             <a href="#how">How it works</a>
-            <a href="#features">Features</a>
+            <a href="#features">What you get</a>
+            <a href="#proof">Why it works</a>
             <a href="#pricing">Pricing</a>
             <a href="#faq">FAQ</a>
-            <a href="#book">Book a demo</a>
+            <a href="#book">Book a build</a>
           </nav>
         </div>
         <p class="foot-fine">
-          ⟜→ snapshot once, rebrand-and-build many · © 2026 Disco · Not affiliated with Discord Inc.
+          ⟜→ done-for-you Discord communities for casino &amp; betting creators · © 2026 Disco ·
+          Not affiliated with or endorsed by Discord Inc.
         </p>
       </div>
     </footer>
