@@ -96,3 +96,38 @@ describe('e2e: import → rebrand → build → handover → deliver → share',
     expect((await app.inject({ method: 'GET', url: '/jobs' })).statusCode).toBe(401);
   });
 });
+
+describe('e2e: destructive ops + audit accountability', () => {
+  let app: FastifyInstance;
+  const token = signSession({ email: 'operator@disco.local' });
+  const auth = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('DELETE /snapshots/:id removes it, unlinks builds, writes an audit row; /audit lists it', async () => {
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: auth })).json() as { id: string; name: string }[];
+    const target = snaps[0]!;
+    const del = await app.inject({ method: 'DELETE', url: `/snapshots/${target.id}`, headers: auth });
+    expect(del.statusCode).toBe(200);
+    const after = (await app.inject({ method: 'GET', url: '/snapshots', headers: auth })).json() as { id: string }[];
+    expect(after.find((s) => s.id === target.id)).toBeUndefined();
+    const audit = (await app.inject({ method: 'GET', url: '/audit', headers: auth })).json() as { action: string; target: string; operator: string }[];
+    const row = audit.find((a) => a.action === 'snapshot.delete' && a.target === target.name);
+    expect(row).toBeTruthy();
+    expect(row!.operator).toBe('operator@disco.local');
+  });
+
+  it('DELETE /snapshots/:id 404s an unknown id (no audit row, no throw)', async () => {
+    expect((await app.inject({ method: 'DELETE', url: '/snapshots/nope', headers: auth })).statusCode).toBe(404);
+  });
+
+  it('/health is public and reports status + request metrics', async () => {
+    const h = (await app.inject({ method: 'GET', url: '/health' })).json() as { ok: boolean; api: string; requests: { perRoute: unknown[] } };
+    expect(h.ok).toBe(true);
+    expect(h.api).toBe('up');
+    expect(Array.isArray(h.requests.perRoute)).toBe(true);
+  });
+});

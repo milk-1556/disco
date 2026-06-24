@@ -4,6 +4,16 @@ import type { Client, Handover, Job, SnapshotMetaPatch, SnapshotRecord } from '@
 /** Fields supplied when capturing/importing a snapshot — metadata (tags/note/…) defaults on insert. */
 export type SnapshotCreate = Omit<SnapshotRecord, 'id' | 'tags' | 'note' | 'favorite' | 'isTemplate' | 'lastUsedAt'>;
 
+/** One accountability record for a destructive operation. */
+export interface AuditEntry {
+  id: string;
+  at: string;
+  action: string;
+  target: string;
+  detail: string;
+  operator: string;
+}
+
 /** Creation/patch shapes for handovers (passwordHash is write-only; never on the domain type). */
 export interface HandoverCreate {
   jobId: string;
@@ -35,6 +45,7 @@ export interface Repo {
   getSnapshot(id: string): Promise<SnapshotRecord | undefined>;
   addSnapshot(rec: SnapshotCreate): Promise<SnapshotRecord>;
   updateSnapshot(id: string, patch: SnapshotMetaPatch): Promise<SnapshotRecord | undefined>;
+  deleteSnapshot(id: string): Promise<void>;
   listClients(): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
   addClient(c: Omit<Client, 'id' | 'createdAt'>): Promise<Client>;
@@ -51,6 +62,9 @@ export interface Repo {
   updateHandover(id: string, patch: HandoverPatch): Promise<Handover | undefined>;
   /** The stored password hash for a handover, for public-link verification (never on the domain type). */
   getHandoverPasswordHash(id: string): Promise<string | null | undefined>;
+  /** Append a destructive-op accountability record; list the most recent first. */
+  addAudit(e: Omit<AuditEntry, 'id' | 'at'>): Promise<void>;
+  listAudit(limit?: number): Promise<AuditEntry[]>;
 }
 
 let seq = 1;
@@ -121,6 +135,10 @@ export class InMemoryRepo implements Repo {
     const next = { ...s, ...patch };
     this.snapshots.set(sid, next);
     return next;
+  }
+  async deleteSnapshot(sid: string) {
+    this.snapshots.delete(sid);
+    for (const j of this.jobs.values()) if (j.snapshotId === sid) j.snapshotId = null; // unlink, keep build records
   }
 
   async listClients() {
@@ -207,5 +225,14 @@ export class InMemoryRepo implements Repo {
   private publicHandover(h: Handover & { passwordHash: string | null }): Handover {
     const { passwordHash: _ph, ...rest } = h;
     return rest;
+  }
+
+  private audits: AuditEntry[] = [];
+  async addAudit(e: Omit<AuditEntry, 'id' | 'at'>) {
+    this.audits.push({ ...e, id: newId('audit'), at: now() });
+    if (this.audits.length > 1000) this.audits.shift(); // bound demo memory
+  }
+  async listAudit(limit = 200) {
+    return [...this.audits].reverse().slice(0, limit);
   }
 }

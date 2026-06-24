@@ -17,6 +17,19 @@ model Operator {
   createdAt    DateTime @default(now())
 }
 
+/// Append-only accountability log for destructive operations (client/snapshot delete, build cancel,
+/// password change). Operator-visible for debugging + a trust record on a high-value delivery.
+model AuditLog {
+  id       String   @id @default(cuid())
+  at       DateTime @default(now())
+  action   String // e.g. client.delete | snapshot.delete | build.cancel | handover.password
+  target   String // human label of what was acted on
+  detail   String   @default("")
+  operator String // who did it (operator email)
+
+  @@index([at])
+}
+
 /// A versioned, captured template. The full typed artifact lives in `artifact` (Snapshot JSON).
 model Snapshot {
   id            String    @id @default(cuid())

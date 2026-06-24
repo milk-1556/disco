@@ -13,7 +13,10 @@ import { runBuild } from './jobs.js';
 import { buildInviteUrl } from './perms.js';
 import type { HandoverPatch, Repo } from './repo.js';
 import { getQueue, makeJobChannel, makeRepo } from './runtime.js';
+import { getLastActivityAt, recordRequest, snapshotMetrics } from './metrics.js';
 import { registerStripeRoutes } from './stripe.js';
+
+const BOOT_AT = Date.now();
 
 export interface BuildServerOptions {
   repo?: Repo;
@@ -47,11 +50,25 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return b.count > limit;
   };
 
+  // ── observability: per-request metrics + a structured access log line (one compact JSON per req).
+  // Skips the high-frequency pollers (/health, /activity/stream) to keep the log + ring useful.
+  app.addHook('onResponse', async (req, reply) => {
+    const route = ((req as FastifyRequest & { routeOptions?: { url?: string } }).routeOptions?.url) ?? req.url;
+    if (route === '/health' || route === '/activity/stream') return;
+    const ms = Math.round(reply.elapsedTime);
+    recordRequest(route, reply.statusCode, ms, req.method !== 'GET');
+    const op = (req as FastifyRequest & { session?: { email?: string } }).session?.email ?? null;
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({ t: new Date().toISOString(), id: req.id, route, m: req.method, s: reply.statusCode, ms, op }));
+  });
+
   // Activity live-feed transport: a reserved channel key fans out a "something changed" ping over the
   // SAME (in-memory or Redis) bus the job logs use — so /activity/stream sees worker build-completions
   // cross-process with zero new infra. The client refetches on each ping (event-driven, not polling).
   const ACTIVITY_KEY = '__activity__';
   const pingActivity = (message: string) => void Promise.resolve(channel.publish(ACTIVITY_KEY, { type: 'log', message })).catch(() => {});
+
+  const operatorOf = (req: FastifyRequest): string => (req as FastifyRequest & { session?: { email?: string } }).session?.email ?? 'operator';
 
   // ── auth guard ──
   const requireAuth = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -66,7 +83,37 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   };
 
   // ── public ──
-  app.get('/health', async () => ({ ok: true, mode: isLiveMode() ? 'live' : 'demo' }));
+  // Read-only status page (no auth) — a trust signal + the Operations screen's data source.
+  app.get('/health', async () => {
+    let worker: 'up' | 'down' | 'n/a' = 'n/a';
+    if (useQueue()) {
+      try {
+        const q = getQueue();
+        worker = q && (await q.getWorkers()).length > 0 ? 'up' : 'down';
+      } catch {
+        worker = 'down';
+      }
+    }
+    let lastBuildAt: string | null = null;
+    try {
+      const completed = (await repo.listJobs()).filter((j) => j.status === 'completed').map((j) => j.updatedAt).sort();
+      lastBuildAt = completed.length ? completed[completed.length - 1]! : null;
+    } catch {
+      /* status must never throw */
+    }
+    return {
+      ok: true,
+      mode: isLiveMode() ? 'live' : 'demo',
+      api: 'up' as const,
+      worker,
+      queue: useQueue() ? 'redis' : 'in-process',
+      persistence: usePrisma() ? 'postgres' : 'in-memory',
+      uptimeSec: Math.round((Date.now() - BOOT_AT) / 1000),
+      lastBuildAt,
+      lastActivityAt: getLastActivityAt(),
+      requests: snapshotMetrics(),
+    };
+  });
 
   // Public basics (the login screen + app routing need these) are returned to anyone; the operator
   // identity + deployment internals are ONLY included for an authenticated caller (the Setup screen),
@@ -124,6 +171,16 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const rec = await repo.updateSnapshot((req.params as { id: string }).id, parsed.data);
     if (!rec) return reply.code(404).send({ error: 'not found' });
     return { id: rec.id, name: rec.name, tags: rec.tags, note: rec.note, favorite: rec.favorite, isTemplate: rec.isTemplate };
+  });
+
+  app.delete('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const rec = await repo.getSnapshot(id);
+    if (!rec) return reply.code(404).send({ error: 'not found' });
+    await repo.deleteSnapshot(id);
+    await repo.addAudit({ action: 'snapshot.delete', target: rec.name, detail: `v${rec.version} · ${rec.sourceGuildId}`, operator: operatorOf(req) });
+    pingActivity('snapshot');
+    return { ok: true };
   });
 
   app.get('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
@@ -265,9 +322,15 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     });
   });
   app.delete('/clients/:id', { preHandler: requireAuth }, async (req) => {
-    await repo.deleteClient((req.params as { id: string }).id);
+    const id = (req.params as { id: string }).id;
+    const c = await repo.getClient(id);
+    await repo.deleteClient(id);
+    if (c) await repo.addAudit({ action: 'client.delete', target: c.creatorName, detail: c.handle, operator: operatorOf(req) });
     return { ok: true };
   });
+
+  // Operator accountability log of destructive operations.
+  app.get('/audit', { preHandler: requireAuth }, async () => repo.listAudit(200));
 
   // ── rebrand preview ──
   app.post('/rebrand/preview', { preHandler: requireAuth }, async (req, reply) => {
@@ -514,6 +577,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (job.status !== 'queued' && job.status !== 'paused') return reply.code(400).send({ error: `cannot cancel a ${job.status} job` });
     if (useQueue()) await getQueue().remove(id).catch(() => {});
     await repo.updateJob(id, { status: 'canceled' });
+    await repo.addAudit({ action: 'build.cancel', target: `job ${id.slice(-6)}`, detail: job.kind, operator: operatorOf(req) });
     return { id, status: 'canceled' };
   });
 
@@ -577,7 +641,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (b.state !== undefined) patch.state = b.state;
     if (b.ownershipSteps !== undefined) patch.ownershipSteps = b.ownershipSteps;
     if (b.upsellStatus !== undefined) patch.upsellStatus = b.upsellStatus;
-    if (b.password !== undefined) patch.passwordHash = b.password ? bcrypt.hashSync(b.password, 10) : null;
+    if (b.password !== undefined) {
+      patch.passwordHash = b.password ? bcrypt.hashSync(b.password, 10) : null;
+      await repo.addAudit({ action: 'handover.password', target: `handover ${id.slice(-6)}`, detail: b.password ? 'password set' : 'password cleared', operator: operatorOf(req) });
+    }
     if (b.welcomeMessage !== undefined) patch.welcomeMessage = b.welcomeMessage;
     if (b.logo !== undefined) {
       if (b.logo === null) patch.logoKey = null;

@@ -11,7 +11,7 @@ import {
   type SnapshotRecord,
 } from '@disco/schema';
 import { Prisma, PrismaClient } from '@prisma/client';
-import type { HandoverCreate, HandoverPatch, Repo, SnapshotCreate } from './repo.js';
+import type { AuditEntry, HandoverCreate, HandoverPatch, Repo, SnapshotCreate } from './repo.js';
 
 let _prisma: PrismaClient | undefined;
 /** Memoized singleton PrismaClient (one pool per process). */
@@ -98,6 +98,10 @@ export class PrismaRepo implements Repo {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') return undefined;
       throw err;
     }
+  }
+  async deleteSnapshot(id: string) {
+    await this.db.job.updateMany({ where: { snapshotId: id }, data: { snapshotId: null } }); // unlink, keep builds
+    await this.db.snapshot.delete({ where: { id } }).catch(() => {});
   }
 
   // ── clients ──
@@ -277,6 +281,14 @@ export class PrismaRepo implements Repo {
       throw err;
     }
   }
+  async addAudit(e: Omit<AuditEntry, 'id' | 'at'>) {
+    await this.db.auditLog.create({ data: { action: e.action, target: e.target, detail: e.detail, operator: e.operator } });
+  }
+  async listAudit(limit = 200) {
+    const rows = await this.db.auditLog.findMany({ orderBy: { at: 'desc' }, take: limit });
+    return rows.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: r.target, detail: r.detail, operator: r.operator }));
+  }
+
   async getHandoverPasswordHash(id: string) {
     const r = await this.db.handover.findUnique({ where: { id }, select: { passwordHash: true } });
     return r ? r.passwordHash : undefined;
