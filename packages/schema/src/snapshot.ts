@@ -56,6 +56,8 @@ export const SnapshotRecord = z.object({
   isTemplate: z.boolean().default(false),
   /** Bumped whenever this snapshot is used for a build — drives "sort by last used". */
   lastUsedAt: z.string().nullable().default(null),
+  /** The operator who owns this record (multi-operator access scoping). Defaults to the sole operator. */
+  ownerEmail: z.string().default(''),
 });
 export type SnapshotRecord = z.infer<typeof SnapshotRecord>;
 

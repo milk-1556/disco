@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { verifySession } from './auth.js';
+import { env } from './env.js';
 import type { Repo } from './repo.js';
 
 /**
@@ -256,6 +257,7 @@ export function registerStripeRoutes(
             monthlyRetainer: 0,
             upsells: [],
             stripeSessionId: sessionId || null,
+            ownerEmail: env.operatorEmail, // Stripe-fulfilled clients are owned by the configured operator
           });
           void client;
         } catch (err) {

@@ -134,6 +134,8 @@ export const Job = z.object({
   manifest: JobManifest.nullable().default(null),
   report: RebuildReport.nullable().default(null),
   error: z.string().nullable().default(null),
+  /** The operator who owns this record (multi-operator access scoping). Defaults to the sole operator. */
+  ownerEmail: z.string().default(''),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

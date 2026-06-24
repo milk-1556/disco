@@ -43,7 +43,7 @@ export class PrismaRepo implements Repo {
   // ── snapshots ──
   private toSnapshot = (r: {
     id: string; name: string; version: number; sourceGuildId: string; schemaVersion: string; capturedAt: Date; artifact: Prisma.JsonValue;
-    tags: string[]; note: string; favorite: boolean; isTemplate: boolean; lastUsedAt: Date | null;
+    tags: string[]; note: string; favorite: boolean; isTemplate: boolean; lastUsedAt: Date | null; ownerEmail?: string;
   }): SnapshotRecord => ({
     id: r.id,
     name: r.name,
@@ -57,6 +57,7 @@ export class PrismaRepo implements Repo {
     favorite: r.favorite,
     isTemplate: r.isTemplate,
     lastUsedAt: r.lastUsedAt ? iso(r.lastUsedAt) : null,
+    ownerEmail: r.ownerEmail ?? '',
   });
 
   async listSnapshots() {
@@ -64,8 +65,8 @@ export class PrismaRepo implements Repo {
     return rows.map(this.toSnapshot);
   }
   async snapshotNames() {
-    // select id+name only — never deserialize the (large) artifact JSON just to read a name
-    return this.db.snapshot.findMany({ select: { id: true, name: true } });
+    // select id+name(+owner) only — never deserialize the (large) artifact JSON just to read a name
+    return this.db.snapshot.findMany({ select: { id: true, name: true, ownerEmail: true } });
   }
   async getSnapshot(id: string) {
     const r = await this.db.snapshot.findUnique({ where: { id } });
@@ -80,6 +81,7 @@ export class PrismaRepo implements Repo {
         schemaVersion: rec.schemaVersion,
         capturedAt: new Date(rec.capturedAt),
         artifact: asJson(rec.snapshot),
+        ownerEmail: rec.ownerEmail,
       },
     });
     return this.toSnapshot(r);
@@ -106,7 +108,7 @@ export class PrismaRepo implements Repo {
 
   // ── clients ──
   private toClient = (r: {
-    id: string; creatorName: string; handle: string; brandColors: string[]; links: string[]; termSwaps: Prisma.JsonValue; assets: Prisma.JsonValue; notes: string; buildPrice?: number; monthlyRetainer?: number; upsells?: Prisma.JsonValue; stripeSessionId?: string | null; createdAt: Date;
+    id: string; creatorName: string; handle: string; brandColors: string[]; links: string[]; termSwaps: Prisma.JsonValue; assets: Prisma.JsonValue; notes: string; buildPrice?: number; monthlyRetainer?: number; upsells?: Prisma.JsonValue; stripeSessionId?: string | null; ownerEmail?: string; createdAt: Date;
   }): Client => ({
     id: r.id,
     creatorName: r.creatorName,
@@ -120,6 +122,7 @@ export class PrismaRepo implements Repo {
     monthlyRetainer: r.monthlyRetainer ?? 0,
     upsells: (r.upsells as Client['upsells']) ?? [],
     stripeSessionId: r.stripeSessionId ?? null,
+    ownerEmail: r.ownerEmail ?? '',
     createdAt: iso(r.createdAt),
   });
 
@@ -148,6 +151,7 @@ export class PrismaRepo implements Repo {
         monthlyRetainer: c.monthlyRetainer ?? 0,
         upsells: asJson(c.upsells ?? []),
         stripeSessionId: c.stripeSessionId ?? null,
+        ownerEmail: c.ownerEmail,
       },
     });
     return this.toClient(r);
@@ -163,7 +167,7 @@ export class PrismaRepo implements Repo {
   private toJob = (r: {
     id: string; kind: string; status: string; dryRun: boolean; canary?: boolean; progress: number; targetGuildId: string | null;
     rebrandConfig: Prisma.JsonValue; metrics: Prisma.JsonValue | null; manifest: Prisma.JsonValue | null; report: Prisma.JsonValue | null; error: string | null;
-    snapshotId: string | null; clientId: string | null; createdAt: Date; updatedAt: Date;
+    snapshotId: string | null; clientId: string | null; ownerEmail?: string; createdAt: Date; updatedAt: Date;
   }): Job => ({
     id: r.id,
     kind: r.kind as Job['kind'],
@@ -180,6 +184,7 @@ export class PrismaRepo implements Repo {
     manifest: safe(JobManifest, r.manifest) ?? null,
     report: safe(RebuildReport, r.report) ?? null,
     error: r.error,
+    ownerEmail: r.ownerEmail ?? '',
     createdAt: iso(r.createdAt),
     updatedAt: iso(r.updatedAt),
   });
@@ -207,6 +212,7 @@ export class PrismaRepo implements Repo {
         error: j.error,
         snapshotId: j.snapshotId,
         clientId: j.clientId,
+        ownerEmail: j.ownerEmail,
       },
     });
     return this.toJob(r);
@@ -233,7 +239,7 @@ export class PrismaRepo implements Repo {
   // ── handovers ──
   private toHandover = (r: {
     id: string; jobId: string; clientId: string | null; passwordHash: string | null; state: string;
-    logoKey: string | null; welcomeMessage: string; ownershipSteps: Prisma.JsonValue; upsellStatus: string; createdAt: Date;
+    logoKey: string | null; welcomeMessage: string; ownershipSteps: Prisma.JsonValue; upsellStatus: string; ownerEmail?: string; createdAt: Date;
   }): Handover => ({
     id: r.id,
     jobId: r.jobId,
@@ -244,6 +250,7 @@ export class PrismaRepo implements Repo {
     welcomeMessage: r.welcomeMessage,
     ownershipSteps: (r.ownershipSteps as OwnershipStep[]) ?? [],
     upsellStatus: r.upsellStatus as Handover['upsellStatus'],
+    ownerEmail: r.ownerEmail ?? '',
     createdAt: iso(r.createdAt),
   });
 
@@ -264,6 +271,7 @@ export class PrismaRepo implements Repo {
         passwordHash: h.passwordHash ?? null,
         ownershipSteps: asJson(h.ownershipSteps),
         upsellStatus: h.upsellStatus,
+        ownerEmail: h.ownerEmail,
       },
     });
     return this.toHandover(r);
@@ -292,11 +300,11 @@ export class PrismaRepo implements Repo {
   }
 
   async addBuildEvent(e: Omit<BuildEventEntry, 'id' | 'at'>) {
-    await this.db.buildEvent.create({ data: { jobId: e.jobId, kind: e.kind, detail: e.detail } });
+    await this.db.buildEvent.create({ data: { jobId: e.jobId, kind: e.kind, detail: e.detail, ownerEmail: e.ownerEmail } });
   }
   async listBuildEvents(jobId?: string, limit = 200) {
     const rows = await this.db.buildEvent.findMany({ where: jobId ? { jobId } : undefined, orderBy: { at: 'desc' }, take: limit });
-    return rows.map((r) => ({ id: r.id, jobId: r.jobId, at: iso(r.at), kind: r.kind, detail: r.detail }));
+    return rows.map((r) => ({ id: r.id, jobId: r.jobId, at: iso(r.at), kind: r.kind, detail: r.detail, ownerEmail: r.ownerEmail ?? '' }));
   }
   async recordHandoverView(handoverId: string, referrer: string) {
     await this.db.handoverView.create({ data: { handoverId, referrer } });

@@ -31,6 +31,8 @@ export const Handover = z.object({
   welcomeMessage: z.string().default(''),
   ownershipSteps: z.array(OwnershipStep).default([]),
   upsellStatus: UpsellStatus.default('none'),
+  /** The operator who owns this record (multi-operator access scoping). Defaults to the sole operator. */
+  ownerEmail: z.string().default(''),
   createdAt: z.string(),
 });
 export type Handover = z.infer<typeof Handover>;

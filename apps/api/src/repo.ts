@@ -21,6 +21,7 @@ export interface BuildEventEntry {
   at: string;
   kind: string; // queued | running | completed | failed | resumed | delivered
   detail: string;
+  ownerEmail: string; // multi-operator scoping (copied from the owning job)
 }
 
 /** One anonymous open of a public handover page. We store the referrer ORIGIN only — never an IP or
@@ -40,6 +41,7 @@ export interface HandoverCreate {
   ownershipSteps: Handover['ownershipSteps'];
   upsellStatus: Handover['upsellStatus'];
   passwordHash?: string | null;
+  ownerEmail: string;
 }
 export type HandoverPatch = Partial<{
   state: Handover['state'];
@@ -59,7 +61,7 @@ export type HandoverPatch = Partial<{
 export interface Repo {
   listSnapshots(): Promise<SnapshotRecord[]>;
   /** Cheap id→name lookup (no artifact-blob parse) — for joining names onto the polled /jobs list. */
-  snapshotNames(): Promise<{ id: string; name: string }[]>;
+  snapshotNames(): Promise<{ id: string; name: string; ownerEmail: string }[]>;
   getSnapshot(id: string): Promise<SnapshotRecord | undefined>;
   addSnapshot(rec: SnapshotCreate): Promise<SnapshotRecord>;
   updateSnapshot(id: string, patch: SnapshotMetaPatch): Promise<SnapshotRecord | undefined>;
@@ -120,6 +122,7 @@ export class InMemoryRepo implements Repo {
       favorite: true,
       isTemplate: true,
       lastUsedAt: null,
+      ownerEmail: '', // system/unowned — the sole operator is admin and sees it via bypass
     };
     this.snapshots.set(rec.id, rec);
     const client: Client = {
@@ -134,6 +137,7 @@ export class InMemoryRepo implements Repo {
       buildPrice: 3500,
       monthlyRetainer: 500,
       upsells: [],
+      ownerEmail: '', // system/unowned — admin-visible via bypass
       createdAt: now(),
     };
     this.clients.set(client.id, client);
@@ -143,7 +147,7 @@ export class InMemoryRepo implements Repo {
     return [...this.snapshots.values()].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
   }
   async snapshotNames() {
-    return [...this.snapshots.values()].map((s) => ({ id: s.id, name: s.name }));
+    return [...this.snapshots.values()].map((s) => ({ id: s.id, name: s.name, ownerEmail: s.ownerEmail }));
   }
   async getSnapshot(sid: string) {
     return this.snapshots.get(sid);
@@ -235,6 +239,7 @@ export class InMemoryRepo implements Repo {
       welcomeMessage: '',
       ownershipSteps: h.ownershipSteps,
       upsellStatus: h.upsellStatus,
+      ownerEmail: h.ownerEmail,
       createdAt: now(),
       passwordHash: h.passwordHash ?? null,
     };

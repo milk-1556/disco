@@ -25,7 +25,8 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
   const pub = (ev: Parameters<JobChannel['publish']>[1]) =>
     void Promise.resolve(channel.publish(jobId, ev)).catch(() => {});
   // Fire-and-forget build-lifecycle event (#12). Never let event-logging failure affect the build.
-  const emit = (kind: string, detail: string) => void Promise.resolve(repo.addBuildEvent({ jobId, kind, detail })).catch(() => {});
+  let ownerEmail = ''; // set from the owning job below so events are owner-scoped (multi-operator)
+  const emit = (kind: string, detail: string) => void Promise.resolve(repo.addBuildEvent({ jobId, kind, detail, ownerEmail })).catch(() => {});
 
   // Serialize all DB writes for this job so the fire-and-forget progress/manifest checkpoints can't
   // land AFTER the terminal write and clobber the final status/progress (ordering, not just timing).
@@ -37,7 +38,9 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
     ));
 
   persist({ status: 'running' });
-  const prior = (await repo.getJob(jobId))?.manifest ?? undefined;
+  const jobRow = await repo.getJob(jobId);
+  const prior = jobRow?.manifest ?? undefined;
+  ownerEmail = jobRow?.ownerEmail ?? ''; // build events inherit the owning job's operator (scoping)
   const { snapshot: rebranded } = rebrand(snapshot, config);
   const label = dryRun ? 'Dry-run' : 'Build';
   emit(prior ? 'resumed' : 'running', prior ? `${label} resumed from a checkpoint` : `${label} started → ${rebranded.guild.name}`);

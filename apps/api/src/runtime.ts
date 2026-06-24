@@ -38,6 +38,7 @@ export async function seedIfEmpty(repo: Repo): Promise<void> {
     capturedAt: snap.capturedAt,
     schemaVersion: snap.schemaVersion,
     snapshot: snap,
+    ownerEmail: env.operatorEmail,
   });
   // A second, higher-fidelity template — a realistic ~$30k community.
   const trace = makeProductionTraceSnapshot();
@@ -49,6 +50,7 @@ export async function seedIfEmpty(repo: Repo): Promise<void> {
     capturedAt: trace.capturedAt,
     schemaVersion: trace.schemaVersion,
     snapshot: trace,
+    ownerEmail: env.operatorEmail,
   });
   const client: Omit<Client, 'id' | 'createdAt'> = {
     creatorName: 'Nova',
@@ -61,6 +63,7 @@ export async function seedIfEmpty(repo: Repo): Promise<void> {
     buildPrice: 3500,
     monthlyRetainer: 500,
     upsells: [],
+    ownerEmail: env.operatorEmail,
   };
   await repo.addClient(client);
 }

@@ -5,7 +5,8 @@ import { demoGuildSnapshot, listDemoGuilds } from './demoGuilds.js';
 import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { signSession, verifyCredentials, verifySession } from './auth.js';
+import { type Role, signSession, verifyCredentials, verifySession } from './auth.js';
+import { type Actor, SYSTEM_ACTOR, scopeRepo } from './repoScope.js';
 import { diffSnapshots } from './diff.js';
 import { env, isLiveMode, usePrisma, useQueue } from './env.js';
 import type { JobChannel, JobEvent } from './jobChannel.js';
@@ -81,6 +82,14 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   const pingActivity = (message: string) => void Promise.resolve(channel.publish(ACTIVITY_KEY, { type: 'log', message })).catch(() => {});
 
   const operatorOf = (req: FastifyRequest): string => (req as FastifyRequest & { session?: { email?: string } }).session?.email ?? 'operator';
+  // The authenticated principal + an owner-scoped repo view for this request. ALL owned-resource access
+  // (snapshots/clients/jobs/handovers) must go through `scoped(req)` so a non-admin operator can never
+  // read or mutate another operator's records. System/public paths use the raw `repo` deliberately.
+  const actorOf = (req: FastifyRequest): Actor => {
+    const s = (req as FastifyRequest & { session?: { email?: string; role?: Role } }).session;
+    return s?.email ? { email: s.email, role: s.role ?? 'operator' } : SYSTEM_ACTOR;
+  };
+  const scoped = (req: FastifyRequest): Repo => scopeRepo(repo, actorOf(req));
 
   // ── auth guard ──
   const requireAuth = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -154,8 +163,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   });
 
   // ── snapshots ──
-  app.get('/snapshots', { preHandler: requireAuth }, async () =>
-    (await repo.listSnapshots()).map((s) => ({
+  app.get('/snapshots', { preHandler: requireAuth }, async (req) =>
+    (await scoped(req).listSnapshots()).map((s) => ({
       id: s.id,
       name: s.name,
       version: s.version,
@@ -180,30 +189,31 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   app.patch('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
     const parsed = SnapshotMetaPatch.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid patch', detail: parsed.error.flatten() });
-    const rec = await repo.updateSnapshot((req.params as { id: string }).id, parsed.data);
+    const rec = await scoped(req).updateSnapshot((req.params as { id: string }).id, parsed.data);
     if (!rec) return reply.code(404).send({ error: 'not found' });
     return { id: rec.id, name: rec.name, tags: rec.tags, note: rec.note, favorite: rec.favorite, isTemplate: rec.isTemplate };
   });
 
   app.delete('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    const rec = await repo.getSnapshot(id);
+    const r = scoped(req);
+    const rec = await r.getSnapshot(id);
     if (!rec) return reply.code(404).send({ error: 'not found' });
-    await repo.deleteSnapshot(id);
+    await r.deleteSnapshot(id);
     await repo.addAudit({ action: 'snapshot.delete', target: rec.name, detail: `v${rec.version} · ${rec.sourceGuildId}`, operator: operatorOf(req) });
     pingActivity('snapshot');
     return { ok: true };
   });
 
   app.get('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
-    const rec = await repo.getSnapshot((req.params as { id: string }).id);
+    const rec = await scoped(req).getSnapshot((req.params as { id: string }).id);
     if (!rec) return reply.code(404).send({ error: 'not found' });
     return rec;
   });
 
   // Build-feasibility pre-flight: does this snapshot fit within Discord's hard limits?
   app.get('/snapshots/:id/feasibility', { preHandler: requireAuth }, async (req, reply) => {
-    const rec = await repo.getSnapshot((req.params as { id: string }).id);
+    const rec = await scoped(req).getSnapshot((req.params as { id: string }).id);
     if (!rec) return reply.code(404).send({ error: 'not found' });
     // Target boost tier the operator is building INTO (0 = a fresh, unboosted guild; the safe default).
     const raw = Number((req.query as { targetTier?: string }).targetTier);
@@ -212,9 +222,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   });
 
   app.get('/snapshots/:id/diff', { preHandler: requireAuth }, async (req, reply) => {
-    const a = await repo.getSnapshot((req.params as { id: string }).id);
+    const r = scoped(req);
+    const a = await r.getSnapshot((req.params as { id: string }).id);
     const against = (req.query as { against?: string }).against;
-    const b = against ? await repo.getSnapshot(against) : undefined;
+    const b = against ? await r.getSnapshot(against) : undefined;
     if (!a || !b) return reply.code(404).send({ error: 'snapshot(s) not found' });
     return diffSnapshots(b.snapshot, a.snapshot);
   });
@@ -246,7 +257,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         // demo back-compat: re-snapshot the seeded sample template
         snapshot = await captureSnapshot(mockGuildFromSnapshot(makeSampleSnapshot()), { ownerNote: 'demo capture' });
       }
-      const existing = (await repo.listSnapshots()).filter((s) => s.sourceGuildId === snapshot.source.guildId);
+      const r = scoped(req);
+      const existing = (await r.listSnapshots()).filter((s) => s.sourceGuildId === snapshot.source.guildId);
       // Delta optimization: if the latest version is structurally identical, don't bloat the library
       // with a no-op version — surface "no changes" and reuse it (a fast incremental re-snapshot).
       const latest = existing.sort((a, b) => b.version - a.version)[0];
@@ -257,13 +269,14 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
           [d.roles, d.channels, d.categories, d.emojis, d.automod].every((c) => !c.added.length && !c.removed.length && !c.changed.length);
         if (noChange) return { id: latest.id, name: latest.name, version: latest.version, unchanged: true };
       }
-      const rec = await repo.addSnapshot({
+      const rec = await r.addSnapshot({
         name: body.name ?? `${snapshot.guild.name} (v${existing.length + 1})`,
         version: existing.length + 1,
         sourceGuildId: snapshot.source.guildId,
         capturedAt: snapshot.capturedAt,
         schemaVersion: snapshot.schemaVersion,
         snapshot,
+        ownerEmail: operatorOf(req),
       });
       pingActivity('imported');
       return { id: rec.id, name: rec.name, version: rec.version, unchanged: false };
@@ -300,14 +313,16 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       for (const [key, b64] of Object.entries(assets)) {
         await store.putAt(key, Buffer.from(b64, 'base64')).catch(() => {});
       }
-      const existing = (await repo.listSnapshots()).filter((s) => s.sourceGuildId === snapshot.source.guildId);
-      const rec = await repo.addSnapshot({
+      const r = scoped(req);
+      const existing = (await r.listSnapshots()).filter((s) => s.sourceGuildId === snapshot.source.guildId);
+      const rec = await r.addSnapshot({
         name: name || `${snapshot.guild.name} (imported)`,
         version: existing.length + 1,
         sourceGuildId: snapshot.source.guildId,
         capturedAt: snapshot.capturedAt,
         schemaVersion: snapshot.schemaVersion,
         snapshot,
+        ownerEmail: operatorOf(req),
       });
       return { id: rec.id, name: rec.name, version: rec.version };
     } catch (err) {
@@ -318,14 +333,15 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   });
 
   // ── clients ──
-  app.get('/clients', { preHandler: requireAuth }, async () => repo.listClients());
+  app.get('/clients', { preHandler: requireAuth }, async (req) => scoped(req).listClients());
   app.post('/clients', { preHandler: requireAuth }, async (req) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
     pingActivity('client');
     // Bound free-text lengths (defense-in-depth — keep unbounded operator input out of the DB).
     const clamp = (v: unknown, max: number) => String(v ?? '').slice(0, max);
     const arr = (v: unknown, max: number) => (Array.isArray(v) ? v.slice(0, max) : []);
-    return repo.addClient({
+    return scoped(req).addClient({
+      ownerEmail: operatorOf(req),
       creatorName: clamp(b.creatorName || 'New Client', 120),
       handle: clamp(b.handle, 120),
       brandColors: arr(b.brandColors, 24) as string[],
@@ -343,9 +359,11 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   });
   app.delete('/clients/:id', { preHandler: requireAuth }, async (req) => {
     const id = (req.params as { id: string }).id;
-    const c = await repo.getClient(id);
-    await repo.deleteClient(id);
-    if (c) await repo.addAudit({ action: 'client.delete', target: c.creatorName, detail: c.handle, operator: operatorOf(req) });
+    const r = scoped(req);
+    const c = await r.getClient(id);
+    if (!c) return { ok: true }; // not owned / not found → nothing to delete (no cross-operator delete)
+    await r.deleteClient(id);
+    await repo.addAudit({ action: 'client.delete', target: c.creatorName, detail: c.handle, operator: operatorOf(req) });
     return { ok: true };
   });
 
@@ -360,19 +378,19 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // Build-lifecycle event log (#12): every build's started/resumed/completed/failed transitions.
   app.get('/events', { preHandler: requireAuth }, async (req) => {
     const jobId = (req.query as { jobId?: string }).jobId;
-    return repo.listBuildEvents(jobId, 200);
+    return scoped(req).listBuildEvents(jobId, 200);
   });
 
   // Engagement signal for a delivered handover (#14): how many times the client opened it + when.
   app.get('/handovers/:id/views', { preHandler: requireAuth }, async (req) => {
-    const views = await repo.listHandoverViews((req.params as { id: string }).id);
+    const views = await scoped(req).listHandoverViews((req.params as { id: string }).id);
     return { count: views.length, recent: views.slice(0, 50) };
   });
 
   // ── rebrand preview ──
   app.post('/rebrand/preview', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as { snapshotId?: string; config?: unknown };
-    const rec = body.snapshotId ? await repo.getSnapshot(body.snapshotId) : undefined;
+    const rec = body.snapshotId ? await scoped(req).getSnapshot(body.snapshotId) : undefined;
     if (!rec) return reply.code(404).send({ error: 'snapshot not found' });
     const parsed = RebrandConfig.safeParse(body.config);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid config', detail: parsed.error.flatten() });
@@ -383,16 +401,17 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // ── jobs ──
   app.post('/jobs', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as { snapshotId?: string; clientId?: string; config?: unknown; dryRun?: boolean; canary?: boolean; targetGuildId?: string };
-    const rec = body.snapshotId ? await repo.getSnapshot(body.snapshotId) : undefined;
+    const r = scoped(req);
+    const rec = body.snapshotId ? await r.getSnapshot(body.snapshotId) : undefined;
     if (!rec) return reply.code(404).send({ error: 'snapshot not found' });
     const parsed = RebrandConfig.safeParse(body.config);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid config', detail: parsed.error.flatten() });
 
-    // Job.clientId is a real DB relation — only link a client that actually exists (the rebrand
-    // config's logical clientId lives in rebrandConfig, not here). Unknown/absent → null.
-    const clientId = body.clientId && (await repo.getClient(body.clientId)) ? body.clientId : null;
+    // Job.clientId is a real DB relation — only link a client this operator owns (the rebrand config's
+    // logical clientId lives in rebrandConfig, not here). Unknown/unowned/absent → null.
+    const clientId = body.clientId && (await r.getClient(body.clientId)) ? body.clientId : null;
 
-    const job = await repo.addJob({
+    const job = await r.addJob({
       kind: 'rebuild',
       status: 'queued',
       snapshotId: rec.id,
@@ -406,6 +425,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       manifest: null,
       report: null,
       error: null,
+      ownerEmail: operatorOf(req),
     });
 
     if (useQueue()) {
@@ -438,10 +458,11 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { id: job.id, status: job.status };
   });
 
-  app.get('/jobs', { preHandler: requireAuth }, async () => {
+  app.get('/jobs', { preHandler: requireAuth }, async (req) => {
     // snapshotNames() is a cheap id→name select (no artifact-blob parse) — the /jobs list is the
     // hottest polled endpoint, so this avoids deserializing every snapshot on every tick.
-    const [jobs, snaps, clients] = await Promise.all([repo.listJobs(), repo.snapshotNames(), repo.listClients()]);
+    const r = scoped(req);
+    const [jobs, snaps, clients] = await Promise.all([r.listJobs(), r.snapshotNames(), r.listClients()]);
     const snapName = new Map(snaps.map((s) => [s.id, s.name]));
     const clientName = new Map(clients.map((c) => [c.id, c.creatorName]));
     return jobs.map((j) => ({
@@ -463,7 +484,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   });
 
   app.get('/jobs/:id', { preHandler: requireAuth }, async (req, reply) => {
-    const j = await repo.getJob((req.params as { id: string }).id);
+    const j = await scoped(req).getJob((req.params as { id: string }).id);
     if (!j) return reply.code(404).send({ error: 'not found' });
     // Redact Discord webhook tokens before returning the manifest. A content-step webhook entry stores
     // newId = `${webhookId}:${webhookToken}`; that token is a live, unauthenticated post-to-channel
@@ -487,6 +508,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // SSE live logs — works identically over the in-memory or Redis channel.
   app.get('/jobs/:id/logs', { preHandler: requireAuth }, async (req, reply) => {
     const jobId = (req.params as { id: string }).id;
+    // Ownership gate BEFORE hijacking the socket — a non-owner must not stream another operator's build
+    // logs (target guild id, channel/role names, content). 404 (opaque) if not owned/not found.
+    if (!(await scoped(req).getJob(jobId))) return reply.code(404).send({ error: 'not found' });
     // Take over the raw socket — Fastify must not also try to send/serialize a response.
     reply.hijack();
     reply.raw.writeHead(200, {
@@ -595,16 +619,17 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   /** Re-run a failed/canceled job. The persisted manifest means it RESUMES, not restarts. */
   app.post('/jobs/:id/retry', { preHandler: requireAuth }, async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    const job = await repo.getJob(id);
+    const r = scoped(req);
+    const job = await r.getJob(id);
     if (!job) return reply.code(404).send({ error: 'not found' });
     if (job.status !== 'failed' && job.status !== 'canceled') {
       return reply.code(400).send({ error: `only failed or canceled jobs can be retried (status: ${job.status})` });
     }
     if (!job.snapshotId || !job.rebrandConfig) return reply.code(400).send({ error: 'job is missing its snapshot or config' });
-    const snap = await repo.getSnapshot(job.snapshotId);
+    const snap = await r.getSnapshot(job.snapshotId);
     if (!snap) return reply.code(404).send({ error: 'snapshot not found' });
 
-    await repo.updateJob(id, { status: 'queued', error: null });
+    await r.updateJob(id, { status: 'queued', error: null });
     const data: BuildJobData = {
       jobId: id,
       snapshot: snap.snapshot,
@@ -626,12 +651,13 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   /** Cancel a queued (not-yet-started) job. A running build can't be interrupted mid-flight — be honest. */
   app.post('/jobs/:id/cancel', { preHandler: requireAuth }, async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    const job = await repo.getJob(id);
+    const r = scoped(req);
+    const job = await r.getJob(id);
     if (!job) return reply.code(404).send({ error: 'not found' });
     if (job.status === 'running') return reply.code(409).send({ error: 'job is already running and cannot be interrupted' });
     if (job.status !== 'queued' && job.status !== 'paused') return reply.code(400).send({ error: `cannot cancel a ${job.status} job` });
     if (useQueue()) await getQueue().remove(id).catch(() => {});
-    await repo.updateJob(id, { status: 'canceled' });
+    await r.updateJob(id, { status: 'canceled' });
     await repo.addAudit({ action: 'build.cancel', target: `job ${id.slice(-6)}`, detail: job.kind, operator: operatorOf(req) });
     return { id, status: 'canceled' };
   });
@@ -665,26 +691,29 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // Create-or-fetch a handover for a completed job (idempotent per job).
   app.post('/handovers', { preHandler: requireAuth }, async (req, reply) => {
     const body = (req.body ?? {}) as { jobId?: string };
-    const job = body.jobId ? await repo.getJob(body.jobId) : undefined;
+    const r = scoped(req);
+    const job = body.jobId ? await r.getJob(body.jobId) : undefined;
     if (!job) return reply.code(404).send({ error: 'job not found' });
     if (job.canary) return reply.code(409).send({ error: 'This is a canary/test build — rebuild without canary to deliver it to a client.' });
-    const existing = await repo.getHandoverByJob(job.id);
+    const existing = await r.getHandoverByJob(job.id);
     if (existing) return existing;
     pingActivity('handover');
-    return repo.addHandover({
+    return r.addHandover({
       jobId: job.id,
       clientId: job.clientId,
       state: 'draft',
       ownershipSteps: defaultOwnershipSteps(),
       upsellStatus: 'none',
+      ownerEmail: operatorOf(req),
     });
   });
 
   // Operator view: the handover + its job (with report = included scope + bot checklist + manual steps).
   app.get('/handovers/:id', { preHandler: requireAuth }, async (req, reply) => {
-    const h = await repo.getHandover((req.params as { id: string }).id);
+    const r = scoped(req);
+    const h = await r.getHandover((req.params as { id: string }).id);
     if (!h) return reply.code(404).send({ error: 'not found' });
-    const job = await repo.getJob(h.jobId);
+    const job = await r.getJob(h.jobId);
     return { handover: h, job };
   });
 
@@ -713,7 +742,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         patch.logoKey = await store.put(Buffer.from(data, 'base64'), ext);
       }
     }
-    const h = await repo.updateHandover(id, patch);
+    const h = await scoped(req).updateHandover(id, patch);
     if (!h) return reply.code(404).send({ error: 'not found' });
     return h;
   });

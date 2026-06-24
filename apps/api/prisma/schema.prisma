@@ -33,14 +33,16 @@ model AuditLog {
 /// Build-lifecycle event log (#12) — the operator-facing "webhook event log": one row per build
 /// transition (started / completed / failed / resumed), with a short human detail.
 model BuildEvent {
-  id     String   @id @default(cuid())
-  jobId  String
-  at     DateTime @default(now())
-  kind   String
-  detail String   @default("")
+  id         String   @id @default(cuid())
+  jobId      String
+  at         DateTime @default(now())
+  kind       String
+  detail     String   @default("")
+  ownerEmail String   @default("") // multi-operator scoping (copied from the owning job)
 
   @@index([jobId])
   @@index([at])
+  @@index([ownerEmail])
 }
 
 /// One anonymous open of a public handover page (#14). Referrer ORIGIN only — never an IP or any
@@ -68,10 +70,12 @@ model Snapshot {
   favorite      Boolean   @default(false)
   isTemplate    Boolean   @default(false)
   lastUsedAt    DateTime?
+  ownerEmail    String    @default("") // multi-operator access scoping
   createdAt     DateTime  @default(now())
   jobs          Job[]
 
   @@index([sourceGuildId, version])
+  @@index([ownerEmail])
 }
 
 /// A saved client (creator) for repeat builds + upsells.
@@ -88,9 +92,12 @@ model Client {
   monthlyRetainer Float @default(0)
   upsells         Json  @default("[]")
   stripeSessionId String? @unique // idempotent Stripe fulfilment: one client per checkout session
+  ownerEmail  String   @default("") // multi-operator access scoping
   createdAt   DateTime @default(now())
   jobs        Job[]
   handovers   Handover[]
+
+  @@index([ownerEmail])
 }
 
 /// A rebrand+build run. Resumable: `manifest` holds per-step state + localRef→newId mappings.
@@ -107,6 +114,7 @@ model Job {
   manifest      Json?
   report        Json?
   error         String?
+  ownerEmail    String    @default("") // multi-operator access scoping
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -119,6 +127,7 @@ model Job {
   @@index([createdAt]) // the /jobs list orders by this on every poll (Queue/Activity/Today/Economics)
   @@index([clientId]) // deleteClient unlinks by this; Postgres doesn't auto-index relation scalars
   @@index([snapshotId])
+  @@index([ownerEmail])
 }
 
 /// The client delivery record: handover page state + ownership-transfer checklist + upsell tracking.
@@ -135,5 +144,8 @@ model Handover {
   welcomeMessage  String   @default("")
   ownershipSteps  Json     @default("[]")
   upsellStatus    String   @default("none") // none | proposed | retained | redesign
+  ownerEmail      String   @default("") // multi-operator access scoping
   createdAt       DateTime @default(now())
+
+  @@index([ownerEmail])
 }

@@ -52,6 +52,8 @@ export const Client = z.object({
   upsells: z.array(z.object({ name: z.string(), price: z.number().min(0) })).default([]), // one-time add-ons
   /** Set when auto-created from a Stripe checkout — the dedup key for idempotent webhook fulfilment. */
   stripeSessionId: z.string().nullish(),
+  /** The operator who owns this record (multi-operator access scoping). Defaults to the sole operator. */
+  ownerEmail: z.string().default(''),
   createdAt: z.string(),
 });
 export type Client = z.infer<typeof Client>;

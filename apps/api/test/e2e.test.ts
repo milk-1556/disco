@@ -152,7 +152,8 @@ describe('e2e: multi-operator audit scoping (#6) + canary build (#9)', () => {
 
   it('operator sees only their own audit rows; admin sees all', async () => {
     const c1 = (await app.inject({ method: 'POST', url: '/clients', headers: admin, payload: JSON.stringify({ creatorName: 'A' }) })).json() as { id: string };
-    const c2 = (await app.inject({ method: 'POST', url: '/clients', headers: admin, payload: JSON.stringify({ creatorName: 'B' }) })).json() as { id: string };
+    // c2 is created BY the 2nd operator, so they own it and may delete it (each operator deletes its own).
+    const c2 = (await app.inject({ method: 'POST', url: '/clients', headers: op, payload: JSON.stringify({ creatorName: 'B' }) })).json() as { id: string };
     await app.inject({ method: 'DELETE', url: `/clients/${c1.id}`, headers: admin }); // operator: operator@disco.local
     await app.inject({ method: 'DELETE', url: `/clients/${c2.id}`, headers: op }); // operator: second@disco.local
 
@@ -177,5 +178,81 @@ describe('e2e: multi-operator audit scoping (#6) + canary build (#9)', () => {
     expect(jobs.find((j) => j.id === start.id)?.canary).toBe(true);
     const h = await app.inject({ method: 'POST', url: '/handovers', headers: admin, payload: JSON.stringify({ jobId: start.id }) });
     expect(h.statusCode).toBe(409); // canary builds are not deliverable
+  });
+});
+
+describe('e2e: multi-operator IDOR — operator B cannot touch operator A\'s records', () => {
+  let app: FastifyInstance;
+  // A = the default OPERATOR_EMAIL → admin (bypasses scoping). B = a 2nd operator → scoped.
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'attacker@evil.com' })}`, 'content-type': 'application/json' };
+  let aSnapId = '';
+  let aClientId = '';
+  let aJobId = '';
+  let aHandoverId = '';
+
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+    // A captures a snapshot, makes a client, runs a (dry) build, opens a handover — all owned by A.
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: A })).json() as { guilds: { id: string }[] };
+    aSnapId = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: A, payload: JSON.stringify({ sourceGuildId: guilds.guilds[0]!.id }) })).json() as { id: string }).id;
+    aClientId = ((await app.inject({ method: 'POST', url: '/clients', headers: A, payload: JSON.stringify({ creatorName: 'A-Client' }) })).json() as { id: string }).id;
+    const cfg = { clientId: 'x', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    aJobId = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: aSnapId, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) {
+      const s = ((await app.inject({ method: 'GET', url: `/jobs/${aJobId}`, headers: A })).json() as { status: string }).status;
+      if (s === 'completed' || s === 'failed') break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    aHandoverId = ((await app.inject({ method: 'POST', url: '/handovers', headers: A, payload: JSON.stringify({ jobId: aJobId }) })).json() as { id: string }).id;
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('B cannot LIST A\'s snapshots / clients / jobs (filtered out)', async () => {
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: B })).json() as { id: string }[];
+    expect(snaps.find((s) => s.id === aSnapId)).toBeUndefined();
+    const clients = (await app.inject({ method: 'GET', url: '/clients', headers: B })).json() as { id: string }[];
+    expect(clients.find((c) => c.id === aClientId)).toBeUndefined();
+    const jobs = (await app.inject({ method: 'GET', url: '/jobs', headers: B })).json() as { id: string }[];
+    expect(jobs.find((j) => j.id === aJobId)).toBeUndefined();
+  });
+
+  it('B cannot READ A\'s snapshot / job / handover by id (404)', async () => {
+    expect((await app.inject({ method: 'GET', url: `/snapshots/${aSnapId}`, headers: B })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/snapshots/${aSnapId}/feasibility`, headers: B })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/jobs/${aJobId}`, headers: B })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/handovers/${aHandoverId}`, headers: B })).statusCode).toBe(404);
+  });
+
+  it('B cannot STREAM A\'s build logs (SSE 404 before hijack)', async () => {
+    expect((await app.inject({ method: 'GET', url: `/jobs/${aJobId}/logs`, headers: B })).statusCode).toBe(404);
+  });
+
+  it('B cannot MUTATE A\'s records (patch/cancel/retry → 404; delete → no-op)', async () => {
+    expect((await app.inject({ method: 'PATCH', url: `/snapshots/${aSnapId}`, headers: B, payload: JSON.stringify({ note: 'pwned' }) })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'POST', url: `/jobs/${aJobId}/cancel`, headers: B })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'POST', url: `/jobs/${aJobId}/retry`, headers: B })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'PATCH', url: `/handovers/${aHandoverId}`, headers: B, payload: JSON.stringify({ state: 'ready' }) })).statusCode).toBe(404);
+    // delete returns ok:true but must NOT actually remove A's records
+    await app.inject({ method: 'DELETE', url: `/snapshots/${aSnapId}`, headers: B });
+    await app.inject({ method: 'DELETE', url: `/clients/${aClientId}`, headers: B });
+    expect((await app.inject({ method: 'GET', url: `/snapshots/${aSnapId}`, headers: A })).statusCode).toBe(200); // still there
+    expect(((await app.inject({ method: 'GET', url: '/clients', headers: A })).json() as { id: string }[]).find((c) => c.id === aClientId)).toBeTruthy();
+  });
+
+  it('B cannot read A\'s build events or handover views', async () => {
+    const events = (await app.inject({ method: 'GET', url: `/events?jobId=${aJobId}`, headers: B })).json() as unknown[];
+    expect(events.length).toBe(0);
+    const views = (await app.inject({ method: 'GET', url: `/handovers/${aHandoverId}/views`, headers: B })).json() as { count: number };
+    expect(views.count).toBe(0);
+  });
+
+  it('A (admin) CAN see everything, and B can see its OWN records (scoping is not a blanket deny)', async () => {
+    // admin bypass: A sees its own snapshot/job/handover
+    expect((await app.inject({ method: 'GET', url: `/jobs/${aJobId}`, headers: A })).statusCode).toBe(200);
+    // B can create + read its own client
+    const bClientId = ((await app.inject({ method: 'POST', url: '/clients', headers: B, payload: JSON.stringify({ creatorName: 'B-Client' }) })).json() as { id: string }).id;
+    expect(((await app.inject({ method: 'GET', url: '/clients', headers: B })).json() as { id: string }[]).find((c) => c.id === bClientId)).toBeTruthy();
   });
 });
