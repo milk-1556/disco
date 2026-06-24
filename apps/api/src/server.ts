@@ -432,6 +432,37 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { count: views.length, recent: views.slice(0, 50) };
   });
 
+  // Handover engagement analytics (#4): per-kind aggregate counts + a recent timeline, for the operator.
+  // Privacy: built only from referrer-origin + timestamps + the event kind — never an IP or identity.
+  app.get('/handovers/:id/analytics', { preHandler: requireAuth }, async (req) => {
+    const views = await scoped(req).listHandoverViews((req.params as { id: string }).id);
+    const byKind: Record<string, number> = {};
+    for (const v of views) byKind[v.kind] = (byKind[v.kind] ?? 0) + 1;
+    const opens = views.filter((v) => v.kind === 'opened').map((v) => v.at).sort();
+    return {
+      total: views.length,
+      opened: byKind.opened ?? 0,
+      reportDownloaded: byKind.report_downloaded ?? 0,
+      docsViewed: byKind.docs_viewed ?? 0,
+      shareViewed: byKind.share_viewed ?? 0,
+      firstOpenedAt: opens[0] ?? null,
+      lastSeenAt: views[0]?.at ?? null, // listHandoverViews returns newest-first
+      timeline: views.slice(0, 30).map((v) => ({ at: v.at, kind: v.kind, referrer: v.referrer })),
+    };
+  });
+
+  // Public, anonymous engagement beacon (#4): the delivery page calls this when the client downloads
+  // the report or expands the docs. Allowlisted kinds only; no auth (the handover id is the capability).
+  app.post('/h/:id/event', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const kind = ((req.body ?? {}) as { kind?: string }).kind ?? '';
+    if (!['report_downloaded', 'docs_viewed'].includes(kind)) return reply.code(400).send({ error: 'unknown event' });
+    const h = await repo.getHandover(id); // raw repo: public capability path, gated by its own rules
+    if (!h || h.state === 'draft') return reply.code(404).send({ error: 'not found' });
+    void repo.recordHandoverView(id, 'beacon', kind);
+    return { ok: true };
+  });
+
   // Operator productivity widgets (#6): read-only rollups over this operator's own data (scoped).
   app.get('/dashboard', { preHandler: requireAuth }, async (req) => {
     const r = scoped(req);

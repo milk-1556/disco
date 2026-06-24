@@ -31,6 +31,7 @@ export interface HandoverViewEntry {
   handoverId: string;
   at: string;
   referrer: string;
+  kind: string; // opened | report_downloaded | docs_viewed | share_viewed
 }
 
 /** Creation/patch shapes for handovers (passwordHash is write-only; never on the domain type). */
@@ -91,7 +92,7 @@ export interface Repo {
   addBuildEvent(e: Omit<BuildEventEntry, 'id' | 'at'>): Promise<void>;
   listBuildEvents(jobId?: string, limit?: number): Promise<BuildEventEntry[]>;
   /** Record + read anonymous public-handover opens (#14 engagement signal; referrer-origin only). */
-  recordHandoverView(handoverId: string, referrer: string): Promise<void>;
+  recordHandoverView(handoverId: string, referrer: string, kind?: string): Promise<void>;
   listHandoverViews(handoverId: string): Promise<HandoverViewEntry[]>;
 }
 
@@ -291,8 +292,8 @@ export class InMemoryRepo implements Repo {
   }
 
   private handoverViews: HandoverViewEntry[] = [];
-  async recordHandoverView(handoverId: string, referrer: string) {
-    this.handoverViews.push({ id: newId('view'), handoverId, at: now(), referrer });
+  async recordHandoverView(handoverId: string, referrer: string, kind = 'opened') {
+    this.handoverViews.push({ id: newId('view'), handoverId, at: now(), referrer, kind });
     if (this.handoverViews.length > 5000) this.handoverViews.shift();
   }
   async listHandoverViews(handoverId: string) {

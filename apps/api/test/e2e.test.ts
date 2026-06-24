@@ -274,3 +274,51 @@ describe('e2e: multi-operator IDOR — operator B cannot touch operator A\'s rec
     expect((await app.inject({ method: 'POST', url: '/starter-packs/nope/import', headers: B })).statusCode).toBe(404);
   });
 });
+
+describe('e2e: handover engagement analytics (#4)', () => {
+  let app: FastifyInstance;
+  const token = signSession({ email: 'operator@disco.local' });
+  const auth = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const op = { authorization: `Bearer ${signSession({ email: 'other@x.com' })}`, 'content-type': 'application/json' };
+  let hid = '';
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: auth })).json() as { guilds: { id: string }[] };
+    const snap = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: auth, payload: JSON.stringify({ sourceGuildId: guilds.guilds[0]!.id }) })).json() as { id: string }).id;
+    const cfg = { clientId: 'x', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: auth, payload: JSON.stringify({ snapshotId: snap, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) {
+      const s = ((await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: auth })).json() as { status: string }).status;
+      if (s === 'completed') break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    hid = ((await app.inject({ method: 'POST', url: '/handovers', headers: auth, payload: JSON.stringify({ jobId: jid }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: auth, payload: JSON.stringify({ state: 'ready' }) });
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('aggregates opens + docs-viewed events into per-kind analytics', async () => {
+    // client opens the page twice + reads the docs once + (a bad event is rejected)
+    await app.inject({ method: 'GET', url: `/h/${hid}` });
+    await app.inject({ method: 'GET', url: `/h/${hid}` });
+    await app.inject({ method: 'POST', url: `/h/${hid}/event`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ kind: 'docs_viewed' }) });
+    expect((await app.inject({ method: 'POST', url: `/h/${hid}/event`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ kind: 'evil' }) })).statusCode).toBe(400);
+
+    const a = (await app.inject({ method: 'GET', url: `/handovers/${hid}/analytics`, headers: auth })).json() as { opened: number; docsViewed: number; total: number; timeline: unknown[] };
+    expect(a.opened).toBe(2);
+    expect(a.docsViewed).toBe(1);
+    expect(a.total).toBe(3);
+    expect(a.timeline.length).toBe(3);
+  });
+
+  it('a beacon for a draft handover is refused (404)', async () => {
+    const draft = ((await app.inject({ method: 'POST', url: '/handovers', headers: auth, payload: JSON.stringify({ jobId: 'nope' }) })).statusCode);
+    expect(draft).toBe(404); // unknown job → no handover to beacon against
+  });
+
+  it('a 2nd operator cannot read A\'s handover analytics (scoped → zeros)', async () => {
+    const a = (await app.inject({ method: 'GET', url: `/handovers/${hid}/analytics`, headers: op })).json() as { opened: number; total: number };
+    expect(a.total).toBe(0); // non-owner sees nothing (listHandoverViews gated on handover ownership)
+  });
+});

@@ -72,7 +72,7 @@ export function scopeRepo(base: Repo, actor: Actor): Repo {
     listAudit: (limit) => base.listAudit(limit), // route scopes audit by operator already
     addBuildEvent: (e) => base.addBuildEvent(e), // system (emitted by the worker)
     listBuildEvents: async (jobId, limit) => (await base.listBuildEvents(jobId, limit)).filter(owns),
-    recordHandoverView: (hid, ref) => base.recordHandoverView(hid, ref), // public open
+    recordHandoverView: (hid, ref, kind) => base.recordHandoverView(hid, ref, kind), // public open
     listHandoverViews: async (handoverId) =>
       owns(await base.getHandover(handoverId)) ? base.listHandoverViews(handoverId) : [],
   };

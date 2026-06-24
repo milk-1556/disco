@@ -103,6 +103,12 @@ export const api = {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${res.status}`);
     return res.json() as Promise<PublicHandover>;
   },
+  // Operator-side handover engagement analytics (#4).
+  handoverAnalytics: (id: string) => req<HandoverAnalytics>(`/handovers/${id}/analytics`),
+  // Public, fire-and-forget engagement beacon from the delivery page (no auth — the id is the capability).
+  trackHandoverEvent: (id: string, kind: 'report_downloaded' | 'docs_viewed') => {
+    void fetch(`${BASE}/h/${id}/event`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind }) }).catch(() => {});
+  },
 };
 
 /** Absolute URL for an API-served asset path (e.g. a handover logo "/assets/...."). */
@@ -382,6 +388,17 @@ export interface HandoverViewEntry {
   handoverId: string;
   at: string;
   referrer: string;
+  kind: string;
+}
+export interface HandoverAnalytics {
+  total: number;
+  opened: number;
+  reportDownloaded: number;
+  docsViewed: number;
+  shareViewed: number;
+  firstOpenedAt: string | null;
+  lastSeenAt: string | null;
+  timeline: { at: string; kind: string; referrer: string }[];
 }
 export interface PermissionDelta {
   added: string[];

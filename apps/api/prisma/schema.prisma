@@ -52,6 +52,7 @@ model HandoverView {
   handoverId  String
   at          DateTime @default(now())
   referrer    String   @default("")
+  kind        String   @default("opened") // opened | report_downloaded | docs_viewed | share_viewed
 
   @@index([handoverId])
 }

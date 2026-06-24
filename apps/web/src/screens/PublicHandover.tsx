@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, assetUrl, type BotSetupEntry, type ManualStep, type PublicHandover as PublicHandoverData } from '../api.js';
 import { BotSetupList } from '../components/BotSetupList.js';
 import { Logo } from '../components/Logo.js';
@@ -157,6 +157,7 @@ export function PublicHandover({ id }: { id: string }) {
           created={data.created}
           botSetup={data.botSetup}
           manualSteps={data.manualSteps}
+          onFirstOpen={() => api.trackHandoverEvent(id, 'docs_viewed')}
         />
 
         <section className="panel p-5 mb-6">
@@ -196,6 +197,7 @@ export function ManagingGuide({
   manualSteps,
   defaultOpen = false,
   preview = false,
+  onFirstOpen,
 }: {
   serverName: string;
   created: string[];
@@ -203,8 +205,19 @@ export function ManagingGuide({
   manualSteps: ManualStep[];
   defaultOpen?: boolean;
   preview?: boolean;
+  /** Fired once when the client first expands the guide — an engagement beacon (#4). Omitted in preview. */
+  onFirstOpen?: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const fired = useRef(false);
+  const toggle = () =>
+    setOpen((o) => {
+      if (!o && !fired.current) {
+        fired.current = true;
+        onFirstOpen?.();
+      }
+      return !o;
+    });
 
   const count = (kind: string) => created.filter((c) => c.startsWith(`${kind}:`)).length;
   const channels = count('channel');
@@ -230,7 +243,7 @@ export function ManagingGuide({
     <section className="panel p-5 mb-6">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
         className="w-full flex items-center justify-between gap-3 text-left"
       >

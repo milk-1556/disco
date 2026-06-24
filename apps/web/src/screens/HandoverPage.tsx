@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, assetUrl, type HandoverBundle, type OwnershipStep } from '../api.js';
+import { api, assetUrl, type HandoverAnalytics, type HandoverBundle, type OwnershipStep } from '../api.js';
 import { BotSetupList } from '../components/BotSetupList.js';
 import { printReport } from '../components/ReportPrint.js';
 import { deliveredScope } from '../scope.js';
@@ -18,8 +18,6 @@ const STATE_CHIP: Record<HandoverBundle['handover']['state'], { className: strin
   ready: { className: 'chip-jade', label: '● ready' },
   handed_over: { className: 'chip-jade', label: '✓ handed over' },
 };
-
-type HandoverViews = { count: number; recent: { id: string; at: string; referrer: string }[] };
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -53,7 +51,7 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [views, setViews] = useState<HandoverViews | null>(null);
+  const [analytics, setAnalytics] = useState<HandoverAnalytics | null>(null);
   const [viewsOpen, setViewsOpen] = useState(false);
 
   const handoverId = bundle?.handover.id ?? null;
@@ -63,11 +61,11 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
     let alive = true;
     (async () => {
       try {
-        const v = await api.handoverViews(handoverId);
-        if (alive) setViews(v);
+        const a = await api.handoverAnalytics(handoverId);
+        if (alive) setAnalytics(a);
       } catch {
         // engagement is a non-critical signal — stay silent if it can't load
-        if (alive) setViews(null);
+        if (alive) setAnalytics(null);
       }
     })();
     return () => {
@@ -185,7 +183,7 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
             The per-client delivery record — everything that was built, what still needs a human, and
             the steps to transfer full ownership to the client.
           </p>
-          {views && <ClientEngagement views={views} open={viewsOpen} onToggle={() => setViewsOpen((o) => !o)} />}
+          {analytics && <ClientEngagement a={analytics} open={viewsOpen} onToggle={() => setViewsOpen((o) => !o)} />}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {report && (
@@ -403,21 +401,26 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
   );
 }
 
+const EVENT_LABEL: Record<string, string> = {
+  opened: 'opened',
+  docs_viewed: 'read the docs',
+  report_downloaded: 'downloaded report',
+  share_viewed: 'viewed share card',
+};
+
 function ClientEngagement({
-  views,
+  a,
   open,
   onToggle,
 }: {
-  views: HandoverViews;
+  a: HandoverAnalytics;
   open: boolean;
   onToggle: () => void;
 }) {
-  if (views.count === 0) {
+  if (a.opened === 0) {
     return (
       <div className="mt-3">
-        <span className="chip" style={{ color: 'var(--color-faint)' }}>
-          ○ Not opened yet
-        </span>
+        <span className="chip" style={{ color: 'var(--color-faint)' }}>○ Not opened yet</span>
         <span className="block text-[0.68rem] mt-1.5" style={{ color: 'var(--color-faint)' }}>
           We&apos;ll show a signal here the first time the client opens the delivery page.
         </span>
@@ -425,14 +428,13 @@ function ClientEngagement({
     );
   }
 
-  const last = views.recent[0];
   return (
     <div className="mt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="chip chip-jade">
-          ✓ Opened {views.count}×{last ? ` · last ${relativeTime(last.at)}` : ''}
-        </span>
-        {views.recent.length > 0 && (
+        <span className="chip chip-jade">✓ Opened {a.opened}×{a.lastSeenAt ? ` · last ${relativeTime(a.lastSeenAt)}` : ''}</span>
+        {a.docsViewed > 0 && <span className="chip chip-source">📖 Read docs {a.docsViewed}×</span>}
+        {a.reportDownloaded > 0 && <span className="chip chip-gold">↓ Downloaded {a.reportDownloaded}×</span>}
+        {a.timeline.length > 0 && (
           <button
             type="button"
             className="text-[0.68rem] underline-offset-2 hover:underline"
@@ -440,26 +442,23 @@ function ClientEngagement({
             onClick={onToggle}
             aria-expanded={open}
           >
-            {open ? 'Hide opens' : 'Recent opens'}
+            {open ? 'Hide activity' : 'Recent activity'}
           </button>
         )}
       </div>
-      {open && views.recent.length > 0 && (
+      {open && a.timeline.length > 0 && (
         <ul className="mt-2 space-y-1">
-          {views.recent.map((v) => (
-            <li key={v.id} className="flex items-baseline gap-2 text-[0.72rem]">
-              <span className="mono shrink-0" style={{ color: 'var(--color-muted)' }}>
-                {relativeTime(v.at)}
-              </span>
-              <span className="truncate" style={{ color: 'var(--color-faint)' }}>
-                via {referrerLabel(v.referrer)}
-              </span>
+          {a.timeline.map((v, i) => (
+            <li key={i} className="flex items-baseline gap-2 text-[0.72rem]">
+              <span className="mono shrink-0" style={{ color: 'var(--color-muted)' }}>{relativeTime(v.at)}</span>
+              <span style={{ color: 'var(--color-bone)' }}>{EVENT_LABEL[v.kind] ?? v.kind}</span>
+              <span className="truncate" style={{ color: 'var(--color-faint)' }}>· {referrerLabel(v.referrer)}</span>
             </li>
           ))}
         </ul>
       )}
       <span className="block text-[0.62rem] mt-1.5" style={{ color: 'var(--color-faint)' }}>
-        From page opens only — referrer origin &amp; time, never who.
+        Engagement events &amp; referrer origin only — never who, never an IP.
       </span>
     </div>
   );

@@ -309,12 +309,12 @@ export class PrismaRepo implements Repo {
     const rows = await this.db.buildEvent.findMany({ where: jobId ? { jobId } : undefined, orderBy: { at: 'desc' }, take: limit });
     return rows.map((r) => ({ id: r.id, jobId: r.jobId, at: iso(r.at), kind: r.kind, detail: r.detail, ownerEmail: r.ownerEmail ?? '' }));
   }
-  async recordHandoverView(handoverId: string, referrer: string) {
-    await this.db.handoverView.create({ data: { handoverId, referrer } });
+  async recordHandoverView(handoverId: string, referrer: string, kind = 'opened') {
+    await this.db.handoverView.create({ data: { handoverId, referrer, kind } });
   }
   async listHandoverViews(handoverId: string) {
     const rows = await this.db.handoverView.findMany({ where: { handoverId }, orderBy: { at: 'desc' } });
-    return rows.map((r) => ({ id: r.id, handoverId: r.handoverId, at: iso(r.at), referrer: r.referrer }));
+    return rows.map((r) => ({ id: r.id, handoverId: r.handoverId, at: iso(r.at), referrer: r.referrer, kind: r.kind ?? 'opened' }));
   }
 
   async getHandoverPasswordHash(id: string) {
