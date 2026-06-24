@@ -223,24 +223,31 @@ export function registerStripeRoutes(app: FastifyInstance, repo: Repo): void {
       // Only fulfil a session whose payment actually SUCCEEDED. Stripe fires this event even for
       // unpaid/async sessions. (Scaffold test events omit payment_status, so accept when not live.)
       const paid = session.payment_status === 'paid' || !liveMode;
-      // Idempotency: Stripe retries webhooks, so guard against double-fulfilment by session id.
-      // (Note: notes-substring dedup is a read-then-write; a unique stripe_session_id column would
-      // make this atomic against concurrent retries — tracked for the live-volume hardening pass.)
-      const alreadyFulfilled = sessionId && (await repo.listClients()).some((c) => c.notes.includes(sessionId));
+      // Idempotency: Stripe retries webhooks, so guard against double-fulfilment by session id — now an
+      // INDEXED lookup on the unique stripeSessionId column (was an O(n) notes scan), with the unique
+      // constraint as the atomic backstop against concurrent retries.
+      const alreadyFulfilled = sessionId ? !!(await repo.clientByStripeSession(sessionId)) : false;
       if (clientName && paid && !alreadyFulfilled) {
-        // Fulfilment: auto-create the client record from the session metadata.
-        const client = await repo.addClient({
-          creatorName: clientName,
-          handle: meta.handle ?? '',
-          brandColors: [],
-          links: [],
-          assets: {},
-          termSwaps: [],
-          notes: `Auto-created from paid Stripe checkout (session ${session.id ?? 'unknown'}).`,
-          buildPrice: 0,
-          monthlyRetainer: 0,
-          upsells: [],
-        });
+        try {
+          // Fulfilment: auto-create the client record from the session metadata.
+          const client = await repo.addClient({
+            creatorName: clientName,
+            handle: meta.handle ?? '',
+            brandColors: [],
+            links: [],
+            assets: {},
+            termSwaps: [],
+            notes: `Auto-created from paid Stripe checkout (session ${sessionId || 'unknown'}).`,
+            buildPrice: 0,
+            monthlyRetainer: 0,
+            upsells: [],
+            stripeSessionId: sessionId || null,
+          });
+          void client;
+        } catch (err) {
+          // unique-constraint race: a concurrent retry already fulfilled this session — safe to ignore.
+          app.log.warn({ err: err instanceof Error ? err.message : String(err) }, 'stripe fulfilment deduped (session already processed)');
+        }
 
         // ── KICK THE BUILD (TODO) ──
         // With the client created and a rebrandConfig carried in metadata, this is where we'd enqueue
@@ -249,7 +256,6 @@ export function registerStripeRoutes(app: FastifyInstance, repo: Repo): void {
         //   const job = await repo.addJob({ kind: 'rebuild', status: 'queued', clientId: client.id, ... });
         //   useQueue() ? getQueue().add('rebuild', data, { jobId: job.id, ... })
         //              : runBuild(repo, channel, { jobId: job.id, ... });
-        void client; // referenced above; build kick is documented, not wired in the scaffold.
       }
     }
 

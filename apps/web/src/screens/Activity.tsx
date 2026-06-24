@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { api, type JobSummary, type SnapshotSummary } from '../api.js';
+import { useEffect, useState } from 'react';
+import { api, streamActivity, type JobSummary, type SnapshotSummary } from '../api.js';
 import { usePoll } from '../usePoll.js';
 
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
@@ -59,18 +59,22 @@ export function Activity() {
   const [running, setRunning] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
-  usePoll(() => {
-    void (async () => {
-      try {
-        const [jobs, snaps] = await Promise.all([api.jobs(), api.snapshots()]);
-        setItems(build(jobs, snaps));
-        setRunning(jobs.filter((j) => j.status === 'running' || j.status === 'queued').length);
-        setLoaded(true);
-      } catch {
-        /* keep last */
-      }
-    })();
-  }, 1500);
+  const refetch = async () => {
+    try {
+      const [jobs, snaps] = await Promise.all([api.jobs(), api.snapshots()]);
+      setItems(build(jobs, snaps));
+      setRunning(jobs.filter((j) => j.status === 'running' || j.status === 'queued').length);
+      setLoaded(true);
+    } catch {
+      /* keep last */
+    }
+  };
+
+  // Live push: the server streams a ping the instant anything happens (a build lands, a server is
+  // imported, a handover or client is created) → refetch immediately, so the feed is truly real-time.
+  useEffect(() => streamActivity(() => void refetch()), []);
+  // Relaxed backstop poll — the SSE does the heavy lifting; this just catches any missed event.
+  usePoll(() => void refetch(), 8000);
 
   return (
     <div className="px-4 py-6 md:p-8 max-w-3xl rise">

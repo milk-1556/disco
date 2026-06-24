@@ -63,6 +63,10 @@ export class PrismaRepo implements Repo {
     const rows = await this.db.snapshot.findMany({ orderBy: { capturedAt: 'desc' } });
     return rows.map(this.toSnapshot);
   }
+  async snapshotNames() {
+    // select id+name only — never deserialize the (large) artifact JSON just to read a name
+    return this.db.snapshot.findMany({ select: { id: true, name: true } });
+  }
   async getSnapshot(id: string) {
     const r = await this.db.snapshot.findUnique({ where: { id } });
     return r ? this.toSnapshot(r) : undefined;
@@ -98,7 +102,7 @@ export class PrismaRepo implements Repo {
 
   // ── clients ──
   private toClient = (r: {
-    id: string; creatorName: string; handle: string; brandColors: string[]; links: string[]; termSwaps: Prisma.JsonValue; assets: Prisma.JsonValue; notes: string; buildPrice?: number; monthlyRetainer?: number; upsells?: Prisma.JsonValue; createdAt: Date;
+    id: string; creatorName: string; handle: string; brandColors: string[]; links: string[]; termSwaps: Prisma.JsonValue; assets: Prisma.JsonValue; notes: string; buildPrice?: number; monthlyRetainer?: number; upsells?: Prisma.JsonValue; stripeSessionId?: string | null; createdAt: Date;
   }): Client => ({
     id: r.id,
     creatorName: r.creatorName,
@@ -111,6 +115,7 @@ export class PrismaRepo implements Repo {
     buildPrice: r.buildPrice ?? 0,
     monthlyRetainer: r.monthlyRetainer ?? 0,
     upsells: (r.upsells as Client['upsells']) ?? [],
+    stripeSessionId: r.stripeSessionId ?? null,
     createdAt: iso(r.createdAt),
   });
 
@@ -119,6 +124,10 @@ export class PrismaRepo implements Repo {
   }
   async getClient(id: string) {
     const r = await this.db.client.findUnique({ where: { id } });
+    return r ? this.toClient(r) : undefined;
+  }
+  async clientByStripeSession(sessionId: string) {
+    const r = await this.db.client.findUnique({ where: { stripeSessionId: sessionId } });
     return r ? this.toClient(r) : undefined;
   }
   async addClient(c: Omit<Client, 'id' | 'createdAt'>) {
@@ -134,6 +143,7 @@ export class PrismaRepo implements Repo {
         buildPrice: c.buildPrice ?? 0,
         monthlyRetainer: c.monthlyRetainer ?? 0,
         upsells: asJson(c.upsells ?? []),
+        stripeSessionId: c.stripeSessionId ?? null,
       },
     });
     return this.toClient(r);

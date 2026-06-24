@@ -76,5 +76,7 @@ export async function runBuildJob(data: BuildJobData, deps: BuildJobDeps): Promi
         : `Build complete: ${report.created.length} created, ${report.manualSteps.length} manual step(s).`,
     }),
   );
+  // fan out a live-activity ping (reserved key) so the Activity feed refreshes the instant a build lands
+  void Promise.resolve(channel.publish('__activity__', { type: 'log', message: 'build-done' })).catch(() => {});
   return report;
 }

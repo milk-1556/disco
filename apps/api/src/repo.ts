@@ -30,12 +30,16 @@ export type HandoverPatch = Partial<{
  */
 export interface Repo {
   listSnapshots(): Promise<SnapshotRecord[]>;
+  /** Cheap id→name lookup (no artifact-blob parse) — for joining names onto the polled /jobs list. */
+  snapshotNames(): Promise<{ id: string; name: string }[]>;
   getSnapshot(id: string): Promise<SnapshotRecord | undefined>;
   addSnapshot(rec: SnapshotCreate): Promise<SnapshotRecord>;
   updateSnapshot(id: string, patch: SnapshotMetaPatch): Promise<SnapshotRecord | undefined>;
   listClients(): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
   addClient(c: Omit<Client, 'id' | 'createdAt'>): Promise<Client>;
+  /** Indexed lookup for idempotent Stripe webhook fulfilment (replaces an O(n) notes scan). */
+  clientByStripeSession(sessionId: string): Promise<Client | undefined>;
   deleteClient(id: string): Promise<void>;
   listJobs(): Promise<Job[]>;
   getJob(id: string): Promise<Job | undefined>;
@@ -100,6 +104,9 @@ export class InMemoryRepo implements Repo {
   async listSnapshots() {
     return [...this.snapshots.values()].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
   }
+  async snapshotNames() {
+    return [...this.snapshots.values()].map((s) => ({ id: s.id, name: s.name }));
+  }
   async getSnapshot(sid: string) {
     return this.snapshots.get(sid);
   }
@@ -126,6 +133,9 @@ export class InMemoryRepo implements Repo {
     const full: Client = { ...c, id: newId('client'), createdAt: now() };
     this.clients.set(full.id, full);
     return full;
+  }
+  async clientByStripeSession(sessionId: string) {
+    return [...this.clients.values()].find((c) => c.stripeSessionId === sessionId);
   }
   async deleteClient(id: string) {
     this.clients.delete(id);

@@ -132,6 +132,32 @@ export function streamJobLogs(jobId: string, onEvent: (ev: JobEvent) => void): (
   return () => ctrl.abort();
 }
 
+/** SSE of activity pings (build finished, server imported, handover created, client added). Calls
+ *  onPing on each event so the caller can refetch instantly. Returns an unsubscribe fn. */
+export function streamActivity(onPing: () => void): () => void {
+  const ctrl = new AbortController();
+  fetch(`${BASE}/activity/stream`, { headers: token ? { authorization: `Bearer ${token}` } : {}, signal: ctrl.signal })
+    .then(async (res) => {
+      const reader = res.body?.getReader();
+      if (!reader) return;
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop() ?? '';
+        for (const p of parts) {
+          const line = p.replace(/^data: /, '').trim();
+          if (line && (line.includes('"ping"') || line.includes('"open"'))) onPing();
+        }
+      }
+    })
+    .catch(() => {});
+  return () => ctrl.abort();
+}
+
 // ── shared types (mirror @disco/schema shapes the UI consumes) ──
 export interface JoinedGuild {
   id: string;

@@ -50,6 +50,7 @@ model Client {
   buildPrice      Float @default(0)
   monthlyRetainer Float @default(0)
   upsells         Json  @default("[]")
+  stripeSessionId String? @unique // idempotent Stripe fulfilment: one client per checkout session
   createdAt   DateTime @default(now())
   jobs        Job[]
   handovers   Handover[]

@@ -217,3 +217,27 @@ describe('stripe money-path hardening (adversarial-audit fixes)', () => {
     expect(bad.statusCode).toBe(400);
   });
 });
+
+describe('stripe webhook idempotency (unique session-id dedup)', () => {
+  it('the same checkout.session.completed delivered 3× creates exactly ONE client', async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    const repo = new InMemoryRepo(true);
+    const app = buildServer({ repo });
+    await app.ready();
+    try {
+      const before = (await repo.listClients()).length;
+      const payload = JSON.stringify({ type: 'checkout.session.completed', data: { object: { id: 'cs_idem_1', payment_status: 'paid', metadata: { clientName: 'Idem Co' } } } });
+      for (let i = 0; i < 3; i++) {
+        const res = await app.inject({ method: 'POST', url: '/stripe/webhook', headers: { 'content-type': 'application/json' }, payload });
+        expect(res.statusCode).toBe(200);
+      }
+      const clients = await repo.listClients();
+      expect(clients.length).toBe(before + 1);
+      expect(clients.filter((c) => c.creatorName === 'Idem Co').length).toBe(1);
+      expect(clients.find((c) => c.creatorName === 'Idem Co')?.stripeSessionId).toBe('cs_idem_1');
+    } finally {
+      await app.close();
+    }
+  });
+});

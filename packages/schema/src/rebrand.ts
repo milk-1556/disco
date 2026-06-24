@@ -50,6 +50,8 @@ export const Client = z.object({
   buildPrice: z.number().min(0).default(0), // one-time server build fee
   monthlyRetainer: z.number().min(0).default(0), // recurring management/maintenance fee ($/mo)
   upsells: z.array(z.object({ name: z.string(), price: z.number().min(0) })).default([]), // one-time add-ons
+  /** Set when auto-created from a Stripe checkout — the dedup key for idempotent webhook fulfilment. */
+  stripeSessionId: z.string().nullish(),
   createdAt: z.string(),
 });
 export type Client = z.infer<typeof Client>;

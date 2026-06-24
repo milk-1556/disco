@@ -47,6 +47,12 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return b.count > limit;
   };
 
+  // Activity live-feed transport: a reserved channel key fans out a "something changed" ping over the
+  // SAME (in-memory or Redis) bus the job logs use — so /activity/stream sees worker build-completions
+  // cross-process with zero new infra. The client refetches on each ping (event-driven, not polling).
+  const ACTIVITY_KEY = '__activity__';
+  const pingActivity = (message: string) => void Promise.resolve(channel.publish(ACTIVITY_KEY, { type: 'log', message })).catch(() => {});
+
   // ── auth guard ──
   const requireAuth = async (req: FastifyRequest, reply: FastifyReply) => {
     const header = req.headers.authorization ?? '';
@@ -187,6 +193,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         schemaVersion: snapshot.schemaVersion,
         snapshot,
       });
+      pingActivity('imported');
       return { id: rec.id, name: rec.name, version: rec.version, unchanged: false };
     } catch (err) {
       return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
@@ -240,6 +247,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   app.get('/clients', { preHandler: requireAuth }, async () => repo.listClients());
   app.post('/clients', { preHandler: requireAuth }, async (req) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
+    pingActivity('client');
     return repo.addClient({
       creatorName: String(b.creatorName ?? 'New Client'),
       handle: String(b.handle ?? ''),
@@ -325,11 +333,14 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     }
     // Bump "last used" so the library can surface recently-built templates.
     void repo.updateSnapshot(rec.id, { lastUsedAt: new Date().toISOString() }).catch(() => {});
+    pingActivity('build');
     return { id: job.id, status: job.status };
   });
 
   app.get('/jobs', { preHandler: requireAuth }, async () => {
-    const [jobs, snaps, clients] = await Promise.all([repo.listJobs(), repo.listSnapshots(), repo.listClients()]);
+    // snapshotNames() is a cheap id→name select (no artifact-blob parse) — the /jobs list is the
+    // hottest polled endpoint, so this avoids deserializing every snapshot on every tick.
+    const [jobs, snaps, clients] = await Promise.all([repo.listJobs(), repo.snapshotNames(), repo.listClients()]);
     const snapName = new Map(snaps.map((s) => [s.id, s.name]));
     const clientName = new Map(clients.map((c) => [c.id, c.creatorName]));
     return jobs.map((j) => ({
@@ -434,6 +445,35 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  // SSE live activity feed: pushes a ping whenever something happens (a build finishes, a server is
+  // imported, a handover is created, a client is added) so the Activity screen refetches instantly.
+  app.get('/activity/stream', { preHandler: requireAuth }, async (req, reply) => {
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': allowedOrigins ? (allowedOrigins.includes(req.headers.origin ?? '') ? req.headers.origin! : allowedOrigins[0]!) : '*',
+    });
+    let closed = false;
+    const cleanup = async () => {
+      if (closed) return;
+      closed = true;
+      (await unsubP)?.();
+      reply.raw.end();
+    };
+    req.raw.on('close', () => void cleanup());
+    reply.raw.write(`data: ${JSON.stringify({ type: 'open' })}\n\n`); // prompt the client to do an initial load
+    const unsubP = Promise.resolve(
+      channel.subscribe(ACTIVITY_KEY, (ev) => {
+        if (!closed) reply.raw.write(`data: ${JSON.stringify({ type: 'ping', message: ev.message })}\n\n`);
+      }),
+    ).catch(() => undefined);
+    // heartbeat so proxies don't drop an idle connection
+    const hb = setInterval(() => !closed && reply.raw.write(': hb\n\n'), 25_000);
+    req.raw.on('close', () => clearInterval(hb));
+  });
+
   /** Re-run a failed/canceled job. The persisted manifest means it RESUMES, not restarts. */
   app.post('/jobs/:id/retry', { preHandler: requireAuth }, async (req, reply) => {
     const id = (req.params as { id: string }).id;
@@ -509,6 +549,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (!job) return reply.code(404).send({ error: 'job not found' });
     const existing = await repo.getHandoverByJob(job.id);
     if (existing) return existing;
+    pingActivity('handover');
     return repo.addHandover({
       jobId: job.id,
       clientId: job.clientId,
