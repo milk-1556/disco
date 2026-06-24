@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import { api, type SnapshotSummary, type SnapshotDiff as SnapshotDiffData } from '../api.js';
+import {
+  api,
+  type SnapshotSummary,
+  type SnapshotDiff as SnapshotDiffData,
+  type PermissionDelta,
+} from '../api.js';
 
 export function SnapshotDiff({
   snapshots,
@@ -205,6 +210,62 @@ function DiffReport({ diff }: { diff: SnapshotDiffData }) {
         ))}
       </div>
 
+      {diff.overwriteChanges.length > 0 && (
+        <div className="panel p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="eyebrow">permission overwrites</span>
+            <span className="chip">{diff.overwriteChanges.length} moved</span>
+          </div>
+          <p className="text-xs mb-4" style={{ color: 'var(--color-muted)' }}>
+            Channel & category permission overwrites that changed — decoded to plain English.
+          </p>
+          <div className="space-y-3">
+            {diff.overwriteChanges.map((oc, i) => {
+              const allowMoved = oc.allow.added.length + oc.allow.removed.length > 0;
+              const denyMoved = oc.deny.added.length + oc.deny.removed.length > 0;
+              if (!allowMoved && !denyMoved) return null;
+              return (
+                <div key={`ow-${i}`} className="panel-soft px-3 py-3">
+                  <div className="flex items-baseline gap-2 mb-2 flex-wrap">
+                    <span className="mono text-sm" style={{ color: 'var(--color-source)' }}>
+                      #{oc.container}
+                    </span>
+                    <span style={{ color: 'var(--color-faint)' }}>·</span>
+                    <span className="text-sm" style={{ color: 'var(--color-client)' }}>
+                      {oc.target}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {allowMoved && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className="label shrink-0"
+                          style={{ minWidth: 44, color: 'var(--color-jade)' }}
+                        >
+                          allow
+                        </span>
+                        <PermChips delta={oc.allow} />
+                      </div>
+                    )}
+                    {denyMoved && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className="label shrink-0"
+                          style={{ minWidth: 44, color: 'var(--color-danger)' }}
+                        >
+                          deny
+                        </span>
+                        <PermChips delta={oc.deny} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="panel p-5">
         <div className="eyebrow mb-3">counts</div>
         <div className="space-y-1.5">
@@ -320,10 +381,47 @@ function DiffSection({
                   </div>
                 ))}
               </div>
+              {c.permissionDelta &&
+                c.permissionDelta.added.length + c.permissionDelta.removed.length > 0 && (
+                  <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--color-line-soft)' }}>
+                    <div className="label mb-1.5" style={{ color: 'var(--color-gold)' }}>
+                      permissions
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <PermChips delta={c.permissionDelta} />
+                    </div>
+                  </div>
+                )}
             </details>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+// Decoded permission names rendered as chips: jade '+ added' / danger '− removed'.
+function PermChips({ delta }: { delta: PermissionDelta }) {
+  return (
+    <>
+      {delta.added.map((name, i) => (
+        <span key={`pa-${i}`} className="chip chip-jade">
+          + {name}
+        </span>
+      ))}
+      {delta.removed.map((name, i) => (
+        <span
+          key={`pr-${i}`}
+          className="chip"
+          style={{
+            color: 'var(--color-danger)',
+            borderColor: 'color-mix(in srgb, var(--color-danger) 40%, transparent)',
+            background: 'color-mix(in srgb, var(--color-danger) 12%, transparent)',
+          }}
+        >
+          − {name}
+        </span>
+      ))}
+    </>
   );
 }

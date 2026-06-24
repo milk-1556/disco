@@ -19,11 +19,61 @@ const STATE_CHIP: Record<HandoverBundle['handover']['state'], { className: strin
   handed_over: { className: 'chip-jade', label: '✓ handed over' },
 };
 
+type HandoverViews = { count: number; recent: { id: string; at: string; referrer: string }[] };
+
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const secs = Math.round((Date.now() - then) / 1000);
+  if (secs < 45) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.round(months / 12)}y ago`;
+}
+
+// Referrers come in as origins (or 'direct' when the browser sent none). We only ever know the
+// origin + timestamp — never identity — so surface no more than that.
+function referrerLabel(ref: string): string {
+  if (!ref || ref === 'direct') return 'direct link';
+  try {
+    return new URL(ref).host;
+  } catch {
+    return ref;
+  }
+}
+
 export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   const [bundle, setBundle] = useState<HandoverBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [views, setViews] = useState<HandoverViews | null>(null);
+  const [viewsOpen, setViewsOpen] = useState(false);
+
+  const handoverId = bundle?.handover.id ?? null;
+
+  useEffect(() => {
+    if (!handoverId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const v = await api.handoverViews(handoverId);
+        if (alive) setViews(v);
+      } catch {
+        // engagement is a non-critical signal — stay silent if it can't load
+        if (alive) setViews(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [handoverId]);
 
   useEffect(() => {
     let alive = true;
@@ -135,6 +185,7 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
             The per-client delivery record — everything that was built, what still needs a human, and
             the steps to transfer full ownership to the client.
           </p>
+          {views && <ClientEngagement views={views} open={viewsOpen} onToggle={() => setViewsOpen((o) => !o)} />}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {report && (
@@ -348,6 +399,68 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
           )}
         </div>
       </footer>
+    </div>
+  );
+}
+
+function ClientEngagement({
+  views,
+  open,
+  onToggle,
+}: {
+  views: HandoverViews;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  if (views.count === 0) {
+    return (
+      <div className="mt-3">
+        <span className="chip" style={{ color: 'var(--color-faint)' }}>
+          ○ Not opened yet
+        </span>
+        <span className="block text-[0.68rem] mt-1.5" style={{ color: 'var(--color-faint)' }}>
+          We&apos;ll show a signal here the first time the client opens the delivery page.
+        </span>
+      </div>
+    );
+  }
+
+  const last = views.recent[0];
+  return (
+    <div className="mt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="chip chip-jade">
+          ✓ Opened {views.count}×{last ? ` · last ${relativeTime(last.at)}` : ''}
+        </span>
+        {views.recent.length > 0 && (
+          <button
+            type="button"
+            className="text-[0.68rem] underline-offset-2 hover:underline"
+            style={{ color: 'var(--color-muted)' }}
+            onClick={onToggle}
+            aria-expanded={open}
+          >
+            {open ? 'Hide opens' : 'Recent opens'}
+          </button>
+        )}
+      </div>
+      {open && views.recent.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {views.recent.map((v) => (
+            <li key={v.id} className="flex items-baseline gap-2 text-[0.72rem]">
+              <span className="mono shrink-0" style={{ color: 'var(--color-muted)' }}>
+                {relativeTime(v.at)}
+              </span>
+              <span className="truncate" style={{ color: 'var(--color-faint)' }}>
+                via {referrerLabel(v.referrer)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <span className="block text-[0.62rem] mt-1.5" style={{ color: 'var(--color-faint)' }}>
+        From page opens only — referrer origin &amp; time, never who.
+      </span>
     </div>
   );
 }

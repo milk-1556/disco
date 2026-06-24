@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, type AuditEntry, type StatusInfo } from '../api.js';
+import { api, type AuditEntry, type BuildEventEntry, type StatusInfo } from '../api.js';
 import { usePoll } from '../usePoll.js';
 
 function ago(iso: string | null): string {
@@ -67,18 +67,35 @@ function actionStyle(action: string): { color: string; bg: string; border: strin
   return { color: 'var(--color-muted)', bg: 'var(--color-line-soft)', border: 'var(--color-line)' };
 }
 
+/** Map a build-event kind to a chip color (completed=jade, failed=danger, resumed=gold, running/queued=source). */
+function buildKindStyle(kind: string): { color: string; bg: string; border: string } {
+  const k = kind.toLowerCase();
+  const accent =
+    k === 'completed' ? 'var(--color-jade)' :
+    k === 'failed' ? 'var(--color-danger)' :
+    k === 'resumed' ? 'var(--color-gold)' :
+    'var(--color-source)';
+  return {
+    color: accent,
+    bg: `color-mix(in srgb, ${accent} 14%, transparent)`,
+    border: `color-mix(in srgb, ${accent} 35%, transparent)`,
+  };
+}
+
 /** A premium, read-only ops dashboard: live system health + an accountability audit log. */
 export function Operations() {
   const [status, setStatus] = useState<StatusInfo | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [builds, setBuilds] = useState<BuildEventEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   usePoll(() => {
     void (async () => {
       try {
-        const [s, a] = await Promise.all([api.status(), api.audit()]);
+        const [s, a, b] = await Promise.all([api.status(), api.audit(), api.buildEvents()]);
         setStatus(s);
         setAudit(a);
+        setBuilds(b);
         setLoaded(true);
       } catch {
         /* keep last good values on a transient blip */
@@ -164,6 +181,48 @@ export function Operations() {
           </div>
         </section>
       ) : null}
+
+      {/* ── BUILD EVENTS ───────────────────────────────────── */}
+      {loaded && (
+        <section className="mb-8" aria-label="Build events">
+          <div className="eyebrow mb-3">build events</div>
+          {builds.length === 0 ? (
+            <div className="panel p-8 text-center">
+              <div className="text-sm font-medium mb-1">No builds yet</div>
+              <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+                Run one from the Build console and its lifecycle shows here.
+              </p>
+            </div>
+          ) : (
+            <div className="panel p-2">
+              {[...builds]
+                .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+                .map((e, idx, arr) => {
+                  const st = buildKindStyle(e.kind);
+                  return (
+                    <div
+                      key={e.id}
+                      className="flex items-start gap-3 px-3 py-2.5"
+                      style={{ borderBottom: idx === arr.length - 1 ? 'none' : '1px solid var(--color-line-soft)' }}
+                    >
+                      <span
+                        className="chip shrink-0 mt-0.5"
+                        style={{ color: st.color, background: st.bg, borderColor: st.border }}
+                      >
+                        {e.kind}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm" style={{ color: 'var(--color-bone)' }}>{e.detail}</div>
+                        <div className="text-[0.7rem] mono mt-0.5 truncate" style={{ color: 'var(--color-muted)' }}>{e.jobId}</div>
+                      </div>
+                      <span className="mono text-[0.7rem] shrink-0 mt-0.5" style={{ color: 'var(--color-faint)' }}>{ago(e.at)}</span>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── AUDIT LOG ──────────────────────────────────────── */}
       {loaded && (
