@@ -47,6 +47,9 @@ model Client {
   termSwaps   Json     @default("[]")
   assets      Json     @default("{}")
   notes       String   @default("")
+  buildPrice      Float @default(0)
+  monthlyRetainer Float @default(0)
+  upsells         Json  @default("[]")
   createdAt   DateTime @default(now())
   jobs        Job[]
   handovers   Handover[]

@@ -220,6 +220,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       assets: {},
       termSwaps: Array.isArray(b.termSwaps) ? (b.termSwaps as { from: string; to: string }[]) : [],
       notes: String(b.notes ?? ''),
+      buildPrice: Number(b.buildPrice) || 0,
+      monthlyRetainer: Number(b.monthlyRetainer) || 0,
+      upsells: Array.isArray(b.upsells) ? (b.upsells as { name: string; price: number }[]) : [],
     });
   });
 

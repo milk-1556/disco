@@ -15,6 +15,9 @@ export function NewClient({ onCreated }: { onCreated: (client: Client) => void }
   const [links, setLinks] = useState<string[]>(['']);
   const [termSwaps, setTermSwaps] = useState<TermSwap[]>([{ from: '', to: '' }]);
   const [notes, setNotes] = useState('');
+  const [buildPrice, setBuildPrice] = useState('');
+  const [monthlyRetainer, setMonthlyRetainer] = useState('');
+  const [upsells, setUpsells] = useState<{ name: string; price: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -47,6 +50,9 @@ export function NewClient({ onCreated }: { onCreated: (client: Client) => void }
           .map((s) => ({ from: s.from.trim(), to: s.to.trim() }))
           .filter((s) => s.from || s.to),
         notes: notes.trim(),
+        buildPrice: Number(buildPrice) || 0,
+        monthlyRetainer: Number(monthlyRetainer) || 0,
+        upsells: upsells.map((u) => ({ name: u.name.trim(), price: Number(u.price) || 0 })).filter((u) => u.name),
       };
       const client = await api.addClient(payload as Partial<Client>);
       onCreated(client);
@@ -237,6 +243,43 @@ export function NewClient({ onCreated }: { onCreated: (client: Client) => void }
           onClick={() => setTermSwaps((xs) => [...xs, { from: '', to: '' }])}
         >
           + add swap
+        </button>
+
+        {/* ── deal economics ── */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="eyebrow">the deal</div>
+          <span className="label">what this client is worth</span>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 mb-4">
+          <div>
+            <label className="label" htmlFor="nc-build-price">Build price (one-time)</label>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <span style={{ color: 'var(--color-faint)' }}>$</span>
+              <input id="nc-build-price" className="input mono" type="number" min="0" step="100" placeholder="3500" value={buildPrice} onChange={(e) => setBuildPrice(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="label" htmlFor="nc-retainer">Monthly management ($/mo)</label>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <span style={{ color: 'var(--color-faint)' }}>$</span>
+              <input id="nc-retainer" className="input mono" type="number" min="0" step="50" placeholder="500" value={monthlyRetainer} onChange={(e) => setMonthlyRetainer(e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 mb-2">
+          {upsells.map((u, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input className="input" placeholder="Upsell (e.g. custom emoji pack)" value={u.name} onChange={(e) => setUpsells((xs) => xs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} aria-label={`Upsell ${i + 1} name`} />
+              <div className="flex items-center gap-1 shrink-0">
+                <span style={{ color: 'var(--color-faint)' }}>$</span>
+                <input className="input mono" type="number" min="0" step="50" placeholder="500" value={u.price} onChange={(e) => setUpsells((xs) => xs.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} aria-label={`Upsell ${i + 1} price`} style={{ width: 96 }} />
+              </div>
+              <button type="button" className="btn btn-ghost shrink-0" style={{ padding: '0.5rem 0.7rem' }} onClick={() => setUpsells((xs) => xs.filter((_, j) => j !== i))} aria-label={`Remove upsell ${i + 1}`}>×</button>
+            </div>
+          ))}
+        </div>
+        <button type="button" className="btn btn-ghost text-sm mb-6" onClick={() => setUpsells((xs) => [...xs, { name: '', price: '' }])}>
+          + add upsell / package
         </button>
 
         {/* ── notes ── */}

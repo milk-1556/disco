@@ -88,6 +88,9 @@ export class InMemoryRepo implements Repo {
       assets: {},
       termSwaps: [{ from: 'Acme', to: 'Nova' }],
       notes: 'Sample client for the Nova rebrand.',
+      buildPrice: 3500,
+      monthlyRetainer: 500,
+      upsells: [],
       createdAt: now(),
     };
     this.clients.set(client.id, client);

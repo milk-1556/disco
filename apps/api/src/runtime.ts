@@ -58,6 +58,9 @@ export async function seedIfEmpty(repo: Repo): Promise<void> {
     assets: {},
     termSwaps: [{ from: 'Acme', to: 'Nova' }],
     notes: 'Sample client for the Nova rebrand.',
+    buildPrice: 3500,
+    monthlyRetainer: 500,
+    upsells: [],
   };
   await repo.addClient(client);
 }

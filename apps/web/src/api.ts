@@ -263,6 +263,10 @@ export interface JobSummary {
   createdAt: string;
   updatedAt: string;
 }
+export interface Upsell {
+  name: string;
+  price: number;
+}
 export interface Client {
   id: string;
   creatorName: string;
@@ -270,6 +274,9 @@ export interface Client {
   brandColors: string[];
   links: string[];
   notes: string;
+  buildPrice: number;
+  monthlyRetainer: number;
+  upsells: Upsell[];
   createdAt: string;
 }
 export interface JobEvent {

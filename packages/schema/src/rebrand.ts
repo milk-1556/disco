@@ -46,6 +46,10 @@ export const Client = z.object({
   /** Saved term swaps captured from intake. */
   termSwaps: z.array(z.object({ from: z.string(), to: z.string() })).default([]),
   notes: z.string().default(''),
+  /** Deal economics — what this client is worth. */
+  buildPrice: z.number().min(0).default(0), // one-time server build fee
+  monthlyRetainer: z.number().min(0).default(0), // recurring management/maintenance fee ($/mo)
+  upsells: z.array(z.object({ name: z.string(), price: z.number().min(0) })).default([]), // one-time add-ons
   createdAt: z.string(),
 });
 export type Client = z.infer<typeof Client>;

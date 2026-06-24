@@ -180,6 +180,9 @@ export function registerStripeRoutes(app: FastifyInstance, repo: Repo): void {
           assets: {},
           termSwaps: [],
           notes: `Auto-created from paid Stripe checkout (session ${session.id ?? 'unknown'}).`,
+          buildPrice: 0,
+          monthlyRetainer: 0,
+          upsells: [],
         });
 
         // ── KICK THE BUILD (TODO) ──

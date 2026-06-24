@@ -98,7 +98,7 @@ export class PrismaRepo implements Repo {
 
   // ── clients ──
   private toClient = (r: {
-    id: string; creatorName: string; handle: string; brandColors: string[]; links: string[]; termSwaps: Prisma.JsonValue; assets: Prisma.JsonValue; notes: string; createdAt: Date;
+    id: string; creatorName: string; handle: string; brandColors: string[]; links: string[]; termSwaps: Prisma.JsonValue; assets: Prisma.JsonValue; notes: string; buildPrice?: number; monthlyRetainer?: number; upsells?: Prisma.JsonValue; createdAt: Date;
   }): Client => ({
     id: r.id,
     creatorName: r.creatorName,
@@ -108,6 +108,9 @@ export class PrismaRepo implements Repo {
     termSwaps: (r.termSwaps as { from: string; to: string }[]) ?? [],
     assets: (r.assets as Client['assets']) ?? {},
     notes: r.notes,
+    buildPrice: r.buildPrice ?? 0,
+    monthlyRetainer: r.monthlyRetainer ?? 0,
+    upsells: (r.upsells as Client['upsells']) ?? [],
     createdAt: iso(r.createdAt),
   });
 
@@ -128,6 +131,9 @@ export class PrismaRepo implements Repo {
         termSwaps: asJson(c.termSwaps),
         assets: asJson(c.assets),
         notes: c.notes,
+        buildPrice: c.buildPrice ?? 0,
+        monthlyRetainer: c.monthlyRetainer ?? 0,
+        upsells: asJson(c.upsells ?? []),
       },
     });
     return this.toClient(r);

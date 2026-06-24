@@ -34,13 +34,19 @@ const main = async () => {
     brandColors: ['#f43f5e', '#fb7185'],
     links: ['https://whop.com/aurorabets'],
     notes: 'High-roller slots community. Wants the Stakehaus layout in rose.',
+    buildPrice: 5000,
+    monthlyRetainer: 800,
+    upsells: [{ name: 'Custom emoji + sticker pack', price: 500 }],
   });
   await post('/clients', {
     creatorName: 'NeonPlay',
     handle: '@neonplay',
     brandColors: ['#22d3ee', '#a855f7'],
     links: ['https://whop.com/neonplay'],
-    notes: 'Lead — quoted, awaiting deposit.',
+    notes: 'Lead — quoted $4,500 build + management, awaiting deposit.',
+    buildPrice: 4500,
+    monthlyRetainer: 750,
+    upsells: [{ name: 'Full server management', price: 0 }],
   });
 
   // Real build: Stakehaus → Aurora Bets (rose). Populates metrics, activity, queue, handover.
