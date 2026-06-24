@@ -59,7 +59,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ snapshotId, config }),
     }),
-  startJob: (body: { snapshotId: string; clientId?: string; config: RebrandConfig; dryRun: boolean }) =>
+  startJob: (body: { snapshotId: string; clientId?: string; config: RebrandConfig; dryRun: boolean; canary?: boolean; targetGuildId?: string }) =>
     req<{ id: string; status: string }>('/jobs', { method: 'POST', body: JSON.stringify(body) }),
   jobs: () => req<JobSummary[]>('/jobs'),
   job: (id: string) => req<Job>(`/jobs/${id}`),
@@ -306,6 +306,7 @@ export interface JobSummary {
   kind: string;
   status: string;
   dryRun: boolean;
+  canary: boolean;
   progress: number;
   snapshotId: string | null;
   snapshotName: string | null;

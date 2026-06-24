@@ -5,6 +5,9 @@ import { usePoll } from '../usePoll.js';
 
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
 const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
+// Sub-dollar compute is the whole point — show cents precisely so "pennies" reads true.
+const fmtCents = (n: number) => (n >= 1 ? `$${n.toFixed(2)}` : `${(n * 100).toFixed(n < 0.1 ? 1 : 0)}¢`);
+const fmtKb = (kb: number) => (kb < 1024 ? `${Math.round(kb)} KB` : `${(kb / 1024).toFixed(1)} MB`);
 
 /**
  * Real unit economics: one-time build fees + recurring management (MRR) + upsells, by client, with a
@@ -41,7 +44,21 @@ export function Economics() {
     const builds = jobs.filter((j) => j.status === 'completed' && !j.dryRun && j.metrics);
     const totalMs = builds.reduce((a, b) => a + (b.metrics?.durationMs ?? 0), 0);
     const computeCost = infra + (totalMs / 3_600_000) * 0.5; // ~$0.50/compute-hour over native infra
-    return { won, pipeline, oneTime, mrr, arr: mrr * 12, upsellRev, avgBuild, pipeOnce, pipeMrr, computeCost, builds, totalMs, dealOnce };
+
+    // Per-build cost: compute ($0.50/compute-hour) + a thin per-build slice of fixed infra,
+    // amortized across this month's delivered builds. Egress is synthesized (~3KB/object).
+    const COMPUTE_RATE = 0.5; // $/compute-hour
+    const EGRESS_KB_PER_OBJECT = 3;
+    const infraSlice = builds.length ? infra / builds.length : 0;
+    const buildCost = (b: JobSummary) => (b.metrics!.durationMs / 3_600_000) * COMPUTE_RATE + infraSlice;
+    const repPrice = avgBuild > 0 ? avgBuild : 3500; // representative won build fee, fallback $3,500
+    const avgBuildCost = builds.length ? builds.reduce((a, b) => a + buildCost(b), 0) / builds.length : 0;
+    const avgEgressKb = builds.length ? builds.reduce((a, b) => a + b.metrics!.objectsCreated * EGRESS_KB_PER_OBJECT, 0) / builds.length : 0;
+    const avgMarginPct = repPrice > 0 ? (1 - avgBuildCost / repPrice) * 100 : 0;
+    return {
+      won, pipeline, oneTime, mrr, arr: mrr * 12, upsellRev, avgBuild, pipeOnce, pipeMrr, computeCost, builds, totalMs, dealOnce,
+      buildCost, infraSlice, repPrice, avgBuildCost, avgEgressKb, avgMarginPct, COMPUTE_RATE, EGRESS_KB_PER_OBJECT,
+    };
   }, [jobs, clients, infra]);
 
   const rows = [...m.won.map((c) => ({ c, won: true })), ...m.pipeline.map((c) => ({ c, won: false }))];
@@ -137,6 +154,65 @@ export function Economics() {
       )}
 
       {m.builds.length > 0 && (
+        <div className="panel p-5 mb-6">
+          <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+            <div className="eyebrow">what a build actually costs</div>
+            <span className="label">vs {fmt$(m.repPrice)} build{m.avgBuild > 0 ? '' : ' (est.)'}</span>
+          </div>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+            You charge thousands. The build itself costs cents — here’s where every penny goes.
+          </p>
+
+          {/* Headline margin */}
+          <div className="panel-soft p-4 mb-4 flex items-end justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-[0.62rem] mono mb-1.5" style={{ color: 'var(--color-faint)' }}>margin per build (avg)</div>
+              <div className="leading-none" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-jade)', fontSize: 'clamp(2.2rem, 9vw, 3.4rem)' }}>
+                {m.avgMarginPct.toFixed(1)}%
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="leading-none" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-jade)', fontSize: 'clamp(1.2rem, 4vw, 1.6rem)' }}>
+                {fmt$(m.repPrice - m.avgBuildCost)}
+              </div>
+              <div className="text-[0.62rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>
+                {fmt$(m.repPrice)} price − {fmtCents(m.avgBuildCost)} cost
+              </div>
+            </div>
+          </div>
+
+          {/* Average cost breakdown */}
+          <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px,1fr))' }}>
+            <CostStat n={fmtMs(m.totalMs / m.builds.length)} label="compute / build" tone="source" />
+            <CostStat n={`${(m.builds.reduce((a, b) => a + b.metrics!.apiCalls, 0) / m.builds.length).toFixed(0)}`} label="Discord API calls" tone="source" />
+            <CostStat n={fmtKb(m.avgEgressKb)} label="egress (est.)" tone="muted" />
+            <CostStat n={fmtCents(m.avgBuildCost)} label="compute $ / build" tone="gold" />
+          </div>
+
+          <div className="eyebrow mb-2">per recent build</div>
+          <div className="space-y-1.5">
+            {m.builds.slice(0, 6).map((b) => {
+              const cost = m.buildCost(b);
+              const egressKb = b.metrics!.objectsCreated * m.EGRESS_KB_PER_OBJECT;
+              const marginPct = m.repPrice > 0 ? (1 - cost / m.repPrice) * 100 : 0;
+              return (
+                <div key={b.id} className="panel-soft px-3 py-2 flex items-center gap-x-3 gap-y-1 flex-wrap text-[0.78rem]">
+                  <span className="mono" style={{ color: 'var(--color-faint)', minWidth: 52 }}>{fmtMs(b.metrics!.durationMs)}</span>
+                  <span className="mono" style={{ color: 'var(--color-source)' }}>{b.metrics!.apiCalls} calls</span>
+                  <span className="mono" style={{ color: 'var(--color-faint)' }}>{fmtKb(egressKb)} est.</span>
+                  <span className="mono" style={{ color: 'var(--color-gold)' }}>{fmtCents(cost)}</span>
+                  <span className="mono ml-auto" style={{ color: 'var(--color-jade)' }}>{marginPct.toFixed(1)}% margin</span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[0.7rem] mono mt-3" style={{ color: 'var(--color-faint)' }}>
+            cost = (duration × ${m.COMPUTE_RATE.toFixed(2)}/compute-hr) + {fmtCents(m.infraSlice)} infra slice · egress synthesized at {m.EGRESS_KB_PER_OBJECT}KB/object
+          </p>
+        </div>
+      )}
+
+      {m.builds.length > 0 && (
         <div className="panel p-5">
           <div className="flex items-center justify-between mb-3">
             <div className="eyebrow">compute, per build</div>
@@ -163,6 +239,16 @@ function Stat({ n, label, tone }: { n: string; label: string; tone: 'bone' | 'ja
     <div className="panel-soft px-3 py-3">
       <div className="leading-none" style={{ fontFamily: 'var(--font-display)', color, fontSize: 'clamp(1rem, 2.2vw, 1.3rem)' }}>{n}</div>
       <div className="text-[0.62rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>{label}</div>
+    </div>
+  );
+}
+
+function CostStat({ n, label, tone }: { n: string; label: string; tone: 'source' | 'gold' | 'muted' }) {
+  const color = tone === 'source' ? 'var(--color-source)' : tone === 'gold' ? 'var(--color-gold)' : 'var(--color-muted)';
+  return (
+    <div className="panel-soft px-3 py-2.5">
+      <div className="mono leading-none" style={{ color, fontSize: 'clamp(0.95rem, 2vw, 1.15rem)' }}>{n}</div>
+      <div className="text-[0.6rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>{label}</div>
     </div>
   );
 }

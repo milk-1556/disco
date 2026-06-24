@@ -4,6 +4,7 @@ import { BotSetupList } from '../components/BotSetupList.js';
 import { printReport } from '../components/ReportPrint.js';
 import { deliveredScope } from '../scope.js';
 import { cx } from '../util.js';
+import { ManagingGuide } from './PublicHandover.js';
 
 const UPSELL_OPTIONS: { value: HandoverBundle['handover']['upsellStatus']; label: string }[] = [
   { value: 'none', label: 'No upsell' },
@@ -292,6 +293,17 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
             ))}
           </div>
         </section>
+      )}
+
+      {/* ── managing-your-community guide (preview of what the client sees) ── */}
+      {report && (
+        <ManagingGuide
+          serverName={serverName}
+          created={report.created}
+          botSetup={report.botSetup}
+          manualSteps={report.manualSteps}
+          preview
+        />
       )}
 
       {/* ── branding & sharing ── */}

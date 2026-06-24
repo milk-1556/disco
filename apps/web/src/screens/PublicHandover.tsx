@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, assetUrl, type PublicHandover as PublicHandoverData } from '../api.js';
+import { api, assetUrl, type BotSetupEntry, type ManualStep, type PublicHandover as PublicHandoverData } from '../api.js';
 import { BotSetupList } from '../components/BotSetupList.js';
 import { Logo } from '../components/Logo.js';
 import { deliveredScope } from '../scope.js';
@@ -152,6 +152,13 @@ export function PublicHandover({ id }: { id: string }) {
           </section>
         )}
 
+        <ManagingGuide
+          serverName={data.serverName ?? 'your server'}
+          created={data.created}
+          botSetup={data.botSetup}
+          manualSteps={data.manualSteps}
+        />
+
         <section className="panel p-5 mb-6">
           <div className="eyebrow mb-3">how to take ownership</div>
           <ol className="space-y-2">
@@ -173,5 +180,160 @@ export function PublicHandover({ id }: { id: string }) {
         </footer>
       </div>
     </div>
+  );
+}
+
+/**
+ * Plain-language "how to run your community" guide, derived entirely from the handover data
+ * (no new server fields). Non-technical voice for a creator, and honest — every claim is
+ * grounded in something that was actually built. Used on the public delivery page and mirrored
+ * as a preview on the operator handover page so the operator sees exactly what the client gets.
+ */
+export function ManagingGuide({
+  serverName,
+  created,
+  botSetup,
+  manualSteps,
+  defaultOpen = false,
+  preview = false,
+}: {
+  serverName: string;
+  created: string[];
+  botSetup: BotSetupEntry[];
+  manualSteps: ManualStep[];
+  defaultOpen?: boolean;
+  preview?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  const count = (kind: string) => created.filter((c) => c.startsWith(`${kind}:`)).length;
+  const channels = count('channel');
+  const categories = count('category');
+  const roles = count('role');
+
+  // First sentence of a bot's reconfigure notes, made client-readable.
+  const oneLine = (b: BotSetupEntry): string => {
+    const first = b.reconfigure.find((r) => r.trim().length > 0);
+    if (!first) return 'A helper bot that adds extra features to your server.';
+    let s = first.split(/(?<=[.!?])\s/)[0].trim();
+    s = s.replace(/\s+/g, ' ');
+    return s.length > 120 ? `${s.slice(0, 117).trimEnd()}…` : s;
+  };
+
+  // Manual steps reframed as friendly "do this" items (title only — reasons are operator-facing).
+  const healthItems = manualSteps.map((m) => m.title.trim()).filter(Boolean);
+
+  const hasContent = channels + categories + roles > 0 || botSetup.length > 0 || healthItems.length > 0;
+  if (!hasContent) return null;
+
+  return (
+    <section className="panel p-5 mb-6">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 text-left"
+      >
+        <span className="min-w-0">
+          <span className="eyebrow block mb-1">
+            {preview ? 'managing your community · client preview' : 'managing your community'}
+          </span>
+          <span className="text-sm font-medium block">
+            A plain-language guide to running {serverName} day-to-day
+          </span>
+        </span>
+        <span
+          className="shrink-0 mono text-xs grid place-items-center transition"
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 8,
+            border: '1px solid var(--color-line)',
+            color: 'var(--color-muted)',
+            transform: open ? 'rotate(180deg)' : 'none',
+          }}
+          aria-hidden="true"
+        >
+          ⌄
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-4">
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--color-bone)' }}>
+            Here’s how {serverName} is organized and how to run it day-to-day. No technical know-how
+            needed — this is a friendly map of what’s set up and how to keep it humming.
+          </p>
+
+          {(channels > 0 || categories > 0) && (
+            <div className="panel-soft p-3">
+              <div className="text-sm font-medium mb-1">Your channels</div>
+              <p className="text-[0.8rem] leading-relaxed" style={{ color: 'var(--color-muted)' }}>
+                You’ve got {channels} {channels === 1 ? 'channel' : 'channels'} for your members to
+                talk, post, and hang out in
+                {categories > 0
+                  ? `. They’re tidied into ${categories} ${categories === 1 ? 'category' : 'categories'} — the labeled groups in your sidebar that keep related channels together.`
+                  : '.'}{' '}
+                Members tap a channel to jump into that conversation.
+              </p>
+            </div>
+          )}
+
+          {roles > 0 && (
+            <div className="panel-soft p-3">
+              <div className="text-sm font-medium mb-1">Roles &amp; permissions</div>
+              <p className="text-[0.8rem] leading-relaxed" style={{ color: 'var(--color-muted)' }}>
+                There are {roles} {roles === 1 ? 'role' : 'roles'} set up. Roles are the badges you
+                give members (like “Mod” or “VIP”) — they decide who can see and do what, so you can
+                open up perks or lock down sensitive channels without touching everyone at once.
+              </p>
+            </div>
+          )}
+
+          {botSetup.length > 0 && (
+            <div className="panel-soft p-3">
+              <div className="text-sm font-medium mb-2">Your bots</div>
+              <p className="text-[0.78rem] leading-relaxed mb-2" style={{ color: 'var(--color-faint)' }}>
+                Bots are little helpers that run automatically in your server. Yours:
+              </p>
+              <ul className="space-y-1.5">
+                {botSetup.map((b, i) => (
+                  <li key={i} className="text-[0.8rem] flex gap-2" style={{ color: 'var(--color-muted)' }}>
+                    <span style={{ color: 'var(--color-client)' }}>›</span>
+                    <span>
+                      <span className="font-medium" style={{ color: 'var(--color-bone)' }}>{b.name}</span>
+                      {' — '}
+                      {oneLine(b)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {healthItems.length > 0 && (
+            <div className="panel-soft p-3">
+              <div className="text-sm font-medium mb-2">Keeping it healthy</div>
+              <p className="text-[0.78rem] leading-relaxed mb-2" style={{ color: 'var(--color-faint)' }}>
+                A few things to take care of so everything keeps working smoothly:
+              </p>
+              <ul className="space-y-1.5">
+                {healthItems.map((t, i) => (
+                  <li key={i} className="text-[0.8rem] flex gap-2" style={{ color: 'var(--color-muted)' }}>
+                    <span style={{ color: 'var(--color-gold)' }}>○</span>
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <p className="text-[0.74rem] leading-relaxed" style={{ color: 'var(--color-faint)' }}>
+            Want a hand keeping {serverName} growing — new channels, events, or a fresh look? Your
+            builder can help. Just reply to the message that delivered this page.
+          </p>
+        </div>
+      )}
+    </section>
   );
 }

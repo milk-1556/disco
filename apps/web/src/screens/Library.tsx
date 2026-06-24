@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type JoinedGuild, type SnapshotSummary } from '../api.js';
 import { Modal } from '../components/Modal.js';
 import { SkeletonCard } from '../components/Skeleton.js';
+import { SnapshotTimeline } from '../components/SnapshotTimeline.js';
 import { cx, shortId } from '../util.js';
 
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
@@ -110,6 +111,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
   const [tag, setTag] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>('used');
   const [editing, setEditing] = useState<string | null>(null);
+  const [timelineFor, setTimelineFor] = useState<{ templateName: string; sourceGuildId: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Bulk multi-select management.
@@ -319,6 +321,10 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
         if (f) void importFile(f);
       }}
     >
+      {timelineFor && (
+        <SnapshotTimeline templateName={timelineFor.templateName} sourceGuildId={timelineFor.sourceGuildId} onClose={() => setTimelineFor(null)} />
+      )}
+
       {importOpen && (
         <Modal
           title="Pick a server to snapshot into your library"
@@ -576,6 +582,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
                   <button className="btn btn-primary justify-center flex-1" onClick={() => onBuild(s.id)}>
                     Rebrand & build →
                   </button>
+                  <button className="btn btn-ghost" title="Version history & provenance" aria-label={`View version history for ${s.name}`} onClick={() => setTimelineFor({ templateName: s.name, sourceGuildId: s.sourceGuildId })}>🕓</button>
                   <button className="btn btn-ghost" title="Edit tags / note / template" aria-label={`Edit tags, note and template settings for ${s.name}`} onClick={() => setEditing(s.id)}>✎</button>
                   <button className="btn btn-ghost" title="Export .discobundle" aria-label={`Export ${s.name} as a .discobundle file`} onClick={() => exportOne(s)}>↓</button>
                 </div>

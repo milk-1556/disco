@@ -50,6 +50,8 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
   const [activeStep, setActiveStep] = useState<string | null>(null);
   const [report, setReport] = useState<RebuildReport | null>(null);
   const [running, setRunning] = useState(false);
+  const [canary, setCanary] = useState(false);
+  const [testGuildId, setTestGuildId] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [feasibility, setFeasibility] = useState<Awaited<ReturnType<typeof api.feasibility>> | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -94,7 +96,8 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
     }
   }
 
-  async function run(dryRun: boolean) {
+  async function run(opts: { dryRun: boolean; canary?: boolean }) {
+    const { dryRun, canary: isCanary } = opts;
     setErr(null);
     setRunning(true);
     setReport(null);
@@ -102,7 +105,13 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
     setProgress(0);
     setActiveStep(null);
     try {
-      const { id } = await api.startJob({ snapshotId, config, dryRun });
+      const { id } = await api.startJob({
+        snapshotId,
+        config,
+        dryRun,
+        canary: isCanary,
+        targetGuildId: isCanary && testGuildId.trim() ? testGuildId.trim() : undefined,
+      });
       const finish = () =>
         api.job(id).then((j) => {
           setReport(j.report);
@@ -268,24 +277,62 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
 
           <div className="panel p-5">
             <div className="flex items-center gap-3 flex-wrap">
-              <button className="btn" onClick={() => run(true)} disabled={running}>
+              <button className="btn" onClick={() => run({ dryRun: true })} disabled={running}>
                 {running ? 'Working…' : '◐ Dry-run'}
               </button>
               <button
-                className="btn btn-primary"
-                onClick={() => run(false)}
+                className={cx('btn', canary ? 'btn-source' : 'btn-primary')}
+                onClick={() => run({ dryRun: false, canary })}
                 disabled={running || feasibility?.ok === false}
                 title={feasibility?.ok === false ? 'Resolve the pre-flight blocks first' : undefined}
+                style={canary ? { background: 'var(--color-source)', borderColor: 'var(--color-source)', color: 'var(--color-ink)' } : undefined}
               >
-                {running ? 'Building…' : 'Build the server →'}
+                {running ? 'Building…' : canary ? 'Build canary →' : 'Build the server →'}
               </button>
               <div className="ml-auto mono text-xs" style={{ color: 'var(--color-faint)' }}>
                 {Math.round(progress * 100)}%
               </div>
             </div>
+
+            {/* ── canary / test-build mode ── */}
+            <label className="flex items-start gap-2 mt-4 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="mt-0.5 shrink-0"
+                checked={canary}
+                onChange={(e) => setCanary(e.target.checked)}
+                disabled={running}
+                style={{ accentColor: 'var(--color-source)' }}
+              />
+              <span className="min-w-0">
+                <span className="text-sm" style={{ color: canary ? 'var(--color-source)' : 'var(--color-bone)' }}>
+                  Canary — build into a test guild first
+                </span>
+                <span className="block text-[0.72rem] mt-0.5" style={{ color: 'var(--color-muted)' }}>
+                  Runs a real build you can inspect, then point it at the client when it looks right — no handover is created.
+                </span>
+              </span>
+            </label>
+
+            {canary && (
+              <div className="mt-3">
+                <div className="label mb-1">Test guild ID</div>
+                <input
+                  className="input mono"
+                  style={{ fontSize: '0.78rem' }}
+                  placeholder="live: paste a test guild ID · demo: builds the mock guild"
+                  value={testGuildId}
+                  onChange={(e) => setTestGuildId(e.target.value)}
+                  disabled={running}
+                />
+              </div>
+            )}
+
             {!running && events.length === 0 && (
               <p className="text-xs mt-3" style={{ color: 'var(--color-faint)' }}>
-                Dry-run walks the whole build without touching Discord. Build creates the live server for the client.
+                {canary
+                  ? 'Canary builds a real server into a test guild so you can inspect it — no client handover is created.'
+                  : 'Dry-run walks the whole build without touching Discord. Build creates the live server for the client.'}
               </p>
             )}
 

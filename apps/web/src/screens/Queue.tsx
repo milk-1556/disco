@@ -145,6 +145,7 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
                       {j.status}
                     </span>
                     {j.dryRun && <span className="chip chip-gold">dry-run</span>}
+                    {j.canary && <span className="chip chip-source">canary</span>}
                     {tag && <span className="chip" style={{ color: 'var(--color-danger)', borderColor: 'color-mix(in srgb, var(--color-danger) 40%, transparent)' }}>{TAG_LABEL[tag] ?? tag}</span>}
                   </div>
                   <div className="text-[0.72rem] mono mt-1.5 truncate" style={{ color: 'var(--color-faint)' }} title={j.error ?? undefined}>
@@ -168,13 +169,13 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
                   <button className="btn btn-ghost text-xs" onClick={() => setExpanded(isOpen ? null : j.id)} aria-expanded={isOpen}>
                     {isOpen ? 'Hide log' : 'Log'}
                   </button>
-                  {j.status === 'completed' && !j.dryRun && (
+                  {j.status === 'completed' && !j.dryRun && !j.canary && (
                     <button className="btn text-xs" onClick={() => onOpen(j.id)}>
                       Delivery →
                     </button>
                   )}
-                  {j.status === 'completed' && j.dryRun && (
-                    <span className="label" style={{ color: 'var(--color-faint)' }}>preview only</span>
+                  {j.status === 'completed' && (j.dryRun || j.canary) && (
+                    <span className="label" style={{ color: 'var(--color-faint)' }}>{j.canary ? 'canary — inspect, then build for real' : 'preview only'}</span>
                   )}
                   {(j.status === 'failed' || j.status === 'canceled') && (
                     <button className="btn text-xs" disabled={busy === j.id} onClick={() => act(j.id, () => api.retryJob(j.id))}>
