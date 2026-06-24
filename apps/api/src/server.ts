@@ -27,7 +27,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   const repo = opts.repo ?? makeRepo();
   const channel: JobChannel = opts.channel ?? makeJobChannel();
   const store = new DiskAssetStore(env.storageDiskPath);
-  const app = Fastify({ logger: false });
+  // trustProxy: the API runs behind a reverse proxy / Cloudflare Tunnel in every real deployment, so
+  // req.ip must resolve from X-Forwarded-For to the actual client — otherwise the per-IP rate limiters
+  // (login, handover-password) collapse into a single shared bucket for everyone behind the proxy.
+  const app = Fastify({ logger: false, trustProxy: true });
 
   // Disco authenticates with Bearer tokens (not cookies), so CORS credentials are never needed — which
   // lets a public API safely allow any origin. When WEB_ORIGIN is an explicit (comma-sep) allowlist we
