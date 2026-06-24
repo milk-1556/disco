@@ -12,8 +12,8 @@ One **CRITICAL** (arbitrary file write via bundle import) and two **HIGH** (rate
 | Severity | Count | Status |
 |---|---|---|
 | CRITICAL | 1 | ✅ fixed |
-| HIGH | 3 | ✅ 2 fixed · ⏸ 1 deferred (latent, gated on multi-op auth) |
-| MEDIUM | 6 | ✅ 5 fixed · ⏸ 1 deferred (latent multi-op) |
+| HIGH | 3 | ✅ all fixed (incl. the multi-op IDOR foundation, adversarially reviewed) |
+| MEDIUM | 6 | ✅ all fixed (incl. job-logs SSE scoping) |
 | LOW | 4 | ✅ 3 fixed · 📝 1 noted (dev-only deps) |
 | INFO (defenses confirmed) | 14 | ✓ holding — do not "re-fix" |
 
@@ -39,11 +39,11 @@ One **CRITICAL** (arbitrary file write via bundle import) and two **HIGH** (rate
 `pnpm audit --prod`: `discord.js@14.26.4 → undici@6.24.1` (GHSA-35p6-xmwp-9g52 WebSocket DoS + header-injection). Reachable in live mode.
 **Fix:** root `pnpm.overrides` pins `undici >=6.27.0`; `pnpm install` + re-audit confirms 0 prod-high.
 
-### SEC-multiop-idor — Latent IDOR: no owner column on any domain table ⏸ DEFERRED (documented)
-`server.ts` (every getX/listX); `prisma/schema.prisma`
-The model is multi-op-**ready** (role derived at verify) but **no table has an owner column and no query is scoped by operator**. The instant a 2nd operator authenticates, B can read/mutate A's snapshots/jobs/clients/handovers by id.
-**Not exploitable today:** `verifyCredentials` only accepts the single `OPERATOR_EMAIL`, so no second principal can authenticate. **This is the #1 prerequisite before onboarding operator #2.**
-**Fix when multi-op lands:** add `ownerEmail` to Snapshot/Job/Client/Handover, set from `session.email` on create, add `where:{ ownerEmail }` to every getX/listX/updateX/deleteX (admins bypass, mirroring `/audit`). Deferring because the migration touches every repo method + is premature before the auth that makes it reachable exists.
+### SEC-multiop-idor — Latent IDOR: no owner column on any domain table ✅ FIXED (foundation landed + adversarially reviewed)
+`repoScope.ts` (new chokepoint); `server.ts` (every owned route); `prisma/schema.prisma`; the 4 record types
+**Fixed:** `ownerEmail` added to Snapshot/Client/Job/Handover/BuildEvent. A single `scopeRepo(base, actor)` wrapper is the one access-control chokepoint — a regular operator reads/mutates only their own records; an admin (the sole/default `OPERATOR_EMAIL`, via `roleFor`) bypasses, so single-operator behavior is unchanged and scoping engages only once a non-admin operator #2 exists. Every authenticated owned-resource route flows through `scoped(req)`; creates stamp `ownerEmail` from the operator (never from request body); system/public paths use raw repo deliberately. **Adding operator #2 is now one config line.**
+**Adversarial review (4 red-team agents, all converged):** found ONE missed route — `GET /snapshots/:id/export` on raw repo — fixed + regression-tested. `owns()` hardened against an empty-email match. Everything else (wrapper logic, delegation completeness, SYSTEM_ACTOR isolation, role derivation, owner-stamp integrity) verified sound.
+**Verified:** +6 IDOR-attempt tests; live — a valid non-admin 2nd-operator token gets 404 on read/export and 0 on list across every owned resource, the owner gets 200.
 
 ---
 
@@ -54,7 +54,7 @@ The model is multi-op-**ready** (role derived at verify) but **no table has an o
 - **SEC-stripe-memoryrepo-nonatomic-dedup** ✅ FIXED — in-memory repo had no uniqueness, so concurrent webhooks could double-fulfil (non-Prisma deploys). `MemoryRepo.addClient` now throws on a duplicate `stripeSessionId`, so the existing catch dedups.
 - **SEC-no-security-headers** ✅ FIXED — added `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, a scoped CSP on `/share`, and `default-src 'none'` + nosniff on `/assets/*` (the SVG-served-as-`image/svg+xml` stored-XSS angle).
 - **SEC-500-error-message-leak** ✅ FIXED — `/snapshots/capture`, `/bundles/import`, `/guilds`, `/preflight` reflected raw `err.message` (DB/fs/library internals). Now a generic client message + server-side log.
-- **SEC-joblogs-sse-idor** ⏸ DEFERRED — `GET /jobs/:id/logs` SSE isn't owner-scoped. Same latent-multi-op gating as SEC-multiop-idor; fix alongside the owner column.
+- **SEC-joblogs-sse-idor** ✅ FIXED — `GET /jobs/:id/logs` SSE now ownership-gates (404) BEFORE hijacking the socket, so a non-owner can't stream another operator's build logs. Landed with the owner-scoping foundation.
 
 ## LOW
 
