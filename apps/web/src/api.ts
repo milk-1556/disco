@@ -51,6 +51,9 @@ export const api = {
   guilds: () => req<{ live: boolean; guilds: JoinedGuild[] }>('/guilds'),
   updateSnapshot: (id: string, patch: SnapshotMetaPatch) =>
     req<{ id: string; favorite: boolean; isTemplate: boolean }>(`/snapshots/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteSnapshot: (id: string) => req<{ ok: boolean }>(`/snapshots/${id}`, { method: 'DELETE' }),
+  status: () => req<StatusInfo>('/health'),
+  audit: () => req<AuditEntry[]>('/audit'),
   rebrandPreview: (snapshotId: string, config: RebrandConfig) =>
     req<{ preview: RebrandPreview; rebrandedGuildName: string; brandTokens: BrandToken[] }>('/rebrand/preview', {
       method: 'POST',
@@ -159,6 +162,26 @@ export function streamActivity(onPing: () => void): () => void {
 }
 
 // ── shared types (mirror @disco/schema shapes the UI consumes) ──
+export interface AuditEntry {
+  id: string;
+  at: string;
+  action: string;
+  target: string;
+  detail: string;
+  operator: string;
+}
+export interface StatusInfo {
+  ok: boolean;
+  mode: string;
+  api: 'up';
+  worker: 'up' | 'down' | 'n/a';
+  queue: string;
+  persistence: string;
+  uptimeSec: number;
+  lastBuildAt: string | null;
+  lastActivityAt: string | null;
+  requests: { total: number; errorRate: number; p50Ms: number; p95Ms: number; perRoute: { route: string; count: number; p95Ms: number; errorRate: number }[] };
+}
 export interface JoinedGuild {
   id: string;
   name: string;

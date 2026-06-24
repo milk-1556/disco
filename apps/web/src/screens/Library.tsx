@@ -7,6 +7,15 @@ import { cx, shortId } from '../util.js';
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
 type Sort = 'used' | 'captured' | 'name';
 
+const STALE_DAYS = 30;
+const DAY_MS = 86_400_000;
+// Days since capture; null when unknown/unparseable.
+function ageDays(capturedAt: string): number | null {
+  const t = Date.parse(capturedAt);
+  if (Number.isNaN(t)) return null;
+  return Math.floor((Date.now() - t) / DAY_MS);
+}
+
 // Deterministic visual identity for a template — same name always renders the same.
 // FNV-1a-ish hash → stable hue blended between the source (violet) and client (rose) brand axes.
 function nameHash(name: string): number {
@@ -103,6 +112,11 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
   const [editing, setEditing] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Bulk multi-select management.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
   async function load() {
     setSnaps(await api.snapshots());
   }
@@ -157,6 +171,62 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
     } catch {
       await load();
     }
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelected(new Set());
+  }
+
+  // Apply a patch to every selected snapshot (optimistic), then reconcile on failure.
+  async function bulkPatch(p: Parameters<typeof api.updateSnapshot>[1] | ((s: SnapshotSummary) => Parameters<typeof api.updateSnapshot>[1])) {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    const byId = new Map(snaps.map((s) => [s.id, s]));
+    const patches = new Map(ids.map((id) => [id, typeof p === 'function' ? p(byId.get(id)!) : p]));
+    setSnaps((prev) => prev.map((s) => (patches.has(s.id) ? { ...s, ...patches.get(s.id) } : s)));
+    try {
+      await Promise.all(ids.map((id) => api.updateSnapshot(id, patches.get(id)!)));
+    } catch {
+      await load();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function bulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Delete ${ids.length} snapshot${ids.length === 1 ? '' : 's'}? This can’t be undone.`)) return;
+    setBulkBusy(true);
+    setErr(null);
+    try {
+      await Promise.all(ids.map((id) => api.deleteSnapshot(id)));
+      await load();
+      exitSelectMode();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      await load();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function bulkTag() {
+    const raw = window.prompt('Add a tag to the selected snapshots:');
+    const t = raw?.trim().toLowerCase();
+    if (!t) return;
+    await bulkPatch((s) => ({ tags: [...new Set([...s.tags, t])] }));
   }
 
   async function exportOne(s: SnapshotSummary) {
@@ -330,6 +400,15 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
           </h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {snaps.length > 0 && (
+            <button
+              className={cx('btn', selectMode && 'btn-primary')}
+              aria-pressed={selectMode}
+              onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+            >
+              {selectMode ? '✓ Done' : '☐ Select'}
+            </button>
+          )}
           {snaps.length >= 2 && <button className="btn" onClick={onCompare}>⇄ Compare</button>}
           <input
             ref={fileRef}
@@ -413,23 +492,48 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
         </div>
       ) : (
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))' }}>
-        {visible.map((s) => (
-          <article key={s.id} className="panel p-5 flex flex-col">
+        {visible.map((s) => {
+          const days = ageDays(s.capturedAt);
+          const stale = days !== null && days > STALE_DAYS;
+          const isSel = selected.has(s.id);
+          return (
+          <article
+            key={s.id}
+            className={cx('panel p-5 flex flex-col', selectMode && isSel && 'rise')}
+            style={{
+              cursor: selectMode ? 'pointer' : undefined,
+              borderColor: selectMode && isSel ? 'var(--color-source)' : stale ? 'color-mix(in oklab, var(--color-gold) 40%, var(--color-line))' : undefined,
+              boxShadow: selectMode && isSel ? '0 0 0 1px var(--color-source)' : undefined,
+            }}
+            onClick={selectMode ? () => toggleSelect(s.id) : undefined}
+          >
             <CardThumb name={s.name} counts={s.counts} />
             <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <button
-                  title={s.favorite ? 'Unfavorite' : 'Favorite'}
-                  aria-label={`${s.favorite ? 'Unfavorite' : 'Favorite'} ${s.name}`}
-                  aria-pressed={s.favorite}
-                  onClick={() => patch(s.id, { favorite: !s.favorite })}
-                  style={{ color: s.favorite ? 'var(--color-gold)' : 'var(--color-faint)', fontSize: '1.1rem', lineHeight: 1 }}
-                >
-                  {s.favorite ? '★' : '☆'}
-                </button>
-                <h2 className="text-base leading-snug">{s.name}</h2>
+              <div className="flex items-center gap-2 min-w-0">
+                {selectMode ? (
+                  <input
+                    type="checkbox"
+                    checked={isSel}
+                    aria-label={`Select ${s.name}`}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleSelect(s.id)}
+                    style={{ accentColor: 'var(--color-source)', width: 16, height: 16, flexShrink: 0 }}
+                  />
+                ) : (
+                  <button
+                    title={s.favorite ? 'Unfavorite' : 'Favorite'}
+                    aria-label={`${s.favorite ? 'Unfavorite' : 'Favorite'} ${s.name}`}
+                    aria-pressed={s.favorite}
+                    onClick={() => patch(s.id, { favorite: !s.favorite })}
+                    style={{ color: s.favorite ? 'var(--color-gold)' : 'var(--color-faint)', fontSize: '1.1rem', lineHeight: 1 }}
+                  >
+                    {s.favorite ? '★' : '☆'}
+                  </button>
+                )}
+                <h2 className="text-base leading-snug truncate">{s.name}</h2>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
+                {stale && <span className="chip chip-gold" title={`Captured ${days} days ago — may be out of date`}>stale · {days}d</span>}
                 {s.isTemplate && <span className="chip chip-jade">template</span>}
                 <span className="chip chip-source">v{s.version}</span>
               </div>
@@ -456,7 +560,14 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
               ))}
             </div>
 
-            {editing === s.id ? (
+            {selectMode ? (
+              <>
+                {s.note && <p className="text-[0.78rem] mb-3" style={{ color: 'var(--color-muted)' }}>{s.note}</p>}
+                <div className="mt-auto text-[0.72rem] mono" style={{ color: isSel ? 'var(--color-source)' : 'var(--color-faint)' }}>
+                  {isSel ? '✓ selected' : 'tap to select'}
+                </div>
+              </>
+            ) : editing === s.id ? (
               <EditMeta s={s} onSave={async (p) => { await patch(s.id, p); setEditing(null); }} onCancel={() => setEditing(null)} />
             ) : (
               <>
@@ -471,9 +582,59 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
               </>
             )}
           </article>
-        ))}
+          );
+        })}
       </div>
       )}
+
+      {selectMode && selected.size > 0 && (() => {
+        const sel = snaps.filter((s) => selected.has(s.id));
+        const allStarred = sel.every((s) => s.favorite);
+        const allTemplate = sel.every((s) => s.isTemplate);
+        const allVisibleSelected = visible.length > 0 && visible.every((s) => selected.has(s.id));
+        return (
+          <div
+            className="panel"
+            style={{
+              position: 'sticky',
+              bottom: 12,
+              marginTop: 16,
+              zIndex: 20,
+              padding: '10px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              boxShadow: '0 -6px 24px rgba(8,7,12,0.45)',
+            }}
+          >
+            <span className="label shrink-0" style={{ color: 'var(--color-source)' }}>{selected.size} selected</span>
+            <button
+              className="btn btn-ghost"
+              disabled={bulkBusy}
+              onClick={() => setSelected(allVisibleSelected ? new Set() : new Set(visible.map((s) => s.id)))}
+            >
+              {allVisibleSelected ? 'Clear' : 'Select all'}
+            </button>
+            <div style={{ flex: 1, minWidth: 8 }} />
+            <button className="btn" disabled={bulkBusy} onClick={() => bulkPatch({ favorite: !allStarred })}>
+              {allStarred ? '☆ Unstar' : '★ Star'}
+            </button>
+            <button className="btn" disabled={bulkBusy} onClick={() => bulkPatch({ isTemplate: !allTemplate })}>
+              {allTemplate ? 'Unpromote' : 'Promote to template'}
+            </button>
+            <button className="btn" disabled={bulkBusy} onClick={bulkTag}>Tag…</button>
+            <button
+              className="btn"
+              disabled={bulkBusy}
+              style={{ color: 'var(--color-danger)', borderColor: 'color-mix(in oklab, var(--color-danger) 50%, var(--color-line))' }}
+              onClick={bulkDelete}
+            >
+              Delete ({selected.size})
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

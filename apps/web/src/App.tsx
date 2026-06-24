@@ -11,6 +11,7 @@ import { Library } from './screens/Library.js';
 import { Login } from './screens/Login.js';
 import { PublicHandover } from './screens/PublicHandover.js';
 import { Queue } from './screens/Queue.js';
+import { Operations } from './screens/Operations.js';
 import { Setup } from './screens/Setup.js';
 import { Today } from './screens/Today.js';
 import { Shortcuts } from './components/Shortcuts.js';
@@ -134,6 +135,8 @@ export default function App() {
         <Activity />
       ) : view === 'economics' ? (
         <Economics />
+      ) : view === 'operations' ? (
+        <Operations />
       ) : view === 'setup' ? (
         <Setup go={go} />
       ) : (
