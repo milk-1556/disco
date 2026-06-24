@@ -5,12 +5,15 @@ import { defineConfig } from 'vite';
 const API_TARGET = process.env.VITE_API_URL ?? 'http://localhost:4000';
 
 // Same-origin proxy to the API → no CORS, and SSE/streaming works cleanly.
+// `/share/:id` is the API-served, OG-tagged handover preview page (for social link unfurls), so it
+// proxies straight through (no /api prefix) — in production single-origin the API serves it directly.
 const apiProxy = {
   '/api': {
     target: API_TARGET,
     changeOrigin: true,
     rewrite: (p: string) => p.replace(/^\/api/, ''),
   },
+  '/share': { target: API_TARGET, changeOrigin: true },
 };
 
 export default defineConfig({

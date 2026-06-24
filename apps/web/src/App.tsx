@@ -35,6 +35,7 @@ export default function App() {
   const [buildSnapshot, setBuildSnapshot] = useState<string | null>(null);
   const [diffSnapshots, setDiffSnapshots] = useState<SnapshotSummary[] | null>(null);
   const [handoverJob, setHandoverJob] = useState<string | null>(null);
+  const [checkout, setCheckout] = useState<'success' | 'cancel' | null>(null);
 
   useEffect(() => {
     api
@@ -45,6 +46,17 @@ export default function App() {
       })
       .catch(() => {});
   }, [authed]);
+
+  // Stripe redirects back to /?checkout=success|cancel — surface it, then clean the URL.
+  useEffect(() => {
+    const q = new URLSearchParams(location.search).get('checkout');
+    if (q === 'success' || q === 'cancel') {
+      setCheckout(q);
+      const url = location.pathname + location.hash;
+      window.history.replaceState({}, '', url);
+      if (q === 'success') setTimeout(() => setCheckout(null), 8000);
+    }
+  }, []);
 
   // Public, shareable, unauthenticated delivery page — bypasses login entirely.
   if (publicId) return <PublicHandover id={publicId} />;
@@ -68,6 +80,23 @@ export default function App() {
       }}
     >
       <Shortcuts go={go} />
+      {checkout && (
+        <div className="rise" style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 70 }}>
+          <div
+            className="panel px-4 py-2.5 flex items-center gap-3 text-sm"
+            style={checkout === 'success' ? { borderColor: 'color-mix(in srgb, var(--color-jade) 45%, transparent)' } : undefined}
+          >
+            {checkout === 'success' ? (
+              <span style={{ color: 'var(--color-jade)' }}>● Payment received — setting up your client.</span>
+            ) : (
+              <span style={{ color: 'var(--color-muted)' }}>Checkout canceled — no charge was made.</span>
+            )}
+            <button className="btn btn-ghost text-xs" style={{ padding: '0.2rem 0.55rem' }} onClick={() => setCheckout(null)}>
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       {handoverJob ? (
         <HandoverPage jobId={handoverJob} onBack={() => setHandoverJob(null)} />
       ) : diffSnapshots ? (

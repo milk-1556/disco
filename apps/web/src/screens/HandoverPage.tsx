@@ -352,7 +352,9 @@ function Branding({
   const [welcome, setWelcome] = useState(handover.welcomeMessage);
   const [pw, setPw] = useState('');
   const [copied, setCopied] = useState(false);
-  const publicUrl = `${location.origin}/#/h/${handover.id}`;
+  // The /share/:id link carries social-preview meta (og:title etc.) and forwards humans to the
+  // delivery page — so it unfurls nicely when the operator drops it in Discord / email / a DM.
+  const publicUrl = `${location.origin}/share/${handover.id}`;
 
   return (
     <section className="panel p-5 mb-6">
