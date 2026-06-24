@@ -6,6 +6,92 @@ import { cx, shortId } from '../util.js';
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
 type Sort = 'used' | 'captured' | 'name';
 
+// Deterministic visual identity for a template — same name always renders the same.
+// FNV-1a-ish hash → stable hue blended between the source (violet) and client (rose) brand axes.
+function nameHash(name: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < name.length; i++) {
+    h ^= name.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// A stable accent color on the product's violet→rose brand arc (258°…330°).
+function brandAccent(name: string): string {
+  const h = nameHash(name);
+  const arc = 258 + ((h >>> 8) % 73); // 258 (source violet) … 330 (client rose)
+  const sat = 58 + ((h >>> 16) % 18); // 58..75
+  const light = 60 + ((h >>> 20) % 10); // 60..69
+  return `hsl(${arc} ${sat}% ${light}%)`;
+}
+
+// Tiny structure glyph: a few bars sized by the template's counts, capped for sanity.
+function structureBars(counts: Record<string, number>): { k: string; h: number }[] {
+  const keys = ['channels', 'roles', 'categories', 'emojis', 'bots'];
+  const vals = keys.map((k) => counts[k] ?? 0);
+  const max = Math.max(1, ...vals);
+  return keys.map((k) => ({ k, h: Math.round(18 + (Math.min(counts[k] ?? 0, max) / max) * 30) }));
+}
+
+function CardThumb({ name, counts }: { name: string; counts: Record<string, number> }) {
+  const accent = brandAccent(name);
+  const bars = structureBars(counts);
+  const initials = name.replace(/[^a-z0-9 ]/gi, '').trim().slice(0, 2).toUpperCase() || '··';
+  return (
+    <div
+      aria-hidden
+      className="mb-3"
+      style={{
+        height: 52,
+        borderRadius: 10,
+        overflow: 'hidden',
+        position: 'relative',
+        border: '1px solid var(--color-line-soft)',
+        background: `linear-gradient(115deg, ${accent} 0%, color-mix(in oklab, ${accent} 35%, var(--color-source)) 55%, color-mix(in oklab, var(--color-source) 60%, #08070c) 100%)`,
+      }}
+    >
+      {/* structure glyph: bars sized by counts */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 4,
+          padding: '0 12px 9px',
+          justifyContent: 'flex-end',
+        }}
+      >
+        {bars.map((b) => (
+          <div
+            key={b.k}
+            title={`${b.k}: ${counts[b.k] ?? 0}`}
+            style={{ width: 7, height: b.h, borderRadius: 3, background: 'rgba(255,255,255,0.62)' }}
+          />
+        ))}
+      </div>
+      {/* template initials, glassy */}
+      <div
+        className="mono"
+        style={{
+          position: 'absolute',
+          left: 12,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          fontSize: '0.92rem',
+          letterSpacing: '0.04em',
+          fontWeight: 600,
+          color: 'rgba(255,255,255,0.95)',
+          textShadow: '0 1px 6px rgba(8,7,12,0.45)',
+        }}
+      >
+        {initials}
+      </div>
+    </div>
+  );
+}
+
 export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) => void; onCompare: () => void }) {
   const [snaps, setSnaps] = useState<SnapshotSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,7 +357,14 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       {/* search · sort · tag filters */}
       {snaps.length > 0 && (
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <input className="input" style={{ maxWidth: 280 }} placeholder="Search name, tag, note…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="input" style={{ maxWidth: 280 }} placeholder="Search name, tag, note…" value={search} onChange={(e) => setSearch(e.target.value)} list="library-tag-suggestions" />
+        {allTags.length > 0 && (
+          <datalist id="library-tag-suggestions">
+            {allTags.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        )}
         <select className="input" style={{ maxWidth: 170 }} value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
           <option value="used">Sort: last used</option>
           <option value="captured">Sort: captured</option>
@@ -327,6 +420,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))' }}>
         {visible.map((s) => (
           <article key={s.id} className="panel p-5 flex flex-col">
+            <CardThumb name={s.name} counts={s.counts} />
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
                 <button
