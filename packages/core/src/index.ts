@@ -26,6 +26,9 @@ export * from './testing/sample.js';
 // Higher-fidelity "production trace" template — a realistic ~$30k community
 export * from './testing/productionTrace.js';
 
+// Curated, sellable starter-pack templates (Slots / IRL Vlogger / Casino Sponsor)
+export * from './testing/starterPacks.js';
+
 // Queue contract (name + payload + redis connection) shared by api producer and worker consumer
 export * from './queue.js';
 
