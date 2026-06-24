@@ -2,9 +2,10 @@ import type { ReactNode } from 'react';
 import { cx } from '../util.js';
 import { Logo } from './Logo.js';
 
-export type View = 'library' | 'build' | 'queue' | 'clients' | 'activity' | 'economics' | 'invite' | 'setup';
+export type View = 'today' | 'library' | 'build' | 'queue' | 'clients' | 'activity' | 'economics' | 'invite' | 'setup';
 
 const NAV: { id: View; label: string; hint: string }[] = [
+  { id: 'today', label: 'Today', hint: "what's now" },
   { id: 'library', label: 'Library', hint: 'snapshots' },
   { id: 'build', label: 'Build', hint: 'rebrand & ship' },
   { id: 'queue', label: 'Queue', hint: 'jobs' },
