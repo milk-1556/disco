@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { View } from './Shell.js';
+import { Modal } from './Modal.js';
 
 const HELP: { keys: string; label: string }[] = [
   { keys: 'g t', label: 'Go to Today' },
@@ -49,23 +50,17 @@ export function Shortcuts({ go }: { go: (v: View) => void }) {
 
   if (!showHelp) return null;
   return (
-    <div
-      onClick={() => setShowHelp(false)}
-      className="p-4"
-      style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(8,7,12,0.72)', backdropFilter: 'blur(4px)', display: 'grid', placeItems: 'center' }}
-    >
-      <div className="panel p-6 rise w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="eyebrow mb-3">keyboard shortcuts</div>
-        <div className="space-y-2">
-          {HELP.map((s) => (
-            <div key={s.keys} className="flex items-center justify-between text-sm">
-              <span style={{ color: 'var(--color-muted)' }}>{s.label}</span>
-              <kbd className="mono text-xs px-2 py-0.5" style={{ background: 'var(--color-line)', borderRadius: 6, color: 'var(--color-bone)', border: '1px solid var(--color-line-soft)' }}>{s.keys}</kbd>
-            </div>
-          ))}
-        </div>
-        <div className="text-[0.7rem] mono mt-4" style={{ color: 'var(--color-faint)' }}>esc or click to close</div>
+    <Modal title="Keyboard shortcuts" maxWidth={384} zIndex={60} onClose={() => setShowHelp(false)}>
+      <div className="eyebrow mb-3">keyboard shortcuts</div>
+      <div className="space-y-2">
+        {HELP.map((s) => (
+          <div key={s.keys} className="flex items-center justify-between text-sm">
+            <span style={{ color: 'var(--color-muted)' }}>{s.label}</span>
+            <kbd className="mono text-xs px-2 py-0.5" style={{ background: 'var(--color-line)', borderRadius: 6, color: 'var(--color-bone)', border: '1px solid var(--color-line-soft)' }}>{s.keys}</kbd>
+          </div>
+        ))}
       </div>
-    </div>
+      <div className="text-[0.7rem] mono mt-4" style={{ color: 'var(--color-faint)' }}>esc or click to close</div>
+    </Modal>
   );
 }

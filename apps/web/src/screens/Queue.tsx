@@ -4,6 +4,7 @@ import { BuildSteps } from '../components/BuildSteps.js';
 import { EmptyArt } from '../components/EmptyArt.js';
 import { SkeletonRows } from '../components/Skeleton.js';
 import { cx } from '../util.js';
+import { usePoll } from '../usePoll.js';
 
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
 const ago = (iso: string) => {
@@ -53,17 +54,15 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
   const stopRef = useRef<(() => void) | null>(null);
   const logBoxRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const tick = () =>
-      api
+  usePoll(
+    () =>
+      void api
         .jobs()
         .then(setJobs)
         .catch(() => {})
-        .finally(() => setLoaded(true));
-    tick();
-    const h = setInterval(tick, 1500);
-    return () => clearInterval(h);
-  }, []);
+        .finally(() => setLoaded(true)),
+    1500,
+  );
 
   // Stream the expanded job's logs inline + load its full detail (manifest/steps for timing).
   useEffect(() => {

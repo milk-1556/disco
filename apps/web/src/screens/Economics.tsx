@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { api, type Client, type JobSummary } from '../api.js';
 import { SkeletonRows } from '../components/Skeleton.js';
+import { usePoll } from '../usePoll.js';
 
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
 const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
@@ -16,17 +17,12 @@ export function Economics() {
   const [infra, setInfra] = useState(40); // $/mo infra (postgres + redis + host)
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const tick = () => {
-      Promise.allSettled([
-        api.jobs().then(setJobs),
-        api.clients().then(setClients),
-      ]).finally(() => setLoading(false));
-    };
-    tick();
-    const h = setInterval(tick, 4000);
-    return () => clearInterval(h);
-  }, []);
+  usePoll(() => {
+    Promise.allSettled([
+      api.jobs().then(setJobs),
+      api.clients().then(setClients),
+    ]).finally(() => setLoading(false));
+  }, 4000);
 
   const m = useMemo(() => {
     const dealOnce = (c: Client) => c.buildPrice + c.upsells.reduce((a, u) => a + u.price, 0);

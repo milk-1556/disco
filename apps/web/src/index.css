@@ -15,7 +15,7 @@
   --color-line-soft: #211e2c;
   --color-bone: #ece8f4;
   --color-muted: #8c85a0;
-  --color-faint: #5c576b;
+  --color-faint: #7a7488; /* lifted from #5c576b → ~4.4:1 on ink for WCAG AA on info-bearing text */
 
   --color-source: #7c6cf0; /* template / before */
   --color-client: #ff5a8a; /* client / after */
@@ -200,8 +200,21 @@ h3 {
   font-size: 0.88rem;
 }
 .input:focus {
-  outline: none;
   border-color: var(--color-source);
+}
+.input:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 1px;
+}
+/* a visible keyboard focus ring on every interactive element that doesn't define its own
+   (bare buttons, nav items, chips, the ✎/★/↓ icon buttons) — keyboard users never lose their place */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 .input::placeholder {
   color: var(--color-faint);

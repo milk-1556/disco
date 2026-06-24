@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, type JobSummary, type SnapshotSummary } from '../api.js';
+import { usePoll } from '../usePoll.js';
 
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
 
@@ -58,26 +59,18 @@ export function Activity() {
   const [running, setRunning] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    const tick = async () => {
+  usePoll(() => {
+    void (async () => {
       try {
         const [jobs, snaps] = await Promise.all([api.jobs(), api.snapshots()]);
-        if (!alive) return;
         setItems(build(jobs, snaps));
         setRunning(jobs.filter((j) => j.status === 'running' || j.status === 'queued').length);
         setLoaded(true);
       } catch {
         /* keep last */
       }
-    };
-    tick();
-    const h = setInterval(tick, 1500);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
-  }, []);
+    })();
+  }, 1500);
 
   return (
     <div className="px-4 py-6 md:p-8 max-w-3xl rise">
@@ -86,7 +79,7 @@ export function Activity() {
           <div className="eyebrow mb-2">activity</div>
           <h1 className="text-2xl">The system, <span className="transform-text">breathing</span></h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" role="status" aria-live="polite">
           <span className="w-2 h-2 rounded-full live-dot" style={{ background: running > 0 ? 'var(--color-jade)' : 'var(--color-faint)' }} />
           <span className="mono text-xs" style={{ color: 'var(--color-muted)' }}>
             {running > 0 ? `${running} active` : 'idle'}

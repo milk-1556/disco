@@ -43,12 +43,13 @@ export function Login({ onAuthed }: { onAuthed: () => void }) {
           </p>
           <form onSubmit={submit} className="space-y-3">
             <div>
-              <div className="label mb-1">Email</div>
-              <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" autoFocus />
+              <label htmlFor="login-email" className="label mb-1 block">Email</label>
+              <input id="login-email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" autoFocus />
             </div>
             <div>
-              <div className="label mb-1">Password</div>
+              <label htmlFor="login-password" className="label mb-1 block">Password</label>
               <input
+                id="login-password"
                 className="input"
                 type="password"
                 value={password}
@@ -57,7 +58,7 @@ export function Login({ onAuthed }: { onAuthed: () => void }) {
               />
             </div>
             {error && (
-              <div className="text-sm" style={{ color: 'var(--color-danger)' }}>
+              <div role="alert" className="text-sm" style={{ color: 'var(--color-danger)' }}>
                 {error}
               </div>
             )}

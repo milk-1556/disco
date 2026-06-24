@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type JoinedGuild, type SnapshotSummary } from '../api.js';
+import { Modal } from '../components/Modal.js';
 import { SkeletonCard } from '../components/Skeleton.js';
 import { cx, shortId } from '../util.js';
 
@@ -249,12 +250,12 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       }}
     >
       {importOpen && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(8,7,12,0.7)', backdropFilter: 'blur(4px)', zIndex: 50, display: 'grid', placeItems: 'center' }}
-          className="p-4"
-          onClick={() => !importingId && setImportOpen(false)}
+        <Modal
+          title="Pick a server to snapshot into your library"
+          maxWidth={512}
+          closeOnBackdrop={!importingId}
+          onClose={() => !importingId && setImportOpen(false)}
         >
-          <div className="panel p-5 md:p-6 rise w-full max-w-lg" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
             <div className="eyebrow mb-2">snapshot a template</div>
             <h2 className="text-lg mb-1">Pick a server to snapshot into your library</h2>
             <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
@@ -295,16 +296,11 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
             <div className="flex justify-end mt-4">
               <button className="btn btn-ghost" disabled={!!importingId} onClick={() => setImportOpen(false)}>Close</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {pending && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(8,7,12,0.7)', backdropFilter: 'blur(4px)', zIndex: 50, display: 'grid', placeItems: 'center', padding: 24 }}
-          onClick={() => setPending(null)}
-        >
-          <div className="panel p-6 rise" style={{ width: '100%', maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+        <Modal title={`Preview .discobundle — ${pending.name}`} onClose={() => setPending(null)}>
             <div className="eyebrow mb-2">import .discobundle</div>
             <h2 className="text-lg mb-1">{pending.name}</h2>
             <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
@@ -323,8 +319,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
               <button className="btn" onClick={() => confirmImport(false)}>Import</button>
               <button className="btn btn-ghost" onClick={() => setPending(null)}>Cancel</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       <header className="flex items-end justify-between mb-5 gap-4 flex-wrap">
@@ -425,6 +420,8 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
               <div className="flex items-center gap-2">
                 <button
                   title={s.favorite ? 'Unfavorite' : 'Favorite'}
+                  aria-label={`${s.favorite ? 'Unfavorite' : 'Favorite'} ${s.name}`}
+                  aria-pressed={s.favorite}
                   onClick={() => patch(s.id, { favorite: !s.favorite })}
                   style={{ color: s.favorite ? 'var(--color-gold)' : 'var(--color-faint)', fontSize: '1.1rem', lineHeight: 1 }}
                 >
@@ -468,8 +465,8 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
                   <button className="btn btn-primary justify-center flex-1" onClick={() => onBuild(s.id)}>
                     Rebrand & build →
                   </button>
-                  <button className="btn btn-ghost" title="Edit tags / note / template" onClick={() => setEditing(s.id)}>✎</button>
-                  <button className="btn btn-ghost" title="Export .discobundle" onClick={() => exportOne(s)}>↓</button>
+                  <button className="btn btn-ghost" title="Edit tags / note / template" aria-label={`Edit tags, note and template settings for ${s.name}`} onClick={() => setEditing(s.id)}>✎</button>
+                  <button className="btn btn-ghost" title="Export .discobundle" aria-label={`Export ${s.name} as a .discobundle file`} onClick={() => exportOne(s)}>↓</button>
                 </div>
               </>
             )}
