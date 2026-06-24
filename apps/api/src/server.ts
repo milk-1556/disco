@@ -558,5 +558,119 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  // Crawler-friendly share preview. Social/preview bots don't run JS or follow #/h/:id hash
+  // fragments, so they can't read the SPA delivery page — serve them server-rendered OG/Twitter
+  // meta + a clean human-facing card that links into the real SPA delivery page. No auth (public,
+  // like GET /h/:id). A password-GATED handover stays opaque: generic title/description, no details.
+  app.get('/share/:id', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const h = await repo.getHandover(id);
+    if (!h) return reply.code(404).send({ error: 'not found' });
+
+    // Gated handovers must not leak scope — only resolve the real server name when it's open.
+    let serverName: string | null = null;
+    if (!h.hasPassword) {
+      const job = await repo.getJob(h.jobId);
+      const snap = job?.snapshotId ? await repo.getSnapshot(job.snapshotId) : undefined;
+      serverName = job?.rebrandConfig?.serverName ?? snap?.snapshot.guild.name ?? null;
+    }
+
+    const titleName = serverName ?? 'Your community';
+    const ogTitle = `${titleName} is ready`;
+    const ogDescription = 'Your fully-branded community — built and delivered with Disco.';
+    // Absolute base for canonical/image URLs — only usable when WEB_ORIGIN is a real origin
+    // (the demo default '*' is not), else omit absolute URLs rather than fabricate a broken one.
+    const origin = env.webOrigin && env.webOrigin !== '*' ? env.webOrigin.replace(/\/+$/, '') : '';
+    const ogUrl = origin ? `${origin}/share/${encodeURIComponent(id)}` : `/share/${id}`;
+    const deliveryHref = origin ? `${origin}/#/h/${encodeURIComponent(id)}` : `/#/h/${id}`;
+    // og:image only when there's an absolute logo to point at — never invent one.
+    const ogImage = origin && h.logoKey ? `${origin}/${h.logoKey}` : null;
+
+    const e = escapeHtml;
+    const imageTags = ogImage
+      ? `\n    <meta property="og:image" content="${e(ogImage)}" />\n    <meta name="twitter:image" content="${e(ogImage)}" />`
+      : '';
+
+    const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${e(ogTitle)}</title>
+    <meta property="og:title" content="${e(ogTitle)}" />
+    <meta property="og:description" content="${e(ogDescription)}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="${e(ogUrl)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${e(ogTitle)}" />
+    <meta name="twitter:description" content="${e(ogDescription)}" />${imageTags}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+        font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+        background: radial-gradient(1200px 600px at 50% -10%, #1c1240 0%, transparent 60%), #07060d;
+        color: #ece9f6;
+      }
+      .card {
+        width: 100%; max-width: 520px; padding: 40px 36px; border-radius: 22px; text-align: center;
+        background: linear-gradient(180deg, rgba(28,22,52,0.9), rgba(13,10,26,0.92));
+        border: 1px solid rgba(167,139,250,0.22);
+        box-shadow: 0 30px 80px -30px rgba(124,58,237,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+      }
+      .logo {
+        width: 84px; height: 84px; margin: 0 auto 22px; border-radius: 18px; object-fit: cover; display: block;
+        border: 1px solid rgba(255,255,255,0.12);
+      }
+      .eyebrow {
+        font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin: 0 0 14px;
+        background: linear-gradient(90deg, #a78bfa, #fb7185); -webkit-background-clip: text;
+        background-clip: text; color: transparent;
+      }
+      h1 { font-size: 30px; line-height: 1.15; font-weight: 700; margin: 0 0 12px; }
+      h1 .name {
+        background: linear-gradient(90deg, #c4b5fd, #fb7185); -webkit-background-clip: text;
+        background-clip: text; color: transparent;
+      }
+      p.sub { margin: 0 0 30px; font-size: 16px; line-height: 1.5; color: #b3aecb; }
+      a.cta {
+        display: inline-block; text-decoration: none; font-weight: 700; font-size: 16px;
+        padding: 14px 28px; border-radius: 12px; color: #1a1205;
+        background: linear-gradient(90deg, #f5c451, #e0a93a);
+        box-shadow: 0 12px 30px -10px rgba(224,169,58,0.6);
+      }
+      .foot { margin-top: 26px; font-size: 12px; letter-spacing: 0.04em; color: #6f6a86; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      ${ogImage ? `<img class="logo" src="${e(ogImage)}" alt="${e(titleName)} logo" />` : ''}
+      <p class="eyebrow">Delivered with Disco</p>
+      <h1><span class="name">${e(titleName)}</span><br />Your community is ready</h1>
+      <p class="sub">${e(ogDescription)}</p>
+      <a class="cta" href="${e(deliveryHref)}">Open your delivery →</a>
+      <div class="foot">Powered by Disco</div>
+    </main>
+  </body>
+</html>`;
+
+    reply.header('Content-Type', 'text/html; charset=utf-8');
+    return reply.send(html);
+  });
+
   return app;
+}
+
+/** Escape a string for safe interpolation into HTML text and double-quoted attributes. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
