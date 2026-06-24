@@ -5,10 +5,15 @@ keys, fully testable) to **live mode** (real Checkout Sessions, real webhooks). 
 confirmed against the code in `apps/api/src/stripe.ts` and `apps/api/src/env.ts` — no invented
 fields, no fake endpoints.
 
-> Honesty note: live Checkout-session **creation** is still a documented TODO in the scaffold —
-> `POST /stripe/checkout` returns `501` once `STRIPE_SECRET_KEY` is set until the official SDK is
-> wired in (see [Two modes](#two-modes) below). The **webhook** path, however, is fully live: set
-> `STRIPE_WEBHOOK_SECRET` and real `checkout.session.completed` events verify and fulfil today.
+> Both paths are now **fully wired** — no Stripe npm dependency. `POST /stripe/checkout` creates a
+> real Checkout Session via Stripe's REST API (`fetch` to `api.stripe.com/v1/checkout/sessions`,
+> form-encoded) once `STRIPE_SECRET_KEY` is set; the **webhook** verifies the signature (HMAC over
+> the raw body, ±300s replay window) and fulfils **only** paid, deduplicated events. Set the two env
+> vars and you're live.
+>
+> Money-path hardening (adversarial-audited): charge amount is server-validated; the webhook
+> **fails closed** (a live key with no `STRIPE_WEBHOOK_SECRET` rejects unsigned events); fulfilment
+> requires `payment_status === 'paid'` and dedupes by session id.
 
 ---
 
@@ -19,7 +24,7 @@ Both are read directly from `process.env` in `apps/api/src/stripe.ts`. Neither i
 
 | Variable | Read at | Effect |
 | --- | --- | --- |
-| `STRIPE_SECRET_KEY` | `/stripe/checkout` (`process.env.STRIPE_SECRET_KEY`) | **Unset** → scaffold session returned. **Set** → live branch (currently `501`, SDK is TODO). |
+| `STRIPE_SECRET_KEY` | `/stripe/checkout` (`process.env.STRIPE_SECRET_KEY`) | **Unset** → scaffold session returned. **Set** → live: creates a real Checkout Session via Stripe REST. |
 | `STRIPE_WEBHOOK_SECRET` | `/stripe/webhook` (`process.env.STRIPE_WEBHOOK_SECRET`) | **Unset** → events accepted **unverified** (scaffold). **Set** → signature verified against the raw body; bad signature → `400`. |
 
 Related env it leans on (from `env.ts`, used by the live-mode TODO block in `checkout`):
@@ -115,7 +120,7 @@ fast so Stripe doesn't retry.
 
 ```dotenv
 # Stripe — live sales flow
-# Secret key: gates POST /stripe/checkout (live branch is currently a 501 TODO until the SDK is wired)
+# Secret key: gates POST /stripe/checkout — set it and the route creates real Checkout Sessions
 STRIPE_SECRET_KEY=sk_live_<paste-your-secret-key-here>
 # Webhook signing secret (whsec_…) from your /stripe/webhook endpoint — enables signature verification
 STRIPE_WEBHOOK_SECRET=whsec_<paste-your-webhook-signing-secret-here>
