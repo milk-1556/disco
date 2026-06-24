@@ -41,5 +41,8 @@ export * from './bundle.js';
 // Pre-flight authority audit (does the bot have the perms Disco needs?)
 export * from './authority.js';
 
+// Discord permission bitfield → human-readable names (drives the snapshot-diff per-permission view)
+export * from './permissions.js';
+
 // Per-build API-call metering for cost analytics
 export * from './meter.js';
