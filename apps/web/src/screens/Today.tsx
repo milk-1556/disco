@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, type Client, type JobSummary, type SnapshotSummary } from '../api.js';
 import type { View } from '../components/Shell.js';
+import { SkeletonCard } from '../components/Skeleton.js';
 
 const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
@@ -61,8 +62,11 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
       </div>
 
       {loading ? (
-        <div className="panel p-6 flex items-center gap-2" style={{ color: 'var(--color-muted)' }}>
-          <span className="live-dot" /> <span className="text-sm">Pulling today’s work together…</span>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+          <SkeletonCard lines={3} />
+          <SkeletonCard lines={2} />
+          <SkeletonCard lines={3} />
+          <SkeletonCard lines={2} />
         </div>
       ) : nothingPending ? (
         <div className="panel p-10 text-center">

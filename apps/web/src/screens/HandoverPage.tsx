@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, assetUrl, type HandoverBundle, type OwnershipStep } from '../api.js';
 import { BotSetupList } from '../components/BotSetupList.js';
+import { printReport } from '../components/ReportPrint.js';
 import { deliveredScope } from '../scope.js';
 import { cx } from '../util.js';
 
@@ -134,9 +135,20 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
             the steps to transfer full ownership to the client.
           </p>
         </div>
-        <button className="btn btn-ghost" onClick={onBack}>
-          ← Back
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {report && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => printReport({ serverName, report })}
+            >
+              Download report (PDF)
+            </button>
+          )}
+          <button className="btn btn-ghost" onClick={onBack}>
+            ← Back
+          </button>
+        </div>
       </header>
 
       {err && (

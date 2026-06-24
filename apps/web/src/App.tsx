@@ -13,6 +13,7 @@ import { PublicHandover } from './screens/PublicHandover.js';
 import { Queue } from './screens/Queue.js';
 import { Setup } from './screens/Setup.js';
 import { Today } from './screens/Today.js';
+import { Shortcuts } from './components/Shortcuts.js';
 import { SnapshotDiff } from './screens/SnapshotDiff.js';
 
 function usePublicHandoverId(): string | null {
@@ -66,6 +67,7 @@ export default function App() {
         setAuthed(false);
       }}
     >
+      <Shortcuts go={go} />
       {handoverJob ? (
         <HandoverPage jobId={handoverJob} onBack={() => setHandoverJob(null)} />
       ) : diffSnapshots ? (

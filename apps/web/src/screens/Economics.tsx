@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, type Client, type JobSummary } from '../api.js';
+import { SkeletonRows } from '../components/Skeleton.js';
 
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
 const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
@@ -88,8 +89,9 @@ export function Economics() {
       </div>
 
       {loading ? (
-        <div className="panel p-8 text-center mb-6" style={{ color: 'var(--color-muted)' }}>
-          Tallying your book of business…
+        <div className="panel p-5 mb-6">
+          <div className="eyebrow mb-3">deals by client</div>
+          <SkeletonRows count={3} h={44} />
         </div>
       ) : rows.length > 0 ? (
         <div className="panel p-5 mb-6">

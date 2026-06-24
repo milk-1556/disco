@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, streamJobLogs, type Job, type JobEvent, type JobSummary } from '../api.js';
 import { BuildSteps } from '../components/BuildSteps.js';
+import { SkeletonRows } from '../components/Skeleton.js';
 import { cx } from '../util.js';
 
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
@@ -113,12 +114,7 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
         </div>
       </div>
 
-      {jobs.length === 0 && !loaded && (
-        <div className="panel p-6 flex items-center gap-2" style={{ color: 'var(--color-muted)' }}>
-          <span className="live-dot" />
-          <span className="text-sm">Loading your builds…</span>
-        </div>
-      )}
+      {jobs.length === 0 && !loaded && <SkeletonRows count={3} h={72} />}
 
       {jobs.length === 0 && loaded && (
         <div className="panel p-8 text-center">

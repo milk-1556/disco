@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type JoinedGuild, type SnapshotSummary } from '../api.js';
+import { SkeletonCard } from '../components/Skeleton.js';
 import { cx, shortId } from '../util.js';
 
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
@@ -301,8 +302,9 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       {note && <div className="panel-soft p-3 mb-4 text-sm" style={{ color: 'var(--color-jade)' }}>{note}</div>}
 
       {loading ? (
-        <div className="panel-soft p-8 text-sm text-center" style={{ color: 'var(--color-faint)' }}>
-          Loading your snapshot library…
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(290px,1fr))' }}>
+          <SkeletonCard lines={4} />
+          <SkeletonCard lines={4} />
         </div>
       ) : snaps.length === 0 && !err ? (
         <div className="panel p-8 md:p-10 text-center rise">
