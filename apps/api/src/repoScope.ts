@@ -27,7 +27,10 @@ export const SYSTEM_ACTOR: Actor = { email: '__system__', role: 'admin' };
  */
 export function scopeRepo(base: Repo, actor: Actor): Repo {
   const isAdmin = actor.role === 'admin';
-  const owns = (r: { ownerEmail: string } | null | undefined): boolean => !!r && (isAdmin || r.ownerEmail === actor.email);
+  // Require a NON-EMPTY match: '' -owned records are system/seed-only (admin-visible via bypass), and a
+  // (hypothetical) actor with an empty email owns nothing — so neither side can collide on ''.
+  const owns = (r: { ownerEmail: string } | null | undefined): boolean =>
+    !!r && (isAdmin || (r.ownerEmail !== '' && r.ownerEmail === actor.email));
   const gate = <T extends { ownerEmail: string }>(r: T | undefined): T | undefined => (owns(r) ? r : undefined);
 
   return {

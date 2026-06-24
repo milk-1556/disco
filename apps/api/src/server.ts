@@ -288,8 +288,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
 
   // Export a snapshot (+ optional config) as a portable, checksummed .discobundle (§7).
   app.get('/snapshots/:id/export', { preHandler: requireAuth }, async (req, reply) => {
-    const rec = await repo.getSnapshot((req.params as { id: string }).id);
-    if (!rec) return reply.code(404).send({ error: 'not found' });
+    const rec = await scoped(req).getSnapshot((req.params as { id: string }).id);
+    if (!rec) return reply.code(404).send({ error: 'not found' }); // non-owner → 404 (no cross-operator export)
     // Embed asset bytes best-effort (skip any that aren't in storage — e.g. demo fixtures).
     const assets: Record<string, string> = {};
     for (const key of collectAssetKeys(rec.snapshot)) {

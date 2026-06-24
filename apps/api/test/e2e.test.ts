@@ -218,9 +218,11 @@ describe('e2e: multi-operator IDOR — operator B cannot touch operator A\'s rec
     expect(jobs.find((j) => j.id === aJobId)).toBeUndefined();
   });
 
-  it('B cannot READ A\'s snapshot / job / handover by id (404)', async () => {
+  it('B cannot READ or EXPORT A\'s snapshot / job / handover by id (404)', async () => {
     expect((await app.inject({ method: 'GET', url: `/snapshots/${aSnapId}`, headers: B })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: `/snapshots/${aSnapId}/feasibility`, headers: B })).statusCode).toBe(404);
+    // export is the route the red-team caught — a non-owner must not drain A's full .discobundle
+    expect((await app.inject({ method: 'GET', url: `/snapshots/${aSnapId}/export`, headers: B })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: `/jobs/${aJobId}`, headers: B })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: `/handovers/${aHandoverId}`, headers: B })).statusCode).toBe(404);
   });
