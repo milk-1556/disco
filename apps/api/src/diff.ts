@@ -18,6 +18,7 @@ export interface SnapshotDiff {
   guildNameChanged: { before: string; after: string } | null;
   roles: CategoryDiff;
   channels: CategoryDiff;
+  categories: CategoryDiff;
   emojis: CategoryDiff;
   automod: CategoryDiff;
   counts: Record<string, { before: number; after: number }>;
@@ -76,6 +77,10 @@ export function diffSnapshots(before: Snapshot, after: Snapshot): SnapshotDiff {
       nsfw: c.nsfw,
       slowmode: c.rateLimitPerUser,
       copyPolicy: c.copyPolicy,
+      overwrites: c.overwrites.map((o) => `${o.targetRef}:${o.allow}/${o.deny}`).sort(),
+    })),
+    categories: diffCategory(before.categories, after.categories, (c) => ({
+      position: c.position,
       overwrites: c.overwrites.map((o) => `${o.targetRef}:${o.allow}/${o.deny}`).sort(),
     })),
     emojis: diffCategory(before.emojis, after.emojis, (e) => ({ animated: e.animated, roles: e.roleRefs.length })),

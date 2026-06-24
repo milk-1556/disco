@@ -26,7 +26,26 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   const store = new DiskAssetStore(env.storageDiskPath);
   const app = Fastify({ logger: false });
 
-  app.register(cors, { origin: env.webOrigin, credentials: true });
+  // Disco authenticates with Bearer tokens (not cookies), so CORS credentials are never needed — which
+  // lets a public API safely allow any origin. When WEB_ORIGIN is an explicit (comma-sep) allowlist we
+  // honor it; '*' means "public". credentials:false avoids the invalid '*'+credentials combo entirely.
+  const allowedOrigins = env.webOrigin === '*' ? null : env.webOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+  app.register(cors, { origin: allowedOrigins ?? true, credentials: false });
+
+  // ── brute-force guard: in-memory fixed-window rate limiter (per process) for the unauthenticated,
+  // secret-guessing surfaces (login + the password-gated handover). Returns true when over the cap. ──
+  const rlBuckets = new Map<string, { count: number; resetAt: number }>();
+  const rateLimited = (key: string, limit: number, windowMs: number): boolean => {
+    const now = Date.now();
+    const b = rlBuckets.get(key);
+    if (!b || now > b.resetAt) {
+      rlBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      if (rlBuckets.size > 5000) for (const [k, v] of rlBuckets) if (now > v.resetAt) rlBuckets.delete(k); // bound memory
+      return false;
+    }
+    b.count += 1;
+    return b.count > limit;
+  };
 
   // ── auth guard ──
   const requireAuth = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -43,17 +62,26 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // ── public ──
   app.get('/health', async () => ({ ok: true, mode: isLiveMode() ? 'live' : 'demo' }));
 
-  app.get('/config', async () => ({
-    mode: isLiveMode() ? 'live' : 'demo',
-    applicationId: env.discordApplicationId || null,
-    operatorEmail: env.operatorEmail,
-    hasToken: env.discordBotToken.length > 0,
-    storageDriver: process.env.STORAGE_DRIVER ?? 'disk',
-    persistence: usePrisma() ? 'postgres' : 'in-memory',
-    queue: useQueue() ? 'redis' : 'in-process',
-  }));
+  // Public basics (the login screen + app routing need these) are returned to anyone; the operator
+  // identity + deployment internals are ONLY included for an authenticated caller (the Setup screen),
+  // so an anonymous visitor can't harvest the login email or fingerprint the deployment.
+  app.get('/config', async (req) => {
+    const base = { mode: isLiveMode() ? 'live' : 'demo', applicationId: env.discordApplicationId || null };
+    const header = req.headers.authorization ?? '';
+    const session = verifySession(header.startsWith('Bearer ') ? header.slice(7) : '');
+    if (!session) return base;
+    return {
+      ...base,
+      operatorEmail: env.operatorEmail,
+      hasToken: env.discordBotToken.length > 0,
+      storageDriver: process.env.STORAGE_DRIVER ?? 'disk',
+      persistence: usePrisma() ? 'postgres' : 'in-memory',
+      queue: useQueue() ? 'redis' : 'in-process',
+    };
+  });
 
   app.post('/auth/login', async (req, reply) => {
+    if (rateLimited(`login:${req.ip}`, 10, 60_000)) return reply.code(429).send({ error: 'Too many attempts — wait a minute and try again.' });
     const body = (req.body ?? {}) as { email?: string; password?: string };
     const ok = await verifyCredentials(body.email ?? '', body.password ?? '');
     if (!ok) return reply.code(401).send({ error: 'invalid credentials' });
@@ -148,7 +176,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         const d = diffSnapshots(latest.snapshot, snapshot);
         const noChange =
           !d.guildNameChanged &&
-          [d.roles, d.channels, d.emojis, d.automod].every((c) => !c.added.length && !c.removed.length && !c.changed.length);
+          [d.roles, d.channels, d.categories, d.emojis, d.automod].every((c) => !c.added.length && !c.removed.length && !c.changed.length);
         if (noChange) return { id: latest.id, name: latest.name, version: latest.version, unchanged: true };
       }
       const rec = await repo.addSnapshot({
@@ -220,9 +248,12 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       assets: {},
       termSwaps: Array.isArray(b.termSwaps) ? (b.termSwaps as { from: string; to: string }[]) : [],
       notes: String(b.notes ?? ''),
-      buildPrice: Number(b.buildPrice) || 0,
-      monthlyRetainer: Number(b.monthlyRetainer) || 0,
-      upsells: Array.isArray(b.upsells) ? (b.upsells as { name: string; price: number }[]) : [],
+      // clamp to non-negative — a negative price would corrupt every Economics/Today money figure
+      buildPrice: Math.max(0, Number(b.buildPrice) || 0),
+      monthlyRetainer: Math.max(0, Number(b.monthlyRetainer) || 0),
+      upsells: Array.isArray(b.upsells)
+        ? (b.upsells as { name: string; price: number }[]).map((u) => ({ name: String(u?.name ?? ''), price: Math.max(0, Number(u?.price) || 0) }))
+        : [],
     });
   });
   app.delete('/clients/:id', { preHandler: requireAuth }, async (req) => {
@@ -334,7 +365,13 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       // raw responses bypass the CORS plugin — set the header so the browser can read the stream.
-      'Access-Control-Allow-Origin': req.headers.origin ?? env.webOrigin,
+      // Never reflect an arbitrary Origin: when an allowlist is set, echo only a member (else its
+      // first entry); when public ('*'), '*' is safe because we don't use credentials.
+      'Access-Control-Allow-Origin': allowedOrigins
+        ? allowedOrigins.includes(req.headers.origin ?? '')
+          ? req.headers.origin!
+          : allowedOrigins[0]!
+        : '*',
     });
 
     let closed = false;
@@ -537,6 +574,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const h = await repo.getHandover(id);
     if (!h) return reply.code(404).send({ error: 'not found' });
     if (h.hasPassword) {
+      if (rateLimited(`h:${req.ip}:${id}`, 10, 60_000)) return reply.code(429).send({ error: 'Too many attempts — wait a minute.' });
       const pw = (req.query as { pw?: string }).pw ?? '';
       const hash = await repo.getHandoverPasswordHash(id);
       if (!hash || !bcrypt.compareSync(pw, hash)) return reply.code(401).send({ error: 'password required', needsPassword: true });

@@ -76,6 +76,10 @@ model Job {
   client        Client?   @relation(fields: [clientId], references: [id])
   clientId      String?
   handover      Handover?
+
+  @@index([createdAt]) // the /jobs list orders by this on every poll (Queue/Activity/Today/Economics)
+  @@index([clientId]) // deleteClient unlinks by this; Postgres doesn't auto-index relation scalars
+  @@index([snapshotId])
 }
 
 /// The client delivery record: handover page state + ownership-transfer checklist + upsell tracking.

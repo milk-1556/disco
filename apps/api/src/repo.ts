@@ -129,7 +129,9 @@ export class InMemoryRepo implements Repo {
   }
   async deleteClient(id: string) {
     this.clients.delete(id);
-    for (const j of this.jobs.values()) if (j.clientId === id) j.clientId = null; // unlink, keep the build record
+    // unlink from builds AND handovers (matching PrismaRepo) so no record dangles on the removed client
+    for (const j of this.jobs.values()) if (j.clientId === id) j.clientId = null;
+    for (const h of this.handovers.values()) if (h.clientId === id) h.clientId = null;
   }
 
   async listJobs() {

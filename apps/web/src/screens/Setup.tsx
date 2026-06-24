@@ -40,7 +40,7 @@ export function Setup({ go }: { go: (v: View) => void }) {
       if (starts[0]) setJourney({ start: starts[0], firstDelivery: firstDelivery ?? null });
       setSteps([
         {
-          done: cfg.hasToken,
+          done: !!cfg.hasToken,
           title: 'Connect your Discord bot',
           detail: cfg.hasToken
             ? 'A bot token is configured — Disco is in LIVE mode.'
@@ -50,7 +50,7 @@ export function Setup({ go }: { go: (v: View) => void }) {
         {
           done: true,
           title: 'Asset storage',
-          detail: `Storing snapshot assets via "${cfg.storageDriver}". Persistence: ${cfg.persistence} · queue: ${cfg.queue}.`,
+          detail: `Storing snapshot assets via "${cfg.storageDriver ?? 'disk'}". Persistence: ${cfg.persistence ?? 'in-memory'} · queue: ${cfg.queue ?? 'in-process'}.`,
         },
         {
           done: snaps.length > 0,

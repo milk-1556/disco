@@ -1,7 +1,8 @@
-import { env, isLiveMode, usePrisma, useQueue } from './env.js';
+import { assertSecureEnv, env, isLiveMode, usePrisma, useQueue } from './env.js';
 import { makeRepo, seedIfEmpty } from './runtime.js';
 import { buildServer } from './server.js';
 
+assertSecureEnv(); // refuse to boot a production-shaped deploy on the public dev secret
 const repo = makeRepo();
 const app = buildServer({ repo });
 

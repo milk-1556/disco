@@ -156,6 +156,7 @@ function DiffReport({ diff }: { diff: SnapshotDiffData }) {
   const sections: [string, SnapshotDiffData['roles']][] = [
     ['roles', diff.roles],
     ['channels', diff.channels],
+    ['categories', diff.categories],
     ['emojis', diff.emojis],
     ['automod', diff.automod],
   ];

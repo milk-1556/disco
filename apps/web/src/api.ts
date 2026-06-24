@@ -35,11 +35,12 @@ export const api = {
     req<{
       mode: string;
       applicationId: string | null;
-      operatorEmail: string;
-      hasToken: boolean;
-      storageDriver: string;
-      persistence: string;
-      queue: string;
+      // present only when authenticated (operator identity + deployment internals)
+      operatorEmail?: string;
+      hasToken?: boolean;
+      storageDriver?: string;
+      persistence?: string;
+      queue?: string;
     }>('/config'),
   login: (email: string, password: string) =>
     req<{ token: string; email: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
@@ -302,6 +303,7 @@ export interface SnapshotDiff {
   guildNameChanged: { before: string; after: string } | null;
   roles: CategoryDiff;
   channels: CategoryDiff;
+  categories: CategoryDiff;
   emojis: CategoryDiff;
   automod: CategoryDiff;
   counts: Record<string, { before: number; after: number }>;
