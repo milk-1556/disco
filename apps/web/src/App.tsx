@@ -14,6 +14,7 @@ import { Queue } from './screens/Queue.js';
 import { Setup } from './screens/Setup.js';
 import { Today } from './screens/Today.js';
 import { Shortcuts } from './components/Shortcuts.js';
+import { Maintenance } from './components/Maintenance.js';
 import { SnapshotDiff } from './screens/SnapshotDiff.js';
 
 function usePublicHandoverId(): string | null {
@@ -36,6 +37,7 @@ export default function App() {
   const [diffSnapshots, setDiffSnapshots] = useState<SnapshotSummary[] | null>(null);
   const [handoverJob, setHandoverJob] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<'success' | 'cancel' | null>(null);
+  const [apiDown, setApiDown] = useState(false);
 
   useEffect(() => {
     api
@@ -43,8 +45,10 @@ export default function App() {
       .then((c) => {
         setMode(c.mode);
         setApplicationId(c.applicationId);
+        setApiDown(false);
       })
-      .catch(() => {});
+      // A TypeError here is a network-level failure (API unreachable), not an HTTP/auth error.
+      .catch((e) => setApiDown(e instanceof TypeError));
   }, [authed]);
 
   // Stripe redirects back to /?checkout=success|cancel — surface it, then clean the URL.
@@ -60,6 +64,9 @@ export default function App() {
 
   // Public, shareable, unauthenticated delivery page — bypasses login entirely.
   if (publicId) return <PublicHandover id={publicId} />;
+
+  // API unreachable on the operator app → calm maintenance page instead of a broken Login/console.
+  if (apiDown) return <Maintenance />;
 
   if (!authed) return <Login onAuthed={() => setAuthed(true)} />;
 
