@@ -161,7 +161,7 @@ export class PrismaRepo implements Repo {
 
   // ── jobs ──
   private toJob = (r: {
-    id: string; kind: string; status: string; dryRun: boolean; progress: number; targetGuildId: string | null;
+    id: string; kind: string; status: string; dryRun: boolean; canary?: boolean; progress: number; targetGuildId: string | null;
     rebrandConfig: Prisma.JsonValue; metrics: Prisma.JsonValue | null; manifest: Prisma.JsonValue | null; report: Prisma.JsonValue | null; error: string | null;
     snapshotId: string | null; clientId: string | null; createdAt: Date; updatedAt: Date;
   }): Job => ({
@@ -172,6 +172,7 @@ export class PrismaRepo implements Repo {
     clientId: r.clientId,
     targetGuildId: r.targetGuildId,
     dryRun: r.dryRun,
+    canary: r.canary ?? false,
     // safeParse + fallback: a single legacy/partial Json row must not 500 a whole listJobs().
     rebrandConfig: safe(RebrandConfig, r.rebrandConfig) ?? undefined,
     metrics: (r.metrics as Job['metrics']) ?? null,
@@ -196,6 +197,7 @@ export class PrismaRepo implements Repo {
         kind: j.kind,
         status: j.status,
         dryRun: j.dryRun,
+        canary: j.canary,
         progress: j.progress,
         targetGuildId: j.targetGuildId,
         rebrandConfig: asJson(j.rebrandConfig ?? {}),

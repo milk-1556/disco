@@ -131,3 +131,45 @@ describe('e2e: destructive ops + audit accountability', () => {
     expect(Array.isArray(h.requests.perRoute)).toBe(true);
   });
 });
+
+describe('e2e: multi-operator audit scoping (#6) + canary build (#9)', () => {
+  let app: FastifyInstance;
+  const adminTok = signSession({ email: 'operator@disco.local' }); // the configured operator → admin
+  const opTok = signSession({ email: 'second@disco.local' }); // a 2nd operator → scoped
+  const admin = { authorization: `Bearer ${adminTok}`, 'content-type': 'application/json' };
+  const op = { authorization: `Bearer ${opTok}`, 'content-type': 'application/json' };
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('operator sees only their own audit rows; admin sees all', async () => {
+    const c1 = (await app.inject({ method: 'POST', url: '/clients', headers: admin, payload: JSON.stringify({ creatorName: 'A' }) })).json() as { id: string };
+    const c2 = (await app.inject({ method: 'POST', url: '/clients', headers: admin, payload: JSON.stringify({ creatorName: 'B' }) })).json() as { id: string };
+    await app.inject({ method: 'DELETE', url: `/clients/${c1.id}`, headers: admin }); // operator: operator@disco.local
+    await app.inject({ method: 'DELETE', url: `/clients/${c2.id}`, headers: op }); // operator: second@disco.local
+
+    const adminAudit = (await app.inject({ method: 'GET', url: '/audit', headers: admin })).json() as { operator: string }[];
+    const opAudit = (await app.inject({ method: 'GET', url: '/audit', headers: op })).json() as { operator: string }[];
+    expect(new Set(adminAudit.map((a) => a.operator)).size).toBe(2); // admin sees both operators' actions
+    expect(opAudit.every((a) => a.operator === 'second@disco.local')).toBe(true); // operator scoped to own
+    expect(opAudit.length).toBe(1);
+  });
+
+  it('a canary build cannot be delivered (handover refused 409)', async () => {
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: admin })).json() as { id: string }[];
+    const config = { clientId: 'x', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    const start = (await app.inject({ method: 'POST', url: '/jobs', headers: admin, payload: JSON.stringify({ snapshotId: snaps[0]!.id, config, dryRun: false, canary: true }) })).json() as { id: string };
+    let status = 'queued';
+    for (let i = 0; i < 80 && status !== 'completed' && status !== 'failed'; i++) {
+      status = ((await app.inject({ method: 'GET', url: `/jobs/${start.id}`, headers: admin })).json() as { status: string }).status;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(status).toBe('completed');
+    const jobs = (await app.inject({ method: 'GET', url: '/jobs', headers: admin })).json() as { id: string; canary: boolean }[];
+    expect(jobs.find((j) => j.id === start.id)?.canary).toBe(true);
+    const h = await app.inject({ method: 'POST', url: '/handovers', headers: admin, payload: JSON.stringify({ jobId: start.id }) });
+    expect(h.statusCode).toBe(409); // canary builds are not deliverable
+  });
+});

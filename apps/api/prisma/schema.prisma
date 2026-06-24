@@ -75,6 +75,7 @@ model Job {
   kind          String // snapshot | rebuild
   status        String // queued | running | paused | completed | failed | canceled
   dryRun        Boolean   @default(false)
+  canary        Boolean   @default(false)
   progress      Float     @default(0)
   targetGuildId String?
   rebrandConfig Json      @default("{}")

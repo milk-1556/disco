@@ -117,6 +117,8 @@ export const Job = z.object({
   clientId: z.string().nullable().default(null),
   targetGuildId: Snowflake.nullable().default(null),
   dryRun: z.boolean().default(false),
+  /** Canary/test build — built to inspect before pointing at the real client guild; no handover. */
+  canary: z.boolean().default(false),
   /** The rebrand config that produced this build — persisted so the worker can resume self-sufficiently. */
   rebrandConfig: RebrandConfig.optional(),
   /** Cost-analytics metrics captured at build time. */

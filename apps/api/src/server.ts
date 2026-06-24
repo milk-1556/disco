@@ -329,8 +329,13 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { ok: true };
   });
 
-  // Operator accountability log of destructive operations.
-  app.get('/audit', { preHandler: requireAuth }, async () => repo.listAudit(200));
+  // Operator accountability log of destructive operations. Scoped: an admin sees every operator's
+  // actions; a regular operator sees only their own (multi-operator readiness).
+  app.get('/audit', { preHandler: requireAuth }, async (req) => {
+    const session = (req as FastifyRequest & { session?: { email: string; role: string } }).session;
+    const all = await repo.listAudit(500);
+    return (session?.role === 'admin' ? all : all.filter((a) => a.operator === session?.email)).slice(0, 200);
+  });
 
   // ── rebrand preview ──
   app.post('/rebrand/preview', { preHandler: requireAuth }, async (req, reply) => {
@@ -345,7 +350,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
 
   // ── jobs ──
   app.post('/jobs', { preHandler: requireAuth }, async (req, reply) => {
-    const body = (req.body ?? {}) as { snapshotId?: string; clientId?: string; config?: unknown; dryRun?: boolean };
+    const body = (req.body ?? {}) as { snapshotId?: string; clientId?: string; config?: unknown; dryRun?: boolean; canary?: boolean; targetGuildId?: string };
     const rec = body.snapshotId ? await repo.getSnapshot(body.snapshotId) : undefined;
     if (!rec) return reply.code(404).send({ error: 'snapshot not found' });
     const parsed = RebrandConfig.safeParse(body.config);
@@ -360,8 +365,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       status: 'queued',
       snapshotId: rec.id,
       clientId,
-      targetGuildId: null,
+      targetGuildId: body.targetGuildId ?? null,
       dryRun: body.dryRun ?? false,
+      canary: !!body.canary,
       rebrandConfig: parsed.data,
       metrics: null,
       progress: 0,
@@ -411,6 +417,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       kind: j.kind,
       status: j.status,
       dryRun: j.dryRun,
+      canary: j.canary,
       progress: j.progress,
       snapshotId: j.snapshotId,
       snapshotName: j.snapshotId ? snapName.get(j.snapshotId) ?? null : null,
@@ -611,6 +618,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const body = (req.body ?? {}) as { jobId?: string };
     const job = body.jobId ? await repo.getJob(body.jobId) : undefined;
     if (!job) return reply.code(404).send({ error: 'job not found' });
+    if (job.canary) return reply.code(409).send({ error: 'This is a canary/test build — rebuild without canary to deliver it to a client.' });
     const existing = await repo.getHandoverByJob(job.id);
     if (existing) return existing;
     pingActivity('handover');
