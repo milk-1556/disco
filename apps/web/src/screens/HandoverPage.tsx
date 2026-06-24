@@ -79,8 +79,9 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
 
   if (loading) {
     return (
-      <div className="p-8" style={{ color: 'var(--color-muted)' }}>
-        Loading handover…
+      <div className="px-4 py-6 md:p-8 flex items-center gap-3" style={{ color: 'var(--color-muted)' }}>
+        <span className="w-2 h-2 rounded-full live-dot" style={{ background: 'var(--color-source)' }} />
+        <span className="text-sm">Assembling the delivery record…</span>
       </div>
     );
   }
@@ -91,8 +92,14 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
         <button className="btn btn-ghost mb-4" onClick={onBack}>
           ← Back
         </button>
-        <div className="panel-soft p-4 text-sm" style={{ color: 'var(--color-danger)' }}>
-          {err}
+        <div className="panel p-5">
+          <div className="text-sm font-medium mb-1">Couldn’t open this handover</div>
+          <p className="text-sm mb-3" style={{ color: 'var(--color-muted)' }}>
+            The build may still be running, or the record isn’t ready yet. Head back and reopen it in a moment.
+          </p>
+          <div className="panel-soft p-3 text-xs mono break-words" style={{ color: 'var(--color-danger)' }}>
+            {err}
+          </div>
         </div>
       </div>
     );
@@ -115,11 +122,11 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
   return (
     <div className="px-4 py-6 md:p-8 max-w-4xl rise">
       {/* ── header ── */}
-      <header className="flex items-start justify-between gap-4 mb-7">
-        <div>
+      <header className="flex flex-wrap items-start justify-between gap-4 mb-7">
+        <div className="min-w-0">
           <div className="eyebrow mb-2">delivery</div>
-          <h1 className="text-2xl flex items-center gap-3" style={{ fontFamily: 'var(--font-display)' }}>
-            <span className="transform-text">{serverName}</span>
+          <h1 className="text-2xl flex items-center gap-3 flex-wrap" style={{ fontFamily: 'var(--font-display)' }}>
+            <span className="transform-text break-words">{serverName}</span>
             <span className={cx('chip', stateChip.className)}>{stateChip.label}</span>
           </h1>
           <p className="text-sm mt-2 max-w-xl" style={{ color: 'var(--color-muted)' }}>
@@ -162,7 +169,7 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
           </div>
         ) : (
           <p className="text-sm" style={{ color: 'var(--color-faint)' }}>
-            No build report attached to this job yet.
+            No build report yet — run the build for this job and the delivered scope will appear here.
           </p>
         )}
       </section>
@@ -344,8 +351,8 @@ function Branding({
         </span>
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: 'auto 1fr' }}>
-        <div className="flex flex-col items-center gap-2">
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col items-center gap-2 shrink-0">
           {handover.logoKey ? (
             <img src={assetUrl(`/${handover.logoKey}`)} alt="" style={{ width: 64, height: 64, borderRadius: 14, objectFit: 'cover' }} className="transform-ring" />
           ) : (
@@ -372,7 +379,7 @@ function Branding({
           )}
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3 flex-1 min-w-0">
           <div>
             <div className="label mb-1">Welcome message (shown to the client)</div>
             <textarea

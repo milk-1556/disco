@@ -44,7 +44,7 @@ export function Login({ onAuthed }: { onAuthed: () => void }) {
           <form onSubmit={submit} className="space-y-3">
             <div>
               <div className="label mb-1">Email</div>
-              <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" />
+              <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" autoFocus />
             </div>
             <div>
               <div className="label mb-1">Password</div>

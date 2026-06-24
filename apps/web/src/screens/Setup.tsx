@@ -89,18 +89,25 @@ export function Setup({ go }: { go: (v: View) => void }) {
         </p>
       </header>
 
-      {!loading && (
+      {loading ? (
+        <div className="panel-soft px-4 py-3 mb-5 flex items-center gap-3" style={{ color: 'var(--color-muted)' }}>
+          <span className="w-2 h-2 rounded-full live-dot" style={{ background: 'var(--color-source)' }} />
+          <span className="text-sm">Checking where you are on the assembly line…</span>
+        </div>
+      ) : (
         <div className="panel-soft px-4 py-3 mb-5 flex items-center gap-3">
           <div className="h-2 flex-1 rounded-full overflow-hidden" style={{ background: 'var(--color-line)' }}>
             <div className="h-full transform-bar transition-all" style={{ width: `${(done / steps.length) * 100}%` }} />
           </div>
-          <span className="mono text-xs" style={{ color: 'var(--color-muted)' }}>{done}/{steps.length}</span>
+          <span className="mono text-xs whitespace-nowrap" style={{ color: 'var(--color-muted)' }}>
+            {done === steps.length ? 'all set ✓' : `${done}/${steps.length}`}
+          </span>
         </div>
       )}
 
       <ol className="space-y-2">
         {steps.map((s, i) => (
-          <li key={i} className="panel p-4 flex items-start gap-3">
+          <li key={i} className="panel p-4 flex flex-wrap items-start gap-3">
             <span
               className="grid place-items-center shrink-0 mt-0.5"
               style={{
@@ -115,12 +122,12 @@ export function Setup({ go }: { go: (v: View) => void }) {
             >
               {s.done ? '✓' : i + 1}
             </span>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0" style={{ flexBasis: '12rem' }}>
               <div className="text-sm font-medium" style={{ fontFamily: 'var(--font-display)' }}>{s.title}</div>
               <div className="text-[0.78rem] mt-0.5" style={{ color: 'var(--color-muted)' }}>{s.detail}</div>
             </div>
             {s.cta && !s.done && (
-              <button className="btn text-xs shrink-0" onClick={() => s.cta!.view && go(s.cta!.view)}>
+              <button className="btn text-xs shrink-0 ml-auto" onClick={() => s.cta!.view && go(s.cta!.view)}>
                 {s.cta.label} →
               </button>
             )}

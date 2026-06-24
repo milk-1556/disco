@@ -49,22 +49,28 @@ export function SnapshotDiff({
           What changed <span className="transform-text">between captures</span>
         </h1>
         <p className="text-sm mt-2 max-w-xl" style={{ color: 'var(--color-muted)' }}>
-          Pick two versions of a snapshot to see exactly which roles, channels, and emojis were added
+          Pick a before and an after to see exactly which roles, channels, and emojis were added
           or removed — and how the counts moved.
         </p>
       </header>
 
       {!enough ? (
-        <div className="panel-soft p-4 text-sm" style={{ color: 'var(--color-muted)' }}>
-          Capture another version to compare.
+        <div className="panel p-8 text-center rise">
+          <div className="eyebrow mb-3">need two snapshots</div>
+          <h2 className="text-lg mb-2">Nothing to compare yet</h2>
+          <p className="text-sm mx-auto mb-6" style={{ color: 'var(--color-muted)', maxWidth: 400 }}>
+            A diff needs two versions of a snapshot. Re-snapshot a server you’ve already captured —
+            each capture saves a new version — then come back to see what moved between them.
+          </p>
+          <button className="btn" onClick={onBack}>← Back to library</button>
         </div>
       ) : (
         <>
           <div className="panel p-5 mb-6">
-            <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3">
               <div className="flex-1" style={{ minWidth: 150 }}>
                 <div className="label mb-1" style={{ color: 'var(--color-source)' }}>
-                  base · before
+                  before · base
                 </div>
                 <select
                   className="input mono"
@@ -79,13 +85,13 @@ export function SnapshotDiff({
                 </select>
               </div>
 
-              <div className="flex items-end pb-2" style={{ color: 'var(--color-faint)' }}>
+              <div className="hidden sm:flex items-end pb-2" style={{ color: 'var(--color-faint)' }}>
                 →
               </div>
 
               <div className="flex-1" style={{ minWidth: 150 }}>
                 <div className="label mb-1" style={{ color: 'var(--color-client)' }}>
-                  compare · after
+                  after · compare
                 </div>
                 <select
                   className="input mono"
@@ -102,7 +108,7 @@ export function SnapshotDiff({
 
               <div className="flex items-end">
                 <button
-                  className="btn justify-center"
+                  className="btn justify-center w-full sm:w-auto"
                   onClick={compare}
                   disabled={busy || !baseId || !compareId}
                 >
@@ -110,18 +116,36 @@ export function SnapshotDiff({
                 </button>
               </div>
             </div>
+            {baseId && baseId === compareId && (
+              <p className="text-xs mt-3" style={{ color: 'var(--color-gold)' }}>
+                Pick two different versions to see what changed.
+              </p>
+            )}
           </div>
 
           {err && (
             <div
-              className="panel-soft p-3 mb-6 text-sm"
+              className="panel-soft p-3 mb-6 text-sm flex items-center justify-between gap-3"
               style={{ color: 'var(--color-danger)' }}
             >
-              {err}
+              <span>Couldn’t compare these snapshots — {err}</span>
+              <button className="btn btn-ghost shrink-0" disabled={busy} onClick={compare}>Retry</button>
             </div>
           )}
 
-          {diff && <DiffReport diff={diff} />}
+          {busy ? (
+            <div className="panel-soft p-8 text-sm text-center" style={{ color: 'var(--color-faint)' }}>
+              Diffing the two snapshots…
+            </div>
+          ) : diff ? (
+            <DiffReport diff={diff} />
+          ) : (
+            !err && (
+              <div className="panel-soft p-6 text-sm text-center" style={{ color: 'var(--color-muted)' }}>
+                Pick a before and after above, then hit <strong>Compare</strong> to see what moved.
+              </div>
+            )
+          )}
         </>
       )}
     </div>

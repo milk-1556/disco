@@ -139,7 +139,16 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [events]);
 
-  if (!rec) return <div className="p-8" style={{ color: 'var(--color-muted)' }}>Loading…</div>;
+  if (!rec)
+    return (
+      <div className="px-4 py-6 md:p-8 max-w-6xl">
+        <div className="eyebrow mb-2">build console</div>
+        <div className="panel p-6 flex items-center gap-2" style={{ color: 'var(--color-muted)' }}>
+          <span className="live-dot" />
+          <span className="text-sm">Loading the snapshot and detecting brand tokens…</span>
+        </div>
+      </div>
+    );
 
   const sourceName = rec.snapshot.guild.name;
   const targetName = rebrandedName || serverName || sourceName;
@@ -183,9 +192,9 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
       <div className="build-grid">
         {/* ── rebrand controls ── */}
         <section className="panel p-5 self-start">
-          <h2 className="text-base mb-1">Rebrand</h2>
+          <h2 className="text-base mb-1">Rebrand for client</h2>
           <p className="text-xs mb-4" style={{ color: 'var(--color-muted)' }}>
-            Detected brand tokens, pre-filled. Edit any swap — nothing changes without showing here.
+            Brand tokens detected from the snapshot, pre-filled. Edit any swap — nothing changes until you preview it here.
           </p>
 
           <div className="label mb-1">Server name</div>
@@ -202,7 +211,12 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
 
         {/* ── preview + actions + log + report ── */}
         <section className="space-y-5 build-rail">
-          {err && <div className="panel-soft p-3 text-sm" style={{ color: 'var(--color-danger)' }}>{err}</div>}
+          {err && (
+            <div className="panel-soft p-3 text-sm flex items-start gap-2" style={{ color: 'var(--color-danger)', borderColor: 'color-mix(in srgb, var(--color-danger) 40%, transparent)' }}>
+              <span aria-hidden>✗</span>
+              <span>That didn't go through — {err}. Adjust the rebrand and try again.</span>
+            </div>
+          )}
 
           {preview && (
             <div className="panel p-5">
@@ -214,42 +228,48 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
               </div>
               <div className="space-y-1.5 max-h-64 overflow-auto pr-1">
                 {preview.changes.map((c, i) => (
-                  <div key={i} className="panel-soft px-3 py-2 flex items-center gap-3 text-sm">
-                    <span className="chip" style={{ minWidth: 76, justifyContent: 'center' }}>{c.rule}</span>
-                    <span className="mono text-xs truncate" style={{ color: 'var(--color-source)' }}>{c.before}</span>
-                    <span style={{ color: 'var(--color-faint)' }}>→</span>
-                    <span className="mono text-xs truncate" style={{ color: 'var(--color-client)' }}>{c.after}</span>
+                  <div key={i} className="panel-soft px-3 py-2 flex items-center gap-2 sm:gap-3 text-sm">
+                    <span className="chip shrink-0" style={{ minWidth: 64, justifyContent: 'center' }}>{c.rule}</span>
+                    <span className="mono text-xs truncate min-w-0" style={{ color: 'var(--color-source)' }} title={c.before}>{c.before}</span>
+                    <span className="shrink-0" style={{ color: 'var(--color-faint)' }} aria-hidden>→</span>
+                    <span className="mono text-xs truncate min-w-0" style={{ color: 'var(--color-client)' }} title={c.after}>{c.after}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {feasibility && feasibility.findings.length > 0 && (
+          {feasibility && (
             <div className="panel-soft p-3" style={{ borderColor: feasibility.ok ? 'var(--color-line)' : 'color-mix(in srgb, var(--color-danger) 40%, transparent)' }}>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 flex-wrap mb-2">
                 <span className="label">pre-flight</span>
                 <span className={feasibility.ok ? 'chip chip-jade' : 'chip'} style={feasibility.ok ? undefined : { color: 'var(--color-danger)' }}>
-                  {feasibility.ok ? 'fits Discord limits' : 'over a hard limit'}
+                  {feasibility.ok ? 'fits Discord limits' : 'over a Discord-API limit'}
                 </span>
               </div>
-              <div className="space-y-1">
-                {feasibility.findings.map((f, i) => (
-                  <div key={i} className="text-[0.74rem] flex gap-2">
-                    <span className="mono" style={{ color: f.severity === 'block' ? 'var(--color-danger)' : 'var(--color-gold)', minWidth: 56 }}>
-                      {f.severity === 'block' ? '✗ block' : '⚠ warn'}
-                    </span>
-                    <span style={{ color: 'var(--color-muted)' }}>{f.detail}</span>
-                  </div>
-                ))}
-              </div>
+              {feasibility.findings.length > 0 ? (
+                <div className="space-y-1">
+                  {feasibility.findings.map((f, i) => (
+                    <div key={i} className="text-[0.74rem] flex gap-2">
+                      <span className="mono" style={{ color: f.severity === 'block' ? 'var(--color-danger)' : 'var(--color-gold)', minWidth: 56 }}>
+                        {f.severity === 'block' ? '✗ block' : '⚠ warn'}
+                      </span>
+                      <span style={{ color: 'var(--color-muted)' }}>{f.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[0.74rem]" style={{ color: 'var(--color-muted)' }}>
+                  Roles, channels, and emojis all sit inside Discord's limits — clear to build.
+                </div>
+              )}
             </div>
           )}
 
           <div className="panel p-5">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <button className="btn" onClick={() => run(true)} disabled={running}>
-                {running ? 'Running…' : '◐ Dry-run'}
+                {running ? 'Working…' : '◐ Dry-run'}
               </button>
               <button
                 className="btn btn-primary"
@@ -257,12 +277,17 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
                 disabled={running || feasibility?.ok === false}
                 title={feasibility?.ok === false ? 'Resolve the pre-flight blocks first' : undefined}
               >
-                Build the server →
+                {running ? 'Building…' : 'Build the server →'}
               </button>
               <div className="ml-auto mono text-xs" style={{ color: 'var(--color-faint)' }}>
                 {Math.round(progress * 100)}%
               </div>
             </div>
+            {!running && events.length === 0 && (
+              <p className="text-xs mt-3" style={{ color: 'var(--color-faint)' }}>
+                Dry-run walks the whole build without touching Discord. Build creates the live server for the client.
+              </p>
+            )}
 
             {events.length > 0 && (
               <div ref={logRef} className="term mt-4" style={{ maxHeight: 200 }}>
@@ -286,13 +311,13 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
 function Identity({ tone, label, name }: { tone: 'source' | 'client'; label: string; name: string }) {
   const color = tone === 'source' ? 'var(--color-source)' : 'var(--color-client)';
   return (
-    <div className="text-center" style={{ width: 150 }}>
+    <div className="text-center" style={{ width: 150, maxWidth: '42vw', flexShrink: 0 }}>
       <div className="eyebrow mb-2">{label}</div>
       <div
         className="panel-soft px-3 py-3"
         style={{ borderColor: `color-mix(in srgb, ${color} 40%, transparent)` }}
       >
-        <div className="font-semibold text-sm leading-tight" style={{ fontFamily: 'var(--font-display)', color }}>
+        <div className="font-semibold text-sm leading-tight" style={{ fontFamily: 'var(--font-display)', color, overflowWrap: 'anywhere' }}>
           {name}
         </div>
       </div>

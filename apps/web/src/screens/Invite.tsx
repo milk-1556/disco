@@ -57,18 +57,24 @@ export function Invite({ applicationId }: { applicationId: string | null }) {
         <div className="label mb-1">Application ID</div>
         <input className="input mono mb-4" placeholder="123456789012345678" value={appId} onChange={(e) => setAppId(e.target.value)} />
 
-        <div className="flex gap-2 mb-4">
+        <div className="flex flex-wrap gap-2 mb-2">
           {(['administrator', 'granular'] as const).map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
               className={cx('btn', mode === m ? 'transform-ring' : 'btn-ghost')}
               style={mode === m ? { color: 'var(--color-bone)' } : undefined}
+              aria-pressed={mode === m}
             >
               {m === 'administrator' ? 'Administrator (recommended)' : 'Granular permissions'}
             </button>
           ))}
         </div>
+        <p className="text-[0.72rem] mb-4" style={{ color: 'var(--color-faint)' }}>
+          {mode === 'administrator'
+            ? 'Administrator grants everything a clean clone needs in one invite — the safest default.'
+            : 'Granular requests only the specific permissions Disco uses. Pick this if the client won’t grant Administrator — but a build may stop at a Manual Step if a permission is missing.'}
+        </p>
 
         <button className="btn btn-primary" onClick={generate} disabled={!appId}>
           Generate invite URL
@@ -81,7 +87,7 @@ export function Invite({ applicationId }: { applicationId: string | null }) {
 
         {result && (
           <div className="panel-soft p-3 mt-4">
-            <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
               <span className="chip chip-gold">permissions {result.permissions}</span>
               <button
                 className="btn btn-ghost text-xs"
@@ -143,8 +149,13 @@ export function Invite({ applicationId }: { applicationId: string | null }) {
       </div>
 
       <div className="panel p-5">
-        <div className="eyebrow mb-3">privileged intents to enable in the dev portal</div>
-        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px,1fr))' }}>
+        <div className="flex items-baseline gap-2 mb-3 flex-wrap">
+          <span className="eyebrow">privileged intents to enable in the dev portal</span>
+          <span className="text-[0.68rem]" style={{ color: 'var(--color-faint)' }}>
+            toggle these on the bot’s page — the invite link alone can’t flip them
+          </span>
+        </div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))' }}>
           {INTENTS.map(([name, why]) => (
             <div key={name} className="panel-soft p-3">
               <div className="text-sm font-medium">{name}</div>

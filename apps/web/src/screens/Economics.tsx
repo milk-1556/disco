@@ -13,11 +13,14 @@ export function Economics() {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [infra, setInfra] = useState(40); // $/mo infra (postgres + redis + host)
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const tick = () => {
-      api.jobs().then(setJobs).catch(() => {});
-      api.clients().then(setClients).catch(() => {});
+      Promise.allSettled([
+        api.jobs().then(setJobs),
+        api.clients().then(setClients),
+      ]).finally(() => setLoading(false));
     };
     tick();
     const h = setInterval(tick, 4000);
@@ -84,27 +87,54 @@ export function Economics() {
         </div>
       </div>
 
-      {rows.length > 0 ? (
+      {loading ? (
+        <div className="panel p-8 text-center mb-6" style={{ color: 'var(--color-muted)' }}>
+          Tallying your book of business…
+        </div>
+      ) : rows.length > 0 ? (
         <div className="panel p-5 mb-6">
-          <div className="eyebrow mb-3">deals by client</div>
+          <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
+            <div className="eyebrow">deals by client</div>
+            <span className="label">
+              {m.won.length} closed won · {m.pipeline.length} in pipeline
+            </span>
+          </div>
           <div className="space-y-1.5">
             {rows.map(({ c, won }) => {
               const once = m.dealOnce(c);
               return (
-                <div key={c.id} className="panel-soft px-3 py-2.5 flex items-center gap-3 flex-wrap text-sm">
-                  <span className={won ? 'chip chip-jade' : 'chip'} style={won ? undefined : { color: 'var(--color-gold)' }}>{won ? 'won' : 'pipeline'}</span>
+                <div key={c.id} className="panel-soft px-3 py-2.5 flex items-center gap-2.5 flex-wrap text-sm">
+                  <span
+                    className={won ? 'chip chip-jade' : 'chip chip-gold'}
+                    style={{ minWidth: 88, justifyContent: 'center' }}
+                  >
+                    {won ? 'Closed won' : 'Pipeline'}
+                  </span>
                   <span className="font-medium">{c.creatorName}</span>
-                  <span className="mono ml-auto" style={{ color: 'var(--color-bone)' }}>{once > 0 ? fmt$(once) : '—'}</span>
-                  <span className="mono" style={{ color: 'var(--color-muted)', minWidth: 84, textAlign: 'right' }}>{c.monthlyRetainer > 0 ? `${fmt$(c.monthlyRetainer)}/mo` : 'no retainer'}</span>
-                  {c.upsells.length > 0 && <span className="text-[0.7rem]" style={{ color: 'var(--color-faint)' }}>+{c.upsells.length} upsell{c.upsells.length === 1 ? '' : 's'}</span>}
+                  {c.upsells.length > 0 && (
+                    <span className="text-[0.7rem]" style={{ color: 'var(--color-faint)' }}>
+                      +{c.upsells.length} upsell{c.upsells.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                  <span className="mono ml-auto" style={{ color: once > 0 ? 'var(--color-bone)' : 'var(--color-faint)' }}>
+                    {once > 0 ? fmt$(once) : '—'}
+                  </span>
+                  <span className="mono" style={{ color: c.monthlyRetainer > 0 ? 'var(--color-muted)' : 'var(--color-faint)', minWidth: 92, textAlign: 'right' }}>
+                    {c.monthlyRetainer > 0 ? `${fmt$(c.monthlyRetainer)}/mo` : 'no retainer'}
+                  </span>
                 </div>
               );
             })}
           </div>
         </div>
       ) : (
-        <div className="panel p-8 text-center" style={{ color: 'var(--color-muted)' }}>
-          No priced clients yet. Add a client with a build price + monthly management fee to see your economics.
+        <div className="panel p-10 text-center mb-6">
+          <div className="eyebrow mb-2" style={{ color: 'var(--color-gold)' }}>nothing booked yet</div>
+          <h2 className="text-lg">No priced clients yet</h2>
+          <p className="text-sm mt-2 mx-auto" style={{ color: 'var(--color-muted)', maxWidth: 360 }}>
+            Add a client with a build price and monthly management fee, and your pipeline and closed-won
+            numbers land here automatically.
+          </p>
         </div>
       )}
 

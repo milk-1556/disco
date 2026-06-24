@@ -56,6 +56,7 @@ function build(jobs: JobSummary[], snaps: SnapshotSummary[]): Item[] {
 export function Activity() {
   const [items, setItems] = useState<Item[]>([]);
   const [running, setRunning] = useState(0);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -65,6 +66,7 @@ export function Activity() {
         if (!alive) return;
         setItems(build(jobs, snaps));
         setRunning(jobs.filter((j) => j.status === 'running' || j.status === 'queued').length);
+        setLoaded(true);
       } catch {
         /* keep last */
       }
@@ -93,13 +95,27 @@ export function Activity() {
       </header>
 
       {items.length === 0 ? (
-        <div className="panel p-8 text-center" style={{ color: 'var(--color-muted)' }}>
-          Nothing yet. Capture a snapshot or start a build to see the feed come alive.
-        </div>
+        !loaded ? (
+          <div className="panel p-8 flex items-center justify-center gap-3" style={{ color: 'var(--color-muted)' }}>
+            <span className="w-2 h-2 rounded-full live-dot" style={{ background: 'var(--color-source)' }} />
+            <span className="text-sm">Tuning into the assembly line…</span>
+          </div>
+        ) : (
+          <div className="panel p-8 text-center">
+            <div className="text-sm font-medium mb-1">The feed is quiet</div>
+            <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+              Snapshot a template or start a build and every step will stream in here live.
+            </p>
+          </div>
+        )
       ) : (
         <div className="panel p-2">
-          {items.map((it) => (
-            <div key={it.key} className="flex items-center gap-3 px-3 py-2.5 rounded-lg" style={{ borderBottom: '1px solid var(--color-line-soft)' }}>
+          {items.map((it, idx) => (
+            <div
+              key={it.key}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg"
+              style={{ borderBottom: idx === items.length - 1 ? 'none' : '1px solid var(--color-line-soft)' }}
+            >
               <span
                 className={it.status === 'running' ? 'w-2.5 h-2.5 rounded-full live-dot shrink-0' : 'w-2.5 h-2.5 rounded-full shrink-0'}
                 style={{ background: DOT[it.status] }}

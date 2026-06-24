@@ -7,6 +7,7 @@ type Sort = 'used' | 'captured' | 'name';
 
 export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) => void; onCompare: () => void }) {
   const [snaps, setSnaps] = useState<SnapshotSummary[]>([]);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState<string | null>(null);
@@ -18,7 +19,9 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
     setSnaps(await api.snapshots());
   }
   useEffect(() => {
-    load().catch((e) => setErr(String(e)));
+    load()
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
   }, []);
 
   const [note, setNote] = useState<string | null>(null);
@@ -28,23 +31,24 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
   const [guilds, setGuilds] = useState<JoinedGuild[] | null>(null);
   const [guildsLive, setGuildsLive] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [importErr, setImportErr] = useState<string | null>(null);
 
   async function openImport() {
     setImportOpen(true);
     setGuilds(null);
-    setErr(null);
+    setImportErr(null);
     try {
       const r = await api.guilds();
       setGuilds(r.guilds);
       setGuildsLive(r.live);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setImportErr(e instanceof Error ? e.message : String(e));
     }
   }
 
   async function importGuild(g: JoinedGuild) {
     setImportingId(g.id);
-    setErr(null);
+    setImportErr(null);
     try {
       const r = await api.capture({ sourceGuildId: g.id });
       setNote(r.unchanged ? `${g.name} is already in your library (v${r.version}, no changes).` : `Imported ${r.name} into your library.`);
@@ -52,7 +56,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       await load();
       setImportOpen(false);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setImportErr(e instanceof Error ? e.message : String(e));
     } finally {
       setImportingId(null);
     }
@@ -164,17 +168,17 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
           onClick={() => !importingId && setImportOpen(false)}
         >
           <div className="panel p-5 md:p-6 rise w-full max-w-lg" style={{ maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <div className="eyebrow mb-2">import a server</div>
-            <h2 className="text-lg mb-1">Pick a server to copy into your library</h2>
+            <div className="eyebrow mb-2">snapshot a template</div>
+            <h2 className="text-lg mb-1">Pick a server to snapshot into your library</h2>
             <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
               {guildsLive
-                ? 'These are the servers your bot has joined. Importing copies the whole structure — channels, roles, permissions, emojis, automod — into a reusable template.'
-                : 'Demo mode — these are sample servers. Add a bot token and invite the bot to your real servers to import them for real.'}
+                ? 'Servers your bot has joined. Snapshotting copies the whole structure — channels, roles, permissions, emojis, automod — into a reusable template you can rebrand and build for clients.'
+                : 'Demo mode — these are sample servers. Add a bot token and invite the bot to your real servers to snapshot them for real.'}
             </p>
-            {!guilds && !err && <div className="text-sm py-4" style={{ color: 'var(--color-faint)' }}>Loading your servers…</div>}
+            {!guilds && !importErr && <div className="text-sm py-4" style={{ color: 'var(--color-faint)' }}>Loading your servers…</div>}
             {guilds && guilds.length === 0 && (
               <div className="panel-soft p-4 text-sm" style={{ color: 'var(--color-muted)' }}>
-                The bot isn’t in any servers yet. Invite it from the <strong>Invite</strong> tab, then it’ll show up here.
+                Your bot isn’t in any servers yet. Invite it from the <strong>Invite</strong> tab, then your servers show up here ready to snapshot.
               </div>
             )}
             <div className="space-y-2">
@@ -186,16 +190,21 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{g.name}</div>
                     <div className="text-[0.68rem] mono" style={{ color: g.canManage ? 'var(--color-faint)' : 'var(--color-gold)' }}>
-                      {g.canManage ? 'ready to import' : 'needs Manage Server permission'}
+                      {g.canManage ? 'ready to snapshot' : 'needs Manage Server permission'}
                     </div>
                   </div>
                   <button className="btn btn-primary shrink-0" disabled={!!importingId || !g.canManage} onClick={() => importGuild(g)}>
-                    {importingId === g.id ? 'Importing…' : 'Import →'}
+                    {importingId === g.id ? 'Snapshotting…' : 'Snapshot →'}
                   </button>
                 </div>
               ))}
             </div>
-            {err && <div className="text-sm mt-3" style={{ color: 'var(--color-danger)' }}>{err}</div>}
+            {importErr && (
+              <div className="panel-soft p-3 mt-3 text-sm flex items-center justify-between gap-3" style={{ color: 'var(--color-danger)' }}>
+                <span>Couldn’t reach your servers — {importErr}</span>
+                <button className="btn btn-ghost shrink-0" disabled={!!importingId} onClick={openImport}>Retry</button>
+              </div>
+            )}
             <div className="flex justify-end mt-4">
               <button className="btn btn-ghost" disabled={!!importingId} onClick={() => setImportOpen(false)}>Close</button>
             </div>
@@ -209,10 +218,10 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
           onClick={() => setPending(null)}
         >
           <div className="panel p-6 rise" style={{ width: '100%', maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
-            <div className="eyebrow mb-2">import bundle</div>
+            <div className="eyebrow mb-2">import .discobundle</div>
             <h2 className="text-lg mb-1">{pending.name}</h2>
             <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
-              A portable, checksum-verified snapshot{pending.hasConfig ? ' (with a saved rebrand config)' : ''}. Review before importing.
+              A portable, checksum-verified snapshot{pending.hasConfig ? ' with a saved rebrand config' : ''}. Here’s what’s inside — review, then add it to your library.
             </p>
             <div className="grid grid-cols-3 gap-2 mb-5">
               {Object.entries(pending.counts).map(([k, v]) => (
@@ -253,12 +262,13 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
           />
           <button className="btn" onClick={() => fileRef.current?.click()}>↑ Import file</button>
           <button className="btn btn-primary" onClick={openImport}>
-            ＋ Import a server
+            ＋ Snapshot a server
           </button>
         </div>
       </header>
 
       {/* search · sort · tag filters */}
+      {snaps.length > 0 && (
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <input className="input" style={{ maxWidth: 280 }} placeholder="Search name, tag, note…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select className="input" style={{ maxWidth: 170 }} value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
@@ -280,10 +290,38 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
           </div>
         )}
       </div>
+      )}
 
-      {err && <div className="panel-soft p-3 mb-4 text-sm" style={{ color: 'var(--color-danger)' }}>{err}</div>}
+      {err && (
+        <div className="panel-soft p-3 mb-4 text-sm flex items-center justify-between gap-3" style={{ color: 'var(--color-danger)' }}>
+          <span>Couldn’t load your library — {err}</span>
+          <button className="btn btn-ghost shrink-0" onClick={() => { setErr(null); setLoading(true); load().catch((e) => setErr(e instanceof Error ? e.message : String(e))).finally(() => setLoading(false)); }}>Retry</button>
+        </div>
+      )}
       {note && <div className="panel-soft p-3 mb-4 text-sm" style={{ color: 'var(--color-jade)' }}>{note}</div>}
 
+      {loading ? (
+        <div className="panel-soft p-8 text-sm text-center" style={{ color: 'var(--color-faint)' }}>
+          Loading your snapshot library…
+        </div>
+      ) : snaps.length === 0 && !err ? (
+        <div className="panel p-8 md:p-10 text-center rise">
+          <div className="eyebrow mb-3">empty library</div>
+          <h2 className="text-lg mb-2">No snapshots yet</h2>
+          <p className="text-sm mx-auto mb-6" style={{ color: 'var(--color-muted)', maxWidth: 380 }}>
+            Snapshot one of your Discord servers to capture its whole structure — channels, roles, emojis, automod — as a reusable template. Then rebrand and build it for any client.
+          </p>
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <button className="btn btn-primary" onClick={openImport}>＋ Snapshot a server</button>
+            <button className="btn" onClick={() => fileRef.current?.click()}>↑ Import a .discobundle</button>
+          </div>
+        </div>
+      ) : visible.length === 0 && !err ? (
+        <div className="panel-soft p-8 text-center" style={{ color: 'var(--color-muted)' }}>
+          <p className="text-sm mb-3">No snapshots match {search.trim() ? <>“{search.trim()}”</> : 'this filter'}.</p>
+          <button className="btn btn-ghost" onClick={() => { setSearch(''); setTag(null); }}>Clear search & filters</button>
+        </div>
+      ) : (
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))' }}>
         {visible.map((s) => (
           <article key={s.id} className="panel p-5 flex flex-col">
@@ -305,7 +343,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
             </div>
             <div className="mono text-[0.72rem] mt-1.5" style={{ color: 'var(--color-faint)' }}>
               guild {shortId(s.sourceGuildId)}
-              {s.lastUsedAt ? ` · used ${new Date(s.lastUsedAt).toLocaleDateString()}` : ' · never built'}
+              {s.lastUsedAt ? ` · last built ${new Date(s.lastUsedAt).toLocaleDateString()}` : ' · never built'}
             </div>
 
             {s.tags.length > 0 && (
@@ -342,6 +380,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
           </article>
         ))}
       </div>
+      )}
     </div>
   );
 }

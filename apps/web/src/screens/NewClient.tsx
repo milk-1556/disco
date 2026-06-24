@@ -21,6 +21,11 @@ export function NewClient({ onCreated }: { onCreated: (client: Client) => void }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
+  const upsellTotal = upsells.reduce((a, u) => a + (Number(u.price) || 0), 0);
+  const onceTotal = (Number(buildPrice) || 0) + upsellTotal;
+  const mrr = Number(monthlyRetainer) || 0;
+
   // ── repeatable-list helpers ──
   function setColor(i: number, v: string) {
     setBrandColors((xs) => xs.map((x, j) => (j === i ? v : x)));
@@ -35,7 +40,12 @@ export function NewClient({ onCreated }: { onCreated: (client: Client) => void }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!creatorName.trim()) {
-      setErr('A creator name is required.');
+      setErr('Give this creator a name before saving — it labels every build.');
+      return;
+    }
+    const badHex = brandColors.map((c) => c.trim()).filter(Boolean).find((c) => !HEX_RE.test(c));
+    if (badHex) {
+      setErr(`"${badHex}" isn't a valid hex color. Use #rrggbb, like #7c6cf0.`);
       return;
     }
     setBusy(true);
@@ -268,19 +278,34 @@ export function NewClient({ onCreated }: { onCreated: (client: Client) => void }
         </div>
         <div className="flex flex-col gap-2 mb-2">
           {upsells.map((u, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input className="input" placeholder="Upsell (e.g. custom emoji pack)" value={u.name} onChange={(e) => setUpsells((xs) => xs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} aria-label={`Upsell ${i + 1} name`} />
+            <div key={i} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <input className="input flex-1" style={{ minWidth: 140 }} placeholder="Upsell (e.g. custom emoji pack)" value={u.name} onChange={(e) => setUpsells((xs) => xs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} aria-label={`Upsell ${i + 1} name`} />
               <div className="flex items-center gap-1 shrink-0">
                 <span style={{ color: 'var(--color-faint)' }}>$</span>
                 <input className="input mono" type="number" min="0" step="50" placeholder="500" value={u.price} onChange={(e) => setUpsells((xs) => xs.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} aria-label={`Upsell ${i + 1} price`} style={{ width: 96 }} />
+                <button type="button" className="btn btn-ghost shrink-0" style={{ padding: '0.5rem 0.7rem' }} onClick={() => setUpsells((xs) => xs.filter((_, j) => j !== i))} aria-label={`Remove upsell ${i + 1}`}>×</button>
               </div>
-              <button type="button" className="btn btn-ghost shrink-0" style={{ padding: '0.5rem 0.7rem' }} onClick={() => setUpsells((xs) => xs.filter((_, j) => j !== i))} aria-label={`Remove upsell ${i + 1}`}>×</button>
             </div>
           ))}
         </div>
-        <button type="button" className="btn btn-ghost text-sm mb-6" onClick={() => setUpsells((xs) => [...xs, { name: '', price: '' }])}>
+        <button type="button" className="btn btn-ghost text-sm mb-4" onClick={() => setUpsells((xs) => [...xs, { name: '', price: '' }])}>
           + add upsell / package
         </button>
+
+        {(onceTotal > 0 || mrr > 0) && (
+          <div className="panel-soft p-3 mb-6 flex items-baseline gap-2 flex-wrap text-sm">
+            <span className="label">deal value</span>
+            <span className="mono ml-auto" style={{ color: 'var(--color-jade)' }}>{fmt$(onceTotal)}</span>
+            <span className="mono" style={{ color: 'var(--color-faint)' }}>upfront</span>
+            {mrr > 0 && (
+              <>
+                <span style={{ color: 'var(--color-line)' }}>·</span>
+                <span className="mono" style={{ color: 'var(--color-jade)' }}>{fmt$(mrr)}/mo</span>
+                <span className="mono" style={{ color: 'var(--color-faint)' }}>recurring</span>
+              </>
+            )}
+          </div>
+        )}
 
         {/* ── notes ── */}
         <div className="eyebrow mb-3">notes</div>

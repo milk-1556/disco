@@ -10,17 +10,21 @@ export function PublicHandover({ id }: { id: string }) {
   const [needsPw, setNeedsPw] = useState(false);
   const [pw, setPw] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function load(password?: string) {
     setErr(null);
+    setBusy(true);
     try {
       setData(await api.publicHandover(id, password));
       setNeedsPw(false);
     } catch (e) {
       if (e instanceof Error && e.message === 'PASSWORD_REQUIRED') {
         setNeedsPw(true);
-        if (password) setErr('Incorrect password.');
+        if (password) setErr('That password didn’t match. Double-check it with your builder.');
       } else setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
     }
   }
   useEffect(() => {
@@ -29,7 +33,7 @@ export function PublicHandover({ id }: { id: string }) {
 
   if (needsPw) {
     return (
-      <div className="min-h-full grid place-items-center p-6">
+      <div className="min-h-full grid place-items-center px-4 py-6 md:p-8">
         <div className="w-full max-w-sm panel p-6 rise">
           <div className="flex items-center gap-2 mb-4">
             <Logo size={26} />
@@ -37,35 +41,84 @@ export function PublicHandover({ id }: { id: string }) {
           </div>
           <h1 className="text-lg mb-1">This handover is password-protected</h1>
           <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
-            Enter the password your builder shared with you.
+            Enter the password your builder shared with you to view your new community.
           </p>
-          <input className="input mb-3" type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Password" />
-          {err && <div className="text-sm mb-3" style={{ color: 'var(--color-danger)' }}>{err}</div>}
-          <button className="btn btn-primary w-full justify-center" onClick={() => load(pw)}>
-            Unlock
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (pw && !busy) load(pw);
+            }}
+          >
+            <input
+              className="input mb-3"
+              type="password"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              placeholder="Password"
+              autoFocus
+              autoComplete="off"
+            />
+            {err && <div className="text-sm mb-3" style={{ color: 'var(--color-danger)' }}>{err}</div>}
+            <button className="btn btn-primary w-full justify-center" disabled={!pw || busy}>
+              {busy ? 'Unlocking…' : 'Unlock'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (err) {
+    return (
+      <div className="min-h-full grid place-items-center px-4 py-6 md:p-8">
+        <div className="w-full max-w-sm panel p-6 rise text-center">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Logo size={26} />
+            <span className="eyebrow">delivery</span>
+          </div>
+          <h1 className="text-lg mb-1">We couldn’t load this handover</h1>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+            The link may have expired or moved. Ask your builder for a fresh delivery link, then try again.
+          </p>
+          <div className="panel-soft p-3 mb-4 text-xs mono break-words" style={{ color: 'var(--color-danger)' }}>
+            {err}
+          </div>
+          <button className="btn btn-primary w-full justify-center" disabled={busy} onClick={() => load()}>
+            {busy ? 'Retrying…' : 'Try again'}
           </button>
         </div>
       </div>
     );
   }
 
-  if (err) return <div className="p-8" style={{ color: 'var(--color-danger)' }}>{err}</div>;
-  if (!data) return <div className="p-8" style={{ color: 'var(--color-muted)' }}>Loading…</div>;
+  if (!data) {
+    return (
+      <div className="min-h-full grid place-items-center px-4 py-6 md:p-8">
+        <div className="flex items-center gap-3 rise" style={{ color: 'var(--color-muted)' }}>
+          <span className="w-2 h-2 rounded-full live-dot" style={{ background: 'var(--color-jade)' }} />
+          <span className="text-sm">Loading your community…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full">
-      <div className="max-w-3xl mx-auto p-8 rise">
+      <div className="max-w-3xl mx-auto px-4 py-6 md:p-8 rise">
         <header className="flex items-center gap-4 mb-8">
           {data.logoUrl ? (
-            <img src={assetUrl(data.logoUrl)} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover' }} className="transform-ring" />
+            <img src={assetUrl(data.logoUrl)} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover' }} className="transform-ring shrink-0" />
           ) : (
-            <div className="transform-ring grid place-items-center" style={{ width: 56, height: 56, borderRadius: 14 }}>
+            <div className="transform-ring grid place-items-center shrink-0" style={{ width: 56, height: 56, borderRadius: 14 }}>
               <Logo size={28} />
             </div>
           )}
-          <div>
-            <div className="eyebrow mb-1">your new community is ready</div>
-            <h1 className="text-2xl transform-text">{data.serverName ?? 'Your server'}</h1>
+          <div className="min-w-0">
+            <div className="eyebrow mb-1 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--color-jade)' }} />
+              your new community is ready
+            </div>
+            <h1 className="text-2xl transform-text break-words">{data.serverName ?? 'Your server'}</h1>
           </div>
         </header>
 
@@ -89,7 +142,12 @@ export function PublicHandover({ id }: { id: string }) {
 
         {data.botSetup.length > 0 && (
           <section className="panel p-5 mb-6">
-            <div className="eyebrow mb-3">bots to add</div>
+            <div className="flex items-baseline gap-2 mb-3 flex-wrap">
+              <span className="eyebrow">bots to add</span>
+              <span className="text-[0.68rem]" style={{ color: 'var(--color-faint)' }}>
+                each one re-invites with its own settings — vendor configs can’t be copied for you
+              </span>
+            </div>
             <BotSetupList entries={data.botSetup} />
           </section>
         )}
@@ -109,8 +167,9 @@ export function PublicHandover({ id }: { id: string }) {
           </ol>
         </section>
 
-        <footer className="text-center mono text-[0.7rem] py-4" style={{ color: 'var(--color-faint)' }}>
-          delivered with Disco
+        <footer className="flex items-center justify-center gap-2 py-6">
+          <Logo size={14} />
+          <span className="mono text-[0.7rem]" style={{ color: 'var(--color-faint)' }}>delivered with Disco</span>
         </footer>
       </div>
     </div>
