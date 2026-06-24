@@ -248,6 +248,12 @@ h3 {
   border-right: 1px solid var(--color-line-soft);
   background: rgba(13, 12, 18, 0.6);
 }
+/* hover affordance on inactive nav items (the active one carries .transform-ring).
+   !important overrides the per-item inline background/color set in Shell.tsx. */
+.shell-nav button:not(.transform-ring):hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: var(--color-bone) !important;
+}
 .build-grid {
   display: grid;
   gap: 1.5rem;
