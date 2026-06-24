@@ -51,6 +51,27 @@ const TYPE_OF_KIND: Record<Snapshot['channels'][number]['kind'], number> = {
   media: 16,
 };
 
+/** Pull an HTTP status + Discord error code out of an unknown thrown value (discord.js DiscordAPIError
+ *  / HTTPError expose `.status` and `.code`; we degrade gracefully for anything else). */
+function classifyError(err: unknown): { status?: number; code?: number; message: string } {
+  const e = err as { status?: unknown; code?: unknown; message?: unknown; rawError?: { message?: unknown } };
+  const status = typeof e?.status === 'number' ? e.status : undefined;
+  const code = typeof e?.code === 'number' ? e.code : undefined;
+  const message = String(e?.rawError?.message ?? e?.message ?? err ?? 'unknown error');
+  return { status, code, message };
+}
+
+/** A human, operator-readable reason for a skipped write — names the common boost/permission gates so
+ *  the handover's manual-steps explain *why* something needs a hand rather than just "failed". */
+function discordReason(status: number | undefined, code: number | undefined, message: string): string {
+  if (code === 50013 || status === 403) return `the bot lacks permission or role-hierarchy to do this (${message})`;
+  if (code === 30008) return `the guild is out of emoji slots — raise the boost tier (${message})`;
+  if (code === 30018 || /sticker/i.test(message)) return `the guild has no sticker slots at its boost tier (${message})`;
+  if (/banner|splash|INVITE_SPLASH|BANNER/i.test(message)) return `this asset needs a higher boost tier on the target guild (${message})`;
+  if (status === 400) return `Discord rejected this item — likely a boost-locked feature on the target guild (${message})`;
+  return message;
+}
+
 /**
  * Rebuild a (rebranded) snapshot into a target guild in dependency-correct order (§6): guild
  * settings → roles → expressions → categories → channels → overwrites → automod → pointers →
@@ -77,6 +98,39 @@ export async function rebuildGuild(
   const created: string[] = [];
   const updated: string[] = [];
   const skipped: Array<{ ref: string; reason: string }> = [];
+
+  // Live-build fault tolerance: a real (often unboosted, freshly-invited) target guild legitimately
+  // rejects individual writes — boost-locked stickers/banners/role-icons, hierarchy-blocked perms, a
+  // transient 5xx. Those must NOT abort a half-built server; we record the item in `skipped` (→ it
+  // flows into the report + handover manual-steps) and press on. We still fail LOUD on a dead token or
+  // a systemic break (many consecutive failures) rather than emitting a hollow "success".
+  let consecutiveFailures = 0;
+  const tolerate = async <T>(label: string, fn: () => Promise<T>): Promise<T | undefined> => {
+    try {
+      const r = await fn();
+      consecutiveFailures = 0;
+      return r;
+    } catch (err) {
+      const { status, code, message } = classifyError(err);
+      // A dead/revoked token is fatal — fail loud rather than emit a hollow server.
+      if (status === 401) throw new Error(`Build aborted — the bot token is invalid or was revoked (${message}).`);
+      // Only a RECOGNIZED, item-level Discord rejection (a boost-locked feature, a hierarchy/permission
+      // block, a not-found ref) is safely skippable. Anything else — a 5xx the retry layer already
+      // exhausted, an unexpected/non-HTTP error, a real process crash — must propagate so crash-resume
+      // and loud-failure still work. We don't silently swallow the unknown.
+      const skippable = status === 400 || status === 403 || status === 404;
+      if (!skippable) throw err;
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= 8) {
+        throw new Error(
+          `Build aborted — ${consecutiveFailures} Discord writes failed in a row (last: ${message}). The bot likely isn't in the guild or lacks base permissions; nothing further was attempted.`,
+        );
+      }
+      skipped.push({ ref: label, reason: discordReason(status, code, message) });
+      log(`⚠ skipped ${label} — ${message}`);
+      return undefined;
+    }
+  };
 
   const idMap = () => ({ ...buildIdMap(entries), ...manifest.idMap });
   /** Emit a live snapshot of the manifest (with the up-to-date local `entries`) for durable resume. */
@@ -120,7 +174,8 @@ export async function rebuildGuild(
         entries = commitEntry(entries, item.localRef, `dry_${item.localRef}`, 'created');
         continue;
       }
-      const newId = await create(item);
+      const newId = await tolerate(`${kind}: ${item.name}`, () => create(item));
+      if (newId === undefined) continue; // a single item Discord rejected — skipped + recorded, press on
       created.push(`${kind}: ${item.name}`);
       entries = commitEntry(entries, item.localRef, newId, 'created');
       checkpoint(); // persist the new localRef→newId BEFORE the next create, so a crash resumes here
@@ -137,18 +192,22 @@ export async function rebuildGuild(
     switch (step) {
       case 'guild_settings': {
         if (!dry) {
-          await port.modifyGuild({
-            name: snap.guild.name,
-            verificationLevel: snap.guild.verificationLevel,
-            defaultMessageNotifications: snap.guild.defaultMessageNotifications,
-            explicitContentFilter: snap.guild.explicitContentFilter,
-            afkTimeout: snap.guild.afkTimeout,
-            systemChannelFlags: snap.guild.systemChannelFlags,
-            preferredLocale: snap.guild.preferredLocale,
-            iconKey: snap.guild.assets.icon,
-            bannerKey: snap.guild.assets.banner,
-            splashKey: snap.guild.assets.splash,
-          });
+          // Core settings first — these always apply. Boost-locked assets (icon/banner/splash) go in
+          // separate calls so a single rejected asset can't drop the whole guild config.
+          await tolerate('guild settings', () =>
+            port.modifyGuild({
+              name: snap.guild.name,
+              verificationLevel: snap.guild.verificationLevel,
+              defaultMessageNotifications: snap.guild.defaultMessageNotifications,
+              explicitContentFilter: snap.guild.explicitContentFilter,
+              afkTimeout: snap.guild.afkTimeout,
+              systemChannelFlags: snap.guild.systemChannelFlags,
+              preferredLocale: snap.guild.preferredLocale,
+              iconKey: snap.guild.assets.icon,
+            }),
+          );
+          if (snap.guild.assets.banner) await tolerate('server banner (needs boost tier 2)', () => port.modifyGuild({ bannerKey: snap.guild.assets.banner }));
+          if (snap.guild.assets.splash) await tolerate('invite splash (needs boost tier 1)', () => port.modifyGuild({ splashKey: snap.guild.assets.splash }));
         }
         break;
       }
@@ -157,7 +216,7 @@ export async function rebuildGuild(
         const everyoneId = dry ? 'dry_role_everyone' : await port.getEveryoneRoleId();
         manifest.idMap['role_everyone'] = everyoneId;
         const everyone = snap.roles.find((r) => r.isEveryone);
-        if (everyone && !dry) await port.editEveryone(everyone.permissions);
+        if (everyone && !dry) await tolerate('@everyone permissions', () => port.editEveryone(everyone.permissions));
         const buildable = snap.roles.filter((r) => !r.isEveryone && !r.managed);
         for (const r of snap.roles.filter((x) => x.managed)) skipped.push({ ref: `role: ${r.name}`, reason: 'managed role' });
         await runReconciled('role', buildable.map((r) => ({ localRef: r.localRef, kind: 'role', name: r.name })), async (d) => {
@@ -182,7 +241,7 @@ export async function rebuildGuild(
         // reconcile order: bottom→top by ascending source position (everyone stays at 0)
         if (!dry) {
           const ordered = [...buildable].sort((a, b) => a.position - b.position).map((r) => idMap()[r.localRef]).filter((x): x is string => !!x);
-          await port.reorderRoles(ordered);
+          await tolerate('role ordering', () => port.reorderRoles(ordered)); // fails if a role outranks the bot — non-fatal
         }
         break;
       }
@@ -252,7 +311,7 @@ export async function rebuildGuild(
               }
               raw.push({ id: targetId, type: 0, allow: o.allow, deny: o.deny });
             }
-            await port.setChannelOverwrites(channelId, raw);
+            await tolerate(`${channelRef} overwrites`, () => port.setChannelOverwrites(channelId, raw));
           };
           for (const c of snap.categories) await apply(c.localRef, c.overwrites);
           for (const c of snap.channels) await apply(c.localRef, c.overwrites);
@@ -289,23 +348,24 @@ export async function rebuildGuild(
         if (!dry) {
           const map = idMap();
           const ref = (r: string | null) => (r ? map[r] ?? null : null);
-          await port.setGuildPointers({
+          await tolerate('channel pointers (system/rules/afk)', () => port.setGuildPointers({
             systemChannelId: ref(snap.guild.systemChannelRef),
             rulesChannelId: ref(snap.guild.rulesChannelRef),
             publicUpdatesChannelId: ref(snap.guild.publicUpdatesChannelRef),
             afkChannelId: ref(snap.guild.afkChannelRef),
-          });
-          if (snap.guild.welcomeScreen) {
-            await port.setWelcomeScreen({
-              enabled: snap.guild.welcomeScreen.enabled,
-              description: snap.guild.welcomeScreen.description,
-              welcomeChannels: snap.guild.welcomeScreen.welcomeChannels
+          }));
+          const ws = snap.guild.welcomeScreen;
+          if (ws) {
+            await tolerate('welcome screen (needs Community enabled)', () => port.setWelcomeScreen({
+              enabled: ws.enabled,
+              description: ws.description,
+              welcomeChannels: ws.welcomeChannels
                 .map((wc) => {
                   const id = map[wc.channelRef];
                   return id ? { channelId: id, description: wc.description, emojiId: null, emojiName: wc.emojiUnicode } : null;
                 })
                 .filter((x): x is NonNullable<typeof x> => !!x),
-            });
+            }));
           }
         }
         break;
@@ -330,7 +390,9 @@ export async function rebuildGuild(
               const sep = priorHook.newId.indexOf(':');
               hook = { id: priorHook.newId.slice(0, sep), token: priorHook.newId.slice(sep + 1) };
             } else {
-              hook = await port.createWebhook(channelId, opts.serverIdentityName ?? 'Disco');
+              const made = await tolerate(`webhook for ${ch.name}`, () => port.createWebhook(channelId, opts.serverIdentityName ?? 'Disco'));
+              if (!made) continue; // can't seed this channel's content without a webhook — skip it, keep going
+              hook = made;
               entries = [
                 ...entries.filter((e) => e.localRef !== hookRef),
                 { localRef: hookRef, kind: 'webhook', newId: `${hook.id}:${hook.token}`, status: 'created', note: null },
@@ -364,7 +426,7 @@ export async function rebuildGuild(
                 componentSummary: m.componentSummary,
                 createdAt: m.createdAt,
               };
-              await port.executeWebhook(hook, msg);
+              await tolerate(`message in ${ch.name}`, () => port.executeWebhook(hook, msg));
               // Checkpoint the posted count BEFORE the next post, so a crash resumes at i+1.
               manifest.idMap[postedKey] = String(i + 1);
               checkpoint();
