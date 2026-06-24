@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 
 /**
  * Object storage for snapshot asset bytes (icons, banners, emojis, stickers). The snapshot holds
@@ -23,18 +23,31 @@ function keyFor(bytes: Uint8Array, ext: string): string {
 
 export class DiskAssetStore implements AssetStore {
   constructor(private root: string) {}
+  /**
+   * Resolve a key to an absolute path and PROVE it stays inside the storage root — a containment
+   * backstop against a path-traversal key (`../../etc/x`) reaching writeFile/readFile, independent of
+   * any caller-side validation. Throws rather than touch a file outside the root.
+   */
+  private safePath(key: string): string {
+    const rootAbs = resolve(this.root);
+    const path = resolve(rootAbs, key);
+    if (path !== rootAbs && !path.startsWith(rootAbs + sep)) {
+      throw new Error(`unsafe asset key escapes storage root: ${key}`);
+    }
+    return path;
+  }
   async put(bytes: Uint8Array, ext: string): Promise<string> {
     const key = keyFor(bytes, ext);
     await this.putAt(key, bytes);
     return key;
   }
   async putAt(key: string, bytes: Uint8Array): Promise<void> {
-    const path = join(this.root, key);
+    const path = this.safePath(key);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, bytes);
   }
   async get(key: string): Promise<Buffer> {
-    return readFile(join(this.root, key));
+    return readFile(this.safePath(key));
   }
 }
 

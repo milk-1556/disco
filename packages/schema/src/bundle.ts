@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AssetKey } from './primitives.js';
 import { RebrandConfig } from './rebrand.js';
 import { Snapshot } from './snapshot.js';
 
@@ -15,7 +16,11 @@ export const DiscoBundle = z.object({
   checksum: z.string(),
   snapshot: Snapshot,
   config: RebrandConfig.optional(),
-  /** Embedded asset bytes (object-storage key → base64), so the bundle needs nothing external. */
-  assets: z.record(z.string(), z.string()).default({}),
+  /**
+   * Embedded asset bytes (object-storage key → base64), so the bundle needs nothing external. Keys are
+   * constrained to the content-addressed AssetKey shape (`assets/<hex>.<ext>`) — this is the primary
+   * defense against a malicious bundle smuggling a path-traversal key into the asset-write loop.
+   */
+  assets: z.record(AssetKey, z.string()).default({}),
 });
 export type DiscoBundle = z.infer<typeof DiscoBundle>;
