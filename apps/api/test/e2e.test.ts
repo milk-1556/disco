@@ -257,4 +257,20 @@ describe('e2e: multi-operator IDOR — operator B cannot touch operator A\'s rec
     const bClientId = ((await app.inject({ method: 'POST', url: '/clients', headers: B, payload: JSON.stringify({ creatorName: 'B-Client' }) })).json() as { id: string }).id;
     expect(((await app.inject({ method: 'GET', url: '/clients', headers: B })).json() as { id: string }[]).find((c) => c.id === bClientId)).toBeTruthy();
   });
+
+  it('a starter-pack import is OWNED by the importer (B), re-import is a no-op, and admin sees it', async () => {
+    const imp = (await app.inject({ method: 'POST', url: '/starter-packs/slots/import', headers: B })).json() as { id: string; unchanged?: boolean };
+    expect(imp.id).toBeTruthy();
+    // owned by B → in B's library, marked template
+    const bSnaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: B })).json() as { id: string; isTemplate: boolean }[];
+    expect(bSnaps.find((s) => s.id === imp.id)?.isTemplate).toBe(true);
+    // re-import is a no-op (no duplicate v2)
+    const again = (await app.inject({ method: 'POST', url: '/starter-packs/slots/import', headers: B })).json() as { id: string; unchanged?: boolean };
+    expect(again.id).toBe(imp.id);
+    expect(again.unchanged).toBe(true);
+    expect((bSnaps.filter((s) => s.id === imp.id)).length).toBe(1);
+    // admin (bypass) sees B's imported pack; unknown pack key → 404
+    expect(((await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[]).find((s) => s.id === imp.id)).toBeTruthy();
+    expect((await app.inject({ method: 'POST', url: '/starter-packs/nope/import', headers: B })).statusCode).toBe(404);
+  });
 });

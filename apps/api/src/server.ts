@@ -358,6 +358,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (!pack) return reply.code(404).send({ error: 'unknown starter pack' });
     const r = scoped(req);
     const existing = (await r.listSnapshots()).filter((s) => s.sourceGuildId === pack.snapshot.source.guildId);
+    // Re-importing the same pack is a no-op — return the copy this operator already has rather than
+    // spawning duplicate v2/v3… snapshots (bounds growth from repeated clicks).
+    const already = existing.find((s) => s.name === pack.title);
+    if (already) return { id: already.id, name: already.name, version: already.version, unchanged: true };
     const rec = await r.addSnapshot({
       name: pack.title,
       version: existing.length + 1,
