@@ -11,6 +11,13 @@ export function Clients() {
     load();
   }, []);
 
+  async function remove(c: Client) {
+    if (!confirm(`Remove ${c.creatorName}? Their builds stay on the record but get unlinked.`)) return;
+    setClients((prev) => prev.filter((x) => x.id !== c.id)); // optimistic
+    await api.deleteClient(c.id).catch(load);
+  }
+  const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
+
   if (adding) {
     return (
       <NewClient
@@ -68,6 +75,20 @@ export function Clients() {
                   {c.notes}
                 </p>
               )}
+              <div className="flex items-center gap-2 mt-3 pt-3 text-[0.72rem]" style={{ borderTop: '1px solid var(--color-line-soft)' }}>
+                {c.buildPrice > 0 || c.monthlyRetainer > 0 ? (
+                  <span className="mono" style={{ color: 'var(--color-jade)' }}>
+                    {c.buildPrice > 0 && fmt$(c.buildPrice)}
+                    {c.monthlyRetainer > 0 && <span style={{ color: 'var(--color-muted)' }}> · {fmt$(c.monthlyRetainer)}/mo</span>}
+                    {c.upsells.length > 0 && <span style={{ color: 'var(--color-faint)' }}> · +{c.upsells.length} upsell{c.upsells.length === 1 ? '' : 's'}</span>}
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--color-faint)' }}>no pricing set</span>
+                )}
+                <button className="btn btn-ghost text-xs ml-auto" style={{ padding: '0.3rem 0.6rem', color: 'var(--color-faint)' }} onClick={() => remove(c)} aria-label={`Remove ${c.creatorName}`}>
+                  Remove
+                </button>
+              </div>
             </article>
           ))}
         </div>

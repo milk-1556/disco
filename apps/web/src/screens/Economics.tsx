@@ -34,14 +34,14 @@ export function Economics() {
     const oneTime = won.reduce((a, c) => a + dealOnce(c), 0);
     const mrr = won.reduce((a, c) => a + c.monthlyRetainer, 0);
     const upsellRev = won.reduce((a, c) => a + c.upsells.reduce((s, u) => s + u.price, 0), 0);
-    const avgDeal = won.length ? oneTime / won.length : 0;
+    const avgBuild = won.length ? won.reduce((a, c) => a + c.buildPrice, 0) / won.length : 0; // build fee only, excl. upsells
     const pipeOnce = pipeline.reduce((a, c) => a + dealOnce(c), 0);
     const pipeMrr = pipeline.reduce((a, c) => a + c.monthlyRetainer, 0);
 
     const builds = jobs.filter((j) => j.status === 'completed' && !j.dryRun && j.metrics);
     const totalMs = builds.reduce((a, b) => a + (b.metrics?.durationMs ?? 0), 0);
     const computeCost = infra + (totalMs / 3_600_000) * 0.5; // ~$0.50/compute-hour over native infra
-    return { won, pipeline, oneTime, mrr, arr: mrr * 12, upsellRev, avgDeal, pipeOnce, pipeMrr, computeCost, builds, totalMs, dealOnce };
+    return { won, pipeline, oneTime, mrr, arr: mrr * 12, upsellRev, avgBuild, pipeOnce, pipeMrr, computeCost, builds, totalMs, dealOnce };
   }, [jobs, clients, infra]);
 
   const rows = [...m.won.map((c) => ({ c, won: true })), ...m.pipeline.map((c) => ({ c, won: false }))];
@@ -60,7 +60,7 @@ export function Economics() {
         <Stat n={fmt$(m.oneTime)} label="one-time booked" tone="jade" />
         <Stat n={`${fmt$(m.mrr)}/mo`} label="recurring (MRR)" tone="jade" />
         <Stat n={fmt$(m.arr)} label="annual recurring" tone="bone" />
-        <Stat n={m.won.length ? fmt$(m.avgDeal) : '—'} label="avg build price" tone="bone" />
+        <Stat n={m.won.length ? fmt$(m.avgBuild) : '—'} label="avg build price" tone="bone" />
         <Stat n={`${fmt$(m.pipeOnce)} + ${fmt$(m.pipeMrr)}/mo`} label={`pipeline · ${m.pipeline.length} lead${m.pipeline.length === 1 ? '' : 's'}`} tone="gold" />
         <Stat n={`${fmt$(m.computeCost)}/mo`} label="compute cost" tone="muted" />
       </div>

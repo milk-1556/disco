@@ -225,6 +225,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       upsells: Array.isArray(b.upsells) ? (b.upsells as { name: string; price: number }[]) : [],
     });
   });
+  app.delete('/clients/:id', { preHandler: requireAuth }, async (req) => {
+    await repo.deleteClient((req.params as { id: string }).id);
+    return { ok: true };
+  });
 
   // ── rebrand preview ──
   app.post('/rebrand/preview', { preHandler: requireAuth }, async (req, reply) => {

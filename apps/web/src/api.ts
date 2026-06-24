@@ -63,6 +63,7 @@ export const api = {
   cancelJob: (id: string) => req<{ id: string; status: string }>(`/jobs/${id}/cancel`, { method: 'POST' }),
   clients: () => req<Client[]>('/clients'),
   addClient: (body: Partial<Client>) => req<Client>('/clients', { method: 'POST', body: JSON.stringify(body) }),
+  deleteClient: (id: string) => req<{ ok: boolean }>(`/clients/${id}`, { method: 'DELETE' }),
   inviteUrl: (applicationId: string, mode: 'administrator' | 'granular', guildId?: string) =>
     req<{ url: string; permissions: string; mode: string }>(
       `/invite-url?applicationId=${encodeURIComponent(applicationId)}&mode=${mode}${guildId ? `&guildId=${guildId}` : ''}`,

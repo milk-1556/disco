@@ -36,6 +36,7 @@ export interface Repo {
   listClients(): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
   addClient(c: Omit<Client, 'id' | 'createdAt'>): Promise<Client>;
+  deleteClient(id: string): Promise<void>;
   listJobs(): Promise<Job[]>;
   getJob(id: string): Promise<Job | undefined>;
   addJob(j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>): Promise<Job>;
@@ -125,6 +126,10 @@ export class InMemoryRepo implements Repo {
     const full: Client = { ...c, id: newId('client'), createdAt: now() };
     this.clients.set(full.id, full);
     return full;
+  }
+  async deleteClient(id: string) {
+    this.clients.delete(id);
+    for (const j of this.jobs.values()) if (j.clientId === id) j.clientId = null; // unlink, keep the build record
   }
 
   async listJobs() {

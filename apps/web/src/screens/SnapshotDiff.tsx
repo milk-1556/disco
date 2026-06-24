@@ -61,8 +61,8 @@ export function SnapshotDiff({
       ) : (
         <>
           <div className="panel p-5 mb-6">
-            <div className="grid gap-4" style={{ gridTemplateColumns: '1fr auto 1fr auto' }}>
-              <div>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1" style={{ minWidth: 150 }}>
                 <div className="label mb-1" style={{ color: 'var(--color-source)' }}>
                   base · before
                 </div>
@@ -83,7 +83,7 @@ export function SnapshotDiff({
                 →
               </div>
 
-              <div>
+              <div className="flex-1" style={{ minWidth: 150 }}>
                 <div className="label mb-1" style={{ color: 'var(--color-client)' }}>
                   compare · after
                 </div>

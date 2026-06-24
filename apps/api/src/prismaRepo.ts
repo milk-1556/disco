@@ -138,6 +138,12 @@ export class PrismaRepo implements Repo {
     });
     return this.toClient(r);
   }
+  async deleteClient(id: string) {
+    // unlink the client from any builds/handovers (keep the records), then remove the client
+    await this.db.job.updateMany({ where: { clientId: id }, data: { clientId: null } });
+    await this.db.handover.updateMany({ where: { clientId: id }, data: { clientId: null } });
+    await this.db.client.delete({ where: { id } }).catch(() => {});
+  }
 
   // ── jobs ──
   private toJob = (r: {
