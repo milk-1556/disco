@@ -54,6 +54,7 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
   const [testGuildId, setTestGuildId] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [feasibility, setFeasibility] = useState<Awaited<ReturnType<typeof api.feasibility>> | null>(null);
+  const [targetTier, setTargetTier] = useState(0); // boost tier of the guild we're building INTO (0 = fresh)
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,8 +71,13 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
       setEvents([]);
       setProgress(0);
     });
-    api.feasibility(snapshotId).then(setFeasibility).catch(() => setFeasibility(null));
   }, [snapshotId]);
+
+  // Re-run the pre-flight whenever the operator changes the target guild's boost tier — the boost-locked
+  // items (banner, role icons, sticker/emoji slots) that will or won't land depend entirely on it.
+  useEffect(() => {
+    api.feasibility(snapshotId, targetTier).then(setFeasibility).catch(() => setFeasibility(null));
+  }, [snapshotId, targetTier]);
 
   const config: RebrandConfig = useMemo(
     () => ({
@@ -248,32 +254,68 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
             </div>
           )}
 
-          {feasibility && (
-            <div className="panel-soft p-3" style={{ borderColor: feasibility.ok ? 'var(--color-line)' : 'color-mix(in srgb, var(--color-danger) 40%, transparent)' }}>
-              <div className="flex items-center gap-2 flex-wrap mb-2">
-                <span className="label">pre-flight</span>
-                <span className={feasibility.ok ? 'chip chip-jade' : 'chip'} style={feasibility.ok ? undefined : { color: 'var(--color-danger)' }}>
-                  {feasibility.ok ? 'fits Discord limits' : 'over a Discord-API limit'}
-                </span>
+          {feasibility && (() => {
+            const blocks = feasibility.findings.filter((f) => f.severity === 'block');
+            const warns = feasibility.findings.filter((f) => f.severity === 'warn');
+            const boostLocked = warns.filter((f) =>
+              ['Server banner', 'Invite splash', 'Role icons', 'Role colors', 'Stickers', 'Emojis'].includes(f.name),
+            );
+            return (
+              <div className="panel-soft p-3" style={{ borderColor: blocks.length ? 'color-mix(in srgb, var(--color-danger) 40%, transparent)' : 'var(--color-line)' }}>
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  <span className="label">pre-flight</span>
+                  <span className={blocks.length ? 'chip' : 'chip chip-jade'} style={blocks.length ? { color: 'var(--color-danger)' } : undefined}>
+                    {blocks.length ? 'over a Discord-API limit' : boostLocked.length ? `${boostLocked.length} item${boostLocked.length === 1 ? ' needs' : 's need'} a boost` : 'clear to build'}
+                  </span>
+                </div>
+
+                {/* target guild boost tier — what the destination can take RIGHT NOW */}
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  <span className="text-[0.72rem]" style={{ color: 'var(--color-faint)' }}>Target guild boost tier</span>
+                  <div className="flex gap-1" role="group" aria-label="Target guild boost tier">
+                    {[0, 1, 2, 3].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTargetTier(t)}
+                        aria-pressed={targetTier === t}
+                        className={cx('btn', 'text-xs')}
+                        style={targetTier === t
+                          ? { background: 'var(--color-source)', borderColor: 'var(--color-source)', color: 'var(--color-ink)' }
+                          : undefined}
+                      >
+                        {t === 0 ? 'tier 0 · fresh' : `tier ${t}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {feasibility.findings.length > 0 ? (
+                  <div className="space-y-1">
+                    {feasibility.findings.map((f, i) => (
+                      <div key={i} className="text-[0.74rem] flex gap-2">
+                        <span className="mono" style={{ color: f.severity === 'block' ? 'var(--color-danger)' : 'var(--color-gold)', minWidth: 56 }}>
+                          {f.severity === 'block' ? '✗ block' : '⚠ warn'}
+                        </span>
+                        <span style={{ color: 'var(--color-muted)' }}>{f.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[0.74rem]" style={{ color: 'var(--color-muted)' }}>
+                    Everything fits a tier-{targetTier} guild — roles, channels, slots and boost-locked features all land.
+                  </div>
+                )}
+
+                {/* guidance: build-anyway-and-skip vs wait-for-boost */}
+                {boostLocked.length > 0 && !blocks.length && (
+                  <div className="mt-3 pt-3 text-[0.72rem]" style={{ borderTop: '1px solid var(--color-line)', color: 'var(--color-faint)' }}>
+                    <strong style={{ color: 'var(--color-muted)' }}>Build anyway</strong> — these {boostLocked.length} item{boostLocked.length === 1 ? '' : 's'} skip cleanly and land in the handover punch-list, or <strong style={{ color: 'var(--color-muted)' }}>boost the guild first</strong> and they all apply on the next build.
+                  </div>
+                )}
               </div>
-              {feasibility.findings.length > 0 ? (
-                <div className="space-y-1">
-                  {feasibility.findings.map((f, i) => (
-                    <div key={i} className="text-[0.74rem] flex gap-2">
-                      <span className="mono" style={{ color: f.severity === 'block' ? 'var(--color-danger)' : 'var(--color-gold)', minWidth: 56 }}>
-                        {f.severity === 'block' ? '✗ block' : '⚠ warn'}
-                      </span>
-                      <span style={{ color: 'var(--color-muted)' }}>{f.detail}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-[0.74rem]" style={{ color: 'var(--color-muted)' }}>
-                  Roles, channels, and emojis all sit inside Discord's limits — clear to build.
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           <div className="panel p-5">
             <div className="flex items-center gap-3 flex-wrap">

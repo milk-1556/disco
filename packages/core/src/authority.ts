@@ -56,36 +56,64 @@ export interface BuildFeasibility {
   findings: LimitFinding[];
 }
 
-/**
- * Will this snapshot actually fit into a fresh Discord guild? Audits the structural hard limits
- * (roles, channels, emoji/sticker slots by boost tier, AutoMod rules per trigger type) and the
- * boost-locked perks — so a build never half-succeeds against a limit. Sandbox-checkable (§ pre-flight).
- */
-export function auditBuildLimits(snap: {
-  roles: unknown[];
-  channels: unknown[];
-  categories: unknown[];
-  emojis: unknown[];
-  stickers: unknown[];
-  automod: { triggerType: number }[];
-  guild: { premiumTier: number };
-}): BuildFeasibility {
-  const findings: LimitFinding[] = [];
-  const tier = snap.guild.premiumTier;
+// Boost tier a perk first becomes available at (a guild banner needs tier 2, an invite splash tier 1, …).
+const BANNER_TIER = 2;
+const SPLASH_TIER = 1;
+const ROLE_ICON_TIER = 2;
+const ROLE_COLOR_TIER = 2; // gradient / holographic "enhanced" role colors
 
+/**
+ * Will this snapshot actually fit into the TARGET Discord guild *at its current boost tier*? Audits the
+ * structural hard limits (roles, channels → blocks) and every boost-locked item the build would try to
+ * write — emoji/sticker slots, the guild banner & invite splash, and role icons & gradient colors — so
+ * the operator sees exactly what won't land BEFORE committing (and can boost the guild, or build anyway
+ * and let those items skip). `targetTier` is the destination guild's tier (0 = a fresh, unboosted guild,
+ * the safe default); the snapshot's own `premiumTier` is where the template was captured from.
+ */
+export function auditBuildLimits(
+  snap: {
+    roles: { colors?: { secondary: number | null } | null; icon?: string | null }[];
+    channels: unknown[];
+    categories: unknown[];
+    emojis: unknown[];
+    stickers: unknown[];
+    automod: { triggerType: number }[];
+    guild: { premiumTier: number; assets?: { banner?: string | null; splash?: string | null } };
+  },
+  targetTier = 0,
+): BuildFeasibility {
+  const findings: LimitFinding[] = [];
+  const sourceTier = snap.guild.premiumTier;
+  const at = `target = tier ${targetTier}`;
+
+  // ── structural hard limits (a real block — the build can't proceed) ──
   if (snap.roles.length > ROLE_LIMIT)
     findings.push({ name: 'Roles', detail: `${snap.roles.length} roles exceeds Discord's ${ROLE_LIMIT}-role limit.`, severity: 'block' });
   const channels = snap.channels.length + snap.categories.length;
   if (channels > CHANNEL_LIMIT)
     findings.push({ name: 'Channels', detail: `${channels} channels+categories exceeds the ${CHANNEL_LIMIT} limit.`, severity: 'block' });
 
-  const emojiSlots = EMOJI_SLOTS[tier] ?? 50;
+  // ── boost-locked slots, measured against the TARGET tier (these skip, they don't block) ──
+  const emojiSlots = EMOJI_SLOTS[targetTier] ?? 50;
   if (snap.emojis.length > emojiSlots)
-    findings.push({ name: 'Emojis', detail: `${snap.emojis.length} emojis exceeds the ${emojiSlots} slots at boost tier ${tier}.`, severity: 'warn' });
-  const stickerSlots = STICKER_SLOTS[tier] ?? 5;
+    findings.push({ name: 'Emojis', detail: `${snap.emojis.length} emojis exceeds the ${emojiSlots} slots at ${at} — ${snap.emojis.length - emojiSlots} would skip until the guild is boosted.`, severity: 'warn' });
+  const stickerSlots = STICKER_SLOTS[targetTier] ?? 5;
   if (snap.stickers.length > stickerSlots)
-    findings.push({ name: 'Stickers', detail: `${snap.stickers.length} stickers exceeds the ${stickerSlots} slots at boost tier ${tier}.`, severity: 'warn' });
+    findings.push({ name: 'Stickers', detail: `${snap.stickers.length} stickers exceeds the ${stickerSlots} slots at ${at} — ${snap.stickers.length - stickerSlots} would skip until the guild is boosted.`, severity: 'warn' });
 
+  // ── boost-locked features the rebuild would attempt: banner, splash, role icons, gradient colors ──
+  if (snap.guild.assets?.banner && targetTier < BANNER_TIER)
+    findings.push({ name: 'Server banner', detail: `The server banner needs boost tier ${BANNER_TIER}; ${at}. It will skip until the guild is boosted.`, severity: 'warn' });
+  if (snap.guild.assets?.splash && targetTier < SPLASH_TIER)
+    findings.push({ name: 'Invite splash', detail: `The invite splash needs boost tier ${SPLASH_TIER}; ${at}. It will skip until the guild is boosted.`, severity: 'warn' });
+  const roleIcons = snap.roles.filter((r) => r.icon).length;
+  if (roleIcons > 0 && targetTier < ROLE_ICON_TIER)
+    findings.push({ name: 'Role icons', detail: `${roleIcons} role icon${roleIcons === 1 ? '' : 's'} need boost tier ${ROLE_ICON_TIER}; ${at}. They will skip until the guild is boosted.`, severity: 'warn' });
+  const gradientRoles = snap.roles.filter((r) => r.colors?.secondary != null).length;
+  if (gradientRoles > 0 && targetTier < ROLE_COLOR_TIER)
+    findings.push({ name: 'Role colors', detail: `${gradientRoles} boost-locked role color${gradientRoles === 1 ? '' : 's'} (gradient/holographic) need boost tier ${ROLE_COLOR_TIER}; ${at}. They fall back to a solid color until boosted.`, severity: 'warn' });
+
+  // ── AutoMod rules per trigger type ──
   const byTrigger = new Map<number, number>();
   for (const r of snap.automod) byTrigger.set(r.triggerType, (byTrigger.get(r.triggerType) ?? 0) + 1);
   for (const [trigger, count] of byTrigger) {
@@ -94,8 +122,9 @@ export function auditBuildLimits(snap: {
       findings.push({ name: 'AutoMod', detail: `${count} ${TRIGGER_NAME[trigger] ?? 'rule'} rules exceeds Discord's ${limit} per type.`, severity: 'warn' });
   }
 
-  if (tier > 0)
-    findings.push({ name: 'Boost perks', detail: `Source was boost tier ${tier}; banner, vanity URL and extra slots only apply once the target reaches it.`, severity: 'warn' });
+  // ── a general nudge when the template came from a more-boosted guild than the target ──
+  if (sourceTier > targetTier)
+    findings.push({ name: 'Boost perks', detail: `Template was captured at boost tier ${sourceTier}; ${at}. Boost the target to tier ${sourceTier} to land every perk.`, severity: 'warn' });
 
   return { ok: !findings.some((f) => f.severity === 'block'), findings };
 }

@@ -193,7 +193,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   app.get('/snapshots/:id/feasibility', { preHandler: requireAuth }, async (req, reply) => {
     const rec = await repo.getSnapshot((req.params as { id: string }).id);
     if (!rec) return reply.code(404).send({ error: 'not found' });
-    return auditBuildLimits(rec.snapshot);
+    // Target boost tier the operator is building INTO (0 = a fresh, unboosted guild; the safe default).
+    const raw = Number((req.query as { targetTier?: string }).targetTier);
+    const targetTier = Number.isFinite(raw) ? Math.max(0, Math.min(3, Math.trunc(raw))) : 0;
+    return { ...auditBuildLimits(rec.snapshot, targetTier), targetTier };
   });
 
   app.get('/snapshots/:id/diff', { preHandler: requireAuth }, async (req, reply) => {

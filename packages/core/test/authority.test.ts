@@ -56,4 +56,43 @@ describe('build feasibility audit (§ pre-flight build limits)', () => {
     const a = auditBuildLimits(snap);
     expect(a.findings.some((f) => f.name === 'AutoMod')).toBe(true);
   });
+
+  // ── target boost-tier cross-check: what the destination guild can't take yet ──
+  const withBoostLockedAssets = () => {
+    const snap = makeSampleSnapshot();
+    snap.guild.assets = { ...snap.guild.assets, banner: 'assets/banner.png', splash: 'assets/splash.png' };
+    const last = snap.roles[snap.roles.length - 1]!;
+    last.icon = 'assets/roleicon.png';
+    last.colors = { ...last.colors, secondary: 0x123456, tertiary: null };
+    return snap;
+  };
+
+  it('flags every boost-locked item when building into a tier-0 (fresh) guild', () => {
+    const a = auditBuildLimits(withBoostLockedAssets(), 0);
+    const names = a.findings.map((f) => f.name);
+    expect(names).toContain('Server banner');
+    expect(names).toContain('Invite splash');
+    expect(names).toContain('Role icons');
+    expect(names).toContain('Role colors');
+    expect(a.ok).toBe(true); // boost-locked items are warnings, not hard blocks — operator may build anyway
+  });
+
+  it('clears the boost-locked items when the target is already tier 2', () => {
+    const a = auditBuildLimits(withBoostLockedAssets(), 2);
+    const names = a.findings.map((f) => f.name);
+    expect(names).not.toContain('Server banner'); // tier 2 unlocks banner + role icons + gradient colors
+    expect(names).not.toContain('Invite splash');
+    expect(names).not.toContain('Role icons');
+    expect(names).not.toContain('Role colors');
+    expect(names).not.toContain('Boost perks'); // source tier 2 === target tier 2
+  });
+
+  it('flags a banner against an unboosted guild with the tier it needs', () => {
+    const snap = makeSampleSnapshot();
+    snap.guild.assets = { ...snap.guild.assets, banner: 'assets/banner.png' };
+    const banner = auditBuildLimits(snap, 0).findings.find((f) => f.name === 'Server banner');
+    expect(banner).toBeDefined();
+    expect(banner!.severity).toBe('warn');
+    expect(banner!.detail).toMatch(/tier 2/); // names the upgrade it needs
+  });
 });

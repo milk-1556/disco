@@ -78,8 +78,10 @@ export const api = {
     ),
   diff: (id: string, against: string) =>
     req<SnapshotDiff>(`/snapshots/${id}/diff?against=${encodeURIComponent(against)}`),
-  feasibility: (id: string) =>
-    req<{ ok: boolean; findings: { name: string; detail: string; severity: 'block' | 'warn' }[] }>(`/snapshots/${id}/feasibility`),
+  feasibility: (id: string, targetTier = 0) =>
+    req<{ ok: boolean; targetTier: number; findings: { name: string; detail: string; severity: 'block' | 'warn' }[] }>(
+      `/snapshots/${id}/feasibility?targetTier=${targetTier}`,
+    ),
   exportBundle: (id: string) => req<Record<string, unknown>>(`/snapshots/${id}/export`),
   importBundle: (bundle: unknown) =>
     req<{ id: string; name: string; version: number }>('/bundles/import', { method: 'POST', body: JSON.stringify(bundle) }),
