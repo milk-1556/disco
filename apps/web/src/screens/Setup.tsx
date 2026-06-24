@@ -78,7 +78,7 @@ export function Setup({ go }: { go: (v: View) => void }) {
   const done = steps.filter((s) => s.done).length;
 
   return (
-    <div className="p-8 max-w-2xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-2xl rise">
       <header className="mb-6">
         <div className="eyebrow mb-2">get started</div>
         <h1 className="text-2xl">

@@ -58,7 +58,7 @@ export function NewClient({ onCreated }: { onCreated: (client: Client) => void }
   }
 
   return (
-    <div className="p-8 max-w-3xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-3xl rise">
       <header className="mb-7">
         <div className="eyebrow mb-2">new client</div>
         <h1 className="text-2xl">

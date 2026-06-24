@@ -143,7 +143,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
 
   return (
     <div
-      className="p-8 max-w-6xl rise"
+      className="px-4 py-6 md:p-8 max-w-6xl rise"
       style={dragging ? { outline: '2px dashed var(--color-source)', outlineOffset: -8, borderRadius: 16 } : undefined}
       onDragOver={(e) => {
         e.preventDefault();

@@ -38,7 +38,7 @@ export function SnapshotDiff({
   const label = (s: SnapshotSummary) => `${s.name} · v${s.version}`;
 
   return (
-    <div className="p-8 max-w-5xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-5xl rise">
       <button className="btn btn-ghost text-sm mb-4 -ml-2" onClick={onBack}>
         ← back
       </button>

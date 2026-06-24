@@ -48,7 +48,7 @@ export function Economics() {
   }, [builds]);
 
   return (
-    <div className="p-8 max-w-4xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-4xl rise">
       <header className="mb-6">
         <div className="eyebrow mb-2">unit economics</div>
         <h1 className="text-2xl">What a build <span className="transform-text">actually costs</span></h1>

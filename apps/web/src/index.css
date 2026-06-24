@@ -262,23 +262,38 @@ h3 {
     align-items: center;
     gap: 0.5rem;
     overflow-x: auto;
+    overflow-y: hidden;
     border-right: none;
     border-bottom: 1px solid var(--color-line-soft);
     position: sticky;
     top: 0;
     z-index: 10;
     backdrop-filter: blur(8px);
+    scrollbar-width: none; /* clean horizontal scroll, no chunky bar */
+    /* fade the right edge so it reads as "scroll for more" rather than "cut off" */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  .shell-aside::-webkit-scrollbar {
+    display: none;
+  }
+  .shell-aside > * {
+    flex-shrink: 0; /* never squish a nav item to an unreadable sliver */
   }
   .shell-aside .shell-nav {
     flex-direction: row;
     display: flex;
     gap: 0.4rem;
   }
+  .shell-aside .shell-nav > * {
+    flex-shrink: 0;
+  }
   .shell-aside .shell-foot {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    padding-right: 0.5rem; /* keep clear of the edge fade */
   }
   .shell-aside .shell-hint {
     display: none; /* hide the sub-labels in the compact top bar */
@@ -286,9 +301,19 @@ h3 {
   .build-grid {
     grid-template-columns: 1fr;
   }
+  /* surface the build actions + pre-flight above the (tall, pre-filled) rebrand form on narrow,
+     so "Build the server" isn't buried below a full screen of inputs */
+  .build-grid > .build-rail {
+    order: -1;
+  }
   .spine-wrap {
     flex-direction: column;
     gap: 1rem;
+  }
+  /* the column-centered spine doesn't stretch its track, so force it full width and let the step
+     dots spread horizontally (auto-fit grid) instead of collapsing to a tall vertical list */
+  .spine-track {
+    width: 100%;
   }
 }
 

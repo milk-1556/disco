@@ -23,7 +23,7 @@ export function Clients() {
   }
 
   return (
-    <div className="p-8 max-w-4xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-4xl rise">
       <header className="flex items-end justify-between mb-7">
         <div>
           <div className="eyebrow mb-2">clients</div>

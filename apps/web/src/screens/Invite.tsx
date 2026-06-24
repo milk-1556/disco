@@ -45,7 +45,7 @@ export function Invite({ applicationId }: { applicationId: string | null }) {
   }
 
   return (
-    <div className="p-8 max-w-3xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-3xl rise">
       <div className="eyebrow mb-2">bot oauth</div>
       <h1 className="text-2xl mb-1">Add Disco to a server</h1>
       <p className="text-sm mb-6 max-w-xl" style={{ color: 'var(--color-muted)' }}>

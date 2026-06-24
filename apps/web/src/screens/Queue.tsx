@@ -76,7 +76,7 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
   const counts = jobs.reduce<Record<string, number>>((acc, j) => ((acc[j.status] = (acc[j.status] ?? 0) + 1), acc), {});
 
   return (
-    <div className="p-8 max-w-4xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-4xl rise">
       <div className="flex items-end justify-between mb-6">
         <div>
           <div className="eyebrow mb-2">build queue</div>

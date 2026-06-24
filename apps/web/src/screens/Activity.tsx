@@ -69,7 +69,7 @@ export function Activity() {
   }, []);
 
   return (
-    <div className="p-8 max-w-3xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-3xl rise">
       <header className="flex items-end justify-between mb-6">
         <div>
           <div className="eyebrow mb-2">activity</div>

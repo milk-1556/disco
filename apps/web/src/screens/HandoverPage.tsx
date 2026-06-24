@@ -87,7 +87,7 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
 
   if (err && !bundle) {
     return (
-      <div className="p-8 max-w-3xl rise">
+      <div className="px-4 py-6 md:p-8 max-w-3xl rise">
         <button className="btn btn-ghost mb-4" onClick={onBack}>
           ← Back
         </button>
@@ -113,7 +113,7 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
   const totalSteps = handover.ownershipSteps.length;
 
   return (
-    <div className="p-8 max-w-4xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-4xl rise">
       {/* ── header ── */}
       <header className="flex items-start justify-between gap-4 mb-7">
         <div>

@@ -146,24 +146,24 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
   const doneSteps = new Set(events.filter((e) => e.type === 'progress').map((e) => e.step));
 
   return (
-    <div className="p-8 max-w-6xl rise">
+    <div className="px-4 py-6 md:p-8 max-w-6xl rise">
       <div className="eyebrow mb-2">build console</div>
 
       {/* ── the signature: transform spine ── */}
       <div className="panel p-6 mb-6">
         <div className="flex items-center gap-4 spine-wrap">
           <Identity tone="source" label="source template" name={sourceName} />
-          <div className="flex-1 relative">
+          <div className="flex-1 relative spine-track">
             <div className="h-[2px] w-full rounded-full transform-bar opacity-60" />
             <div
               className="absolute top-0 left-0 h-[2px] rounded-full transform-bar transition-all"
               style={{ width: `${Math.round(progress * 100)}%`, boxShadow: '0 0 12px var(--color-client)' }}
             />
-            <div className="flex justify-between mt-3">
+            <div className="mt-3 gap-y-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(46px, 1fr))' }}>
               {SPINE_STEPS.map(([id, label]) => {
                 const lit = doneSteps.has(id) || (activeStep === id);
                 return (
-                  <div key={id} className="flex flex-col items-center gap-1.5" style={{ width: 56 }}>
+                  <div key={id} className="flex flex-col items-center gap-1.5">
                     <span
                       className="w-2 h-2 rounded-full transition"
                       style={{ background: lit ? 'var(--color-client)' : 'var(--color-line)', boxShadow: lit ? '0 0 8px var(--color-client)' : undefined }}
@@ -201,7 +201,7 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
         </section>
 
         {/* ── preview + actions + log + report ── */}
-        <section className="space-y-5">
+        <section className="space-y-5 build-rail">
           {err && <div className="panel-soft p-3 text-sm" style={{ color: 'var(--color-danger)' }}>{err}</div>}
 
           {preview && (
