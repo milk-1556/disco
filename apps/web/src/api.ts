@@ -257,7 +257,9 @@ export interface JobSummary {
   dryRun: boolean;
   progress: number;
   snapshotId: string | null;
+  snapshotName: string | null;
   clientId: string | null;
+  clientName: string | null;
   error: string | null;
   metrics: JobMetrics | null;
   createdAt: string;

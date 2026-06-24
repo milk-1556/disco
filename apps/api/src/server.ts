@@ -293,21 +293,26 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { id: job.id, status: job.status };
   });
 
-  app.get('/jobs', { preHandler: requireAuth }, async () =>
-    (await repo.listJobs()).map((j) => ({
+  app.get('/jobs', { preHandler: requireAuth }, async () => {
+    const [jobs, snaps, clients] = await Promise.all([repo.listJobs(), repo.listSnapshots(), repo.listClients()]);
+    const snapName = new Map(snaps.map((s) => [s.id, s.name]));
+    const clientName = new Map(clients.map((c) => [c.id, c.creatorName]));
+    return jobs.map((j) => ({
       id: j.id,
       kind: j.kind,
       status: j.status,
       dryRun: j.dryRun,
       progress: j.progress,
       snapshotId: j.snapshotId,
+      snapshotName: j.snapshotId ? snapName.get(j.snapshotId) ?? null : null,
       clientId: j.clientId,
+      clientName: j.clientId ? clientName.get(j.clientId) ?? null : null,
       error: j.error,
       metrics: j.metrics,
       createdAt: j.createdAt,
       updatedAt: j.updatedAt,
-    })),
-  );
+    }));
+  });
 
   app.get('/jobs/:id', { preHandler: requireAuth }, async (req, reply) => {
     const j = await repo.getJob((req.params as { id: string }).id);

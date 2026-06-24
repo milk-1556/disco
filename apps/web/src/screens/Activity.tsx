@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type JobSummary, type SnapshotSummary } from '../api.js';
-import { shortId } from '../util.js';
+
+const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
 
 interface Item {
   key: string;
@@ -29,16 +30,24 @@ function ago(iso: string): string {
 function build(jobs: JobSummary[], snaps: SnapshotSummary[]): Item[] {
   const items: Item[] = [];
   for (const j of jobs) {
-    const id = shortId(j.id);
     const t = new Date(j.updatedAt || j.createdAt).getTime();
-    if (j.status === 'running') items.push({ key: j.id, time: t, status: 'running', text: `Build ${id} is running`, detail: `step ${Math.round(j.progress * 11)}/11 · ${Math.round(j.progress * 100)}%` });
-    else if (j.status === 'completed') items.push({ key: j.id, time: t, status: 'completed', text: `Build ${id} delivered`, detail: j.dryRun ? 'dry-run complete' : 'server built' });
-    else if (j.status === 'failed') items.push({ key: j.id, time: t, status: 'failed', text: `Build ${id} failed`, detail: j.error ?? '' });
-    else if (j.status === 'queued') items.push({ key: j.id, time: t, status: 'queued', text: `Build ${id} queued`, detail: 'waiting for a worker' });
+    const deal = `${j.snapshotName ?? 'a template'} → ${j.clientName ?? 'unbranded'}`;
+    const kind = j.dryRun ? 'Dry-run' : 'Build';
+    if (j.status === 'running') items.push({ key: j.id, time: t, status: 'running', text: `${kind}: ${deal}`, detail: `${Math.round(j.progress * 100)}% complete` });
+    else if (j.status === 'completed')
+      items.push({
+        key: j.id,
+        time: t,
+        status: 'completed',
+        text: `${j.dryRun ? 'Previewed' : 'Delivered'} ${deal}`,
+        detail: j.dryRun ? 'dry-run — nothing was changed' : j.metrics ? `${j.metrics.objectsCreated} objects built in ${fmtMs(j.metrics.durationMs)}` : 'server built',
+      });
+    else if (j.status === 'failed') items.push({ key: j.id, time: t, status: 'failed', text: `Build failed: ${deal}`, detail: j.error ?? '' });
+    else if (j.status === 'queued') items.push({ key: j.id, time: t, status: 'queued', text: `Queued: ${deal}`, detail: 'waiting for a worker' });
   }
   for (const s of snaps) {
-    const t = new Date(s.lastUsedAt ?? s.capturedAt).getTime();
-    items.push({ key: `snap-${s.id}`, time: t, status: 'snapshot', text: `Snapshot "${s.name}"`, detail: s.lastUsedAt ? `last built ${ago(s.lastUsedAt)}` : `captured · ${s.counts.channels ?? 0} channels` });
+    const t = new Date(s.capturedAt).getTime();
+    items.push({ key: `snap-${s.id}`, time: t, status: 'snapshot', text: `Imported "${s.name}"`, detail: `${s.counts.channels ?? 0} channels · ${s.counts.roles ?? 0} roles · ${s.counts.bots ?? 0} bots` });
   }
   return items.sort((a, b) => b.time - a.time).slice(0, 40);
 }

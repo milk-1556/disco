@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, streamJobLogs, type Job, type JobEvent, type JobSummary } from '../api.js';
 import { BuildSteps } from '../components/BuildSteps.js';
-import { cx, shortId } from '../util.js';
+import { cx } from '../util.js';
+
+const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
+const ago = (iso: string) => {
+  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+};
 
 const STATUS_CHIP: Record<string, string> = {
   completed: 'chip-jade',
@@ -104,7 +113,9 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
               <div className="p-4 flex items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="mono text-sm">{shortId(j.id)}</span>
+                    <span className="text-sm font-medium truncate" style={{ maxWidth: 220 }}>{j.snapshotName ?? 'build'}</span>
+                    <span aria-hidden style={{ color: 'var(--color-faint)' }}>→</span>
+                    <span className="text-sm" style={{ color: 'var(--color-client)' }}>{j.clientName ?? 'unbranded'}</span>
                     <span
                       className={cx('chip', STATUS_CHIP[j.status] ?? '')}
                       style={j.status === 'failed' || j.status === 'canceled' ? { color: 'var(--color-danger)' } : undefined}
@@ -115,7 +126,8 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
                     {tag && <span className="chip" style={{ color: 'var(--color-danger)', borderColor: 'color-mix(in srgb, var(--color-danger) 40%, transparent)' }}>{tag}</span>}
                   </div>
                   <div className="text-[0.72rem] mono mt-1.5 truncate" style={{ color: 'var(--color-faint)' }}>
-                    {j.clientId ?? 'no client'} · {new Date(j.createdAt).toLocaleString()}
+                    {ago(j.createdAt)}
+                    {j.metrics ? ` · built in ${fmtMs(j.metrics.durationMs)} · ${j.metrics.objectsCreated} objects` : ''}
                     {j.error ? ` · ${j.error}` : ''}
                   </div>
                 </div>
@@ -133,10 +145,13 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
                   <button className="btn btn-ghost text-xs" onClick={() => setExpanded(isOpen ? null : j.id)}>
                     {isOpen ? 'Hide log' : 'Log'}
                   </button>
-                  {j.status === 'completed' && (
+                  {j.status === 'completed' && !j.dryRun && (
                     <button className="btn text-xs" onClick={() => onOpen(j.id)}>
                       Delivery →
                     </button>
+                  )}
+                  {j.status === 'completed' && j.dryRun && (
+                    <span className="label" style={{ color: 'var(--color-faint)' }}>preview only</span>
                   )}
                   {(j.status === 'failed' || j.status === 'canceled') && (
                     <button className="btn text-xs" disabled={busy === j.id} onClick={() => act(j.id, () => api.retryJob(j.id))}>
