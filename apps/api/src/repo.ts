@@ -98,6 +98,8 @@ export interface Repo {
   listBuildEvents(jobId?: string, limit?: number): Promise<BuildEventEntry[]>;
   /** Record + read anonymous public-handover opens (#14 engagement signal; referrer-origin only). */
   recordHandoverView(handoverId: string, referrer: string, kind?: string): Promise<void>;
+  /** Record the client's one-time survey (#4) — public submit from the delivery page (system path). */
+  recordHandoverSurvey(handoverId: string, nps: number, comment: string): Promise<void>;
   listHandoverViews(handoverId: string): Promise<HandoverViewEntry[]>;
 }
 
@@ -255,11 +257,18 @@ export class InMemoryRepo implements Repo {
       ownershipSteps: h.ownershipSteps,
       upsellStatus: h.upsellStatus,
       ownerEmail: h.ownerEmail,
+      surveyNps: null,
+      surveyComment: '',
+      surveyAt: null,
       createdAt: now(),
       passwordHash: h.passwordHash ?? null,
     };
     this.handovers.set(full.id, full);
     return this.publicHandover(full);
+  }
+  async recordHandoverSurvey(id: string, nps: number, comment: string) {
+    const h = this.handovers.get(id);
+    if (h) this.handovers.set(id, { ...h, surveyNps: nps, surveyComment: comment, surveyAt: now() });
   }
   async updateHandover(id: string, patch: HandoverPatch) {
     const h = this.handovers.get(id);

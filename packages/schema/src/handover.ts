@@ -33,6 +33,10 @@ export const Handover = z.object({
   upsellStatus: UpsellStatus.default('none'),
   /** The operator who owns this record (multi-operator access scoping). Defaults to the sole operator. */
   ownerEmail: z.string().default(''),
+  /** Client survey (#4): a 0-10 NPS + an open comment, submitted once from the public handover page. */
+  surveyNps: z.number().int().min(0).max(10).nullable().default(null),
+  surveyComment: z.string().default(''),
+  surveyAt: z.string().nullable().default(null),
   createdAt: z.string(),
 });
 export type Handover = z.infer<typeof Handover>;

@@ -563,3 +563,58 @@ describe('e2e: template marketplace — share is STRUCTURE-ONLY (#1, security-cr
     expect((await app.inject({ method: 'POST', url: `/marketplace/${privId}/clone`, headers: B })).statusCode).toBe(404);
   });
 });
+
+describe('e2e: deeper analytics + survey + earnings (#3/#4/#6)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'other2@x.com' })}`, 'content-type': 'application/json' };
+  let jobId = '';
+  let hid = '';
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: A })).json() as { guilds: { id: string }[] };
+    const snap = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: A, payload: JSON.stringify({ sourceGuildId: guilds.guilds[0]!.id }) })).json() as { id: string }).id;
+    const cfg = { clientId: 'x', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    jobId = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snap, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) { const s = ((await app.inject({ method: 'GET', url: `/jobs/${jobId}`, headers: A })).json() as { status: string }).status; if (s === 'completed') break; await new Promise((r) => setTimeout(r, 25)); }
+    hid = ((await app.inject({ method: 'POST', url: '/handovers', headers: A, payload: JSON.stringify({ jobId }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: A, payload: JSON.stringify({ state: 'ready' }) });
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('#3 analytics report time-to-first-open, a 30-day decay curve, and warm/cold', async () => {
+    for (let i = 0; i < 3; i++) await app.inject({ method: 'GET', url: `/h/${hid}` }); // 3 opens in week 1 → warm
+    const a = (await app.inject({ method: 'GET', url: `/handovers/${hid}/analytics`, headers: A })).json() as { classification: string; timeToFirstOpenMs: number | null; decay: { opens: number }[]; firstWeekOpens: number };
+    expect(a.classification).toBe('warm');
+    expect(a.firstWeekOpens).toBeGreaterThanOrEqual(3);
+    expect(a.timeToFirstOpenMs).not.toBeNull();
+    expect(a.decay).toHaveLength(30);
+    expect(a.decay[0]!.opens).toBeGreaterThanOrEqual(3); // all opens today (day 0)
+  });
+
+  it('#4 client survey: public submit, validation, operator aggregate, scoped', async () => {
+    expect((await app.inject({ method: 'POST', url: `/h/${hid}/survey`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ nps: 11 }) })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: `/h/${hid}/survey`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ nps: 9, comment: 'Loved it' }) })).statusCode).toBe(200);
+    const pub = (await app.inject({ method: 'GET', url: `/h/${hid}` })).json() as { surveyDone: boolean };
+    expect(pub.surveyDone).toBe(true); // delivery page hides the form after submit
+    const agg = (await app.inject({ method: 'GET', url: '/surveys', headers: A })).json() as { count: number; npsScore: number | null; responses: { comment: string }[] };
+    expect(agg.count).toBe(1);
+    expect(agg.npsScore).toBe(100); // a single promoter
+    expect(agg.responses[0]!.comment).toBe('Loved it');
+    // a 2nd operator sees none of A's survey responses
+    expect(((await app.inject({ method: 'GET', url: '/surveys', headers: B })).json() as { count: number }).count).toBe(0);
+  });
+
+  it('#6 earnings: operator records invoiced/paid, rollup is scoped, billing PATCH is owner-scoped', async () => {
+    await app.inject({ method: 'PATCH', url: `/jobs/${jobId}/billing`, headers: A, payload: JSON.stringify({ invoicedCents: 4500000, paidCents: 3000000 }) });
+    const e = (await app.inject({ method: 'GET', url: '/earnings', headers: A })).json() as { invoicedCents: number; paidCents: number; outstandingCents: number; billedBuilds: number };
+    expect(e.invoicedCents).toBe(4500000);
+    expect(e.paidCents).toBe(3000000);
+    expect(e.outstandingCents).toBe(1500000);
+    expect(e.billedBuilds).toBe(1);
+    // a 2nd operator can't bill A's job, and sees zero earnings
+    expect((await app.inject({ method: 'PATCH', url: `/jobs/${jobId}/billing`, headers: B, payload: JSON.stringify({ paidCents: 999 }) })).statusCode).toBe(404);
+    expect(((await app.inject({ method: 'GET', url: '/earnings', headers: B })).json() as { paidCents: number }).paidCents).toBe(0);
+  });
+});

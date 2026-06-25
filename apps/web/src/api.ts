@@ -57,6 +57,14 @@ export const api = {
   buildEvents: (jobId?: string) => req<BuildEventEntry[]>(`/events${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ''}`),
   dashboard: () => req<DashboardStats>('/dashboard'),
   onboarding: () => req<OnboardingState>('/onboarding'),
+  surveys: () => req<SurveyAggregate>('/surveys'),
+  earnings: () => req<Earnings>('/earnings'),
+  setBilling: (jobId: string, billing: { invoicedCents?: number; paidCents?: number }) =>
+    req<{ id: string; invoicedCents: number; paidCents: number }>(`/jobs/${jobId}/billing`, { method: 'PATCH', body: JSON.stringify(billing) }),
+  // Public, one-time client survey submit from the delivery page (no auth — the handover id is the capability).
+  submitSurvey: (id: string, nps: number, comment: string) => {
+    void fetch(`${BASE}/h/${id}/survey`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nps, comment }) }).catch(() => {});
+  },
   marketplace: () => req<MarketplaceItem[]>('/marketplace'),
   cloneMarketplace: (templateId: string) => req<{ id: string; name: string; version: number }>(`/marketplace/${templateId}/clone`, { method: 'POST' }),
   readiness: (snapshotId: string, config: RebrandConfig, targetTier = 0) =>
@@ -345,6 +353,8 @@ export interface JobSummary {
   clientName: string | null;
   error: string | null;
   metrics: JobMetrics | null;
+  invoicedCents: number;
+  paidCents: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -443,7 +453,30 @@ export interface HandoverAnalytics {
   shareViewed: number;
   firstOpenedAt: string | null;
   lastSeenAt: string | null;
+  deliveredAt: string | null;
+  timeToFirstOpenMs: number | null;
+  firstWeekOpens: number;
+  classification: 'warm' | 'cool' | 'cold';
+  decay: { day: number; opens: number }[];
   timeline: { at: string; kind: string; referrer: string }[];
+}
+export interface SurveyAggregate {
+  count: number;
+  avgNps: number | null;
+  npsScore: number | null;
+  promoters: number;
+  detractors: number;
+  responses: { handoverId: string; nps: number | null; comment: string; at: string | null }[];
+}
+export interface Earnings {
+  invoicedCents: number;
+  paidCents: number;
+  outstandingCents: number;
+  ytdPaidCents: number;
+  mrrCents: number;
+  billedBuilds: number;
+  totalBuilds: number;
+  perTemplate: { name: string; paidCents: number; builds: number }[];
 }
 export interface PermissionDelta {
   added: string[];
@@ -499,6 +532,7 @@ export interface PublicHandover {
   botSetup: BotSetupEntry[];
   manualSteps: ManualStep[];
   ownershipSteps: OwnershipStep[];
+  surveyDone: boolean;
 }
 export interface HandoverBundle {
   handover: Handover;

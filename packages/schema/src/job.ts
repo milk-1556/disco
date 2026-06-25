@@ -136,6 +136,9 @@ export const Job = z.object({
   error: z.string().nullable().default(null),
   /** The operator who owns this record (multi-operator access scoping). Defaults to the sole operator. */
   ownerEmail: z.string().default(''),
+  /** Earnings tracker (#6): operator-entered amounts in cents. No payment processing — pure tracking. */
+  invoicedCents: z.number().int().min(0).default(0),
+  paidCents: z.number().int().min(0).default(0),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

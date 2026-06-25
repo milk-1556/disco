@@ -117,6 +117,8 @@ model Job {
   report        Json?
   error         String?
   ownerEmail    String    @default("") // multi-operator access scoping
+  invoicedCents Int       @default(0) // earnings tracker (#6) — operator-entered, no payment processing
+  paidCents     Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -147,6 +149,9 @@ model Handover {
   ownershipSteps  Json     @default("[]")
   upsellStatus    String   @default("none") // none | proposed | retained | redesign
   ownerEmail      String   @default("") // multi-operator access scoping
+  surveyNps       Int? // client survey (#4): 0-10 NPS, set once via the public handover page
+  surveyComment   String   @default("")
+  surveyAt        DateTime?
   createdAt       DateTime @default(now())
 
   @@index([ownerEmail])

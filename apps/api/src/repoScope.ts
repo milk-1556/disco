@@ -76,6 +76,7 @@ export function scopeRepo(base: Repo, actor: Actor): Repo {
     addBuildEvent: (e) => base.addBuildEvent(e), // system (emitted by the worker)
     listBuildEvents: async (jobId, limit) => (await base.listBuildEvents(jobId, limit)).filter(owns),
     recordHandoverView: (hid, ref, kind) => base.recordHandoverView(hid, ref, kind), // public open
+    recordHandoverSurvey: (hid, nps, comment) => base.recordHandoverSurvey(hid, nps, comment), // public survey submit
     listHandoverViews: async (handoverId) =>
       owns(await base.getHandover(handoverId)) ? base.listHandoverViews(handoverId) : [],
   };

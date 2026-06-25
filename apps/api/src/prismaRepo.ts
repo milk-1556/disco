@@ -173,7 +173,7 @@ export class PrismaRepo implements Repo {
   private toJob = (r: {
     id: string; kind: string; status: string; dryRun: boolean; canary?: boolean; progress: number; targetGuildId: string | null;
     rebrandConfig: Prisma.JsonValue; metrics: Prisma.JsonValue | null; manifest: Prisma.JsonValue | null; report: Prisma.JsonValue | null; error: string | null;
-    snapshotId: string | null; clientId: string | null; ownerEmail?: string; createdAt: Date; updatedAt: Date;
+    snapshotId: string | null; clientId: string | null; ownerEmail?: string; invoicedCents?: number; paidCents?: number; createdAt: Date; updatedAt: Date;
   }): Job => ({
     id: r.id,
     kind: r.kind as Job['kind'],
@@ -191,6 +191,8 @@ export class PrismaRepo implements Repo {
     report: safe(RebuildReport, r.report) ?? null,
     error: r.error,
     ownerEmail: r.ownerEmail ?? '',
+    invoicedCents: r.invoicedCents ?? 0,
+    paidCents: r.paidCents ?? 0,
     createdAt: iso(r.createdAt),
     updatedAt: iso(r.updatedAt),
   });
@@ -219,6 +221,8 @@ export class PrismaRepo implements Repo {
         snapshotId: j.snapshotId,
         clientId: j.clientId,
         ownerEmail: j.ownerEmail,
+        invoicedCents: j.invoicedCents ?? 0,
+        paidCents: j.paidCents ?? 0,
       },
     });
     return this.toJob(r);
@@ -234,6 +238,8 @@ export class PrismaRepo implements Repo {
     if (patch.report !== undefined) data.report = nullableJson(patch.report);
     if (patch.metrics !== undefined) data.metrics = nullableJson(patch.metrics);
     if (patch.rebrandConfig !== undefined) data.rebrandConfig = asJson(patch.rebrandConfig);
+    if (patch.invoicedCents !== undefined) data.invoicedCents = patch.invoicedCents;
+    if (patch.paidCents !== undefined) data.paidCents = patch.paidCents;
     try {
       return this.toJob(await this.db.job.update({ where: { id }, data }));
     } catch (err) {
@@ -245,7 +251,8 @@ export class PrismaRepo implements Repo {
   // ── handovers ──
   private toHandover = (r: {
     id: string; jobId: string; clientId: string | null; passwordHash: string | null; state: string;
-    logoKey: string | null; welcomeMessage: string; ownershipSteps: Prisma.JsonValue; upsellStatus: string; ownerEmail?: string; createdAt: Date;
+    logoKey: string | null; welcomeMessage: string; ownershipSteps: Prisma.JsonValue; upsellStatus: string; ownerEmail?: string;
+    surveyNps?: number | null; surveyComment?: string; surveyAt?: Date | null; createdAt: Date;
   }): Handover => ({
     id: r.id,
     jobId: r.jobId,
@@ -257,6 +264,9 @@ export class PrismaRepo implements Repo {
     ownershipSteps: (r.ownershipSteps as OwnershipStep[]) ?? [],
     upsellStatus: r.upsellStatus as Handover['upsellStatus'],
     ownerEmail: r.ownerEmail ?? '',
+    surveyNps: r.surveyNps ?? null,
+    surveyComment: r.surveyComment ?? '',
+    surveyAt: r.surveyAt ? iso(r.surveyAt) : null,
     createdAt: iso(r.createdAt),
   });
 
@@ -320,6 +330,9 @@ export class PrismaRepo implements Repo {
   }
   async recordHandoverView(handoverId: string, referrer: string, kind = 'opened') {
     await this.db.handoverView.create({ data: { handoverId, referrer, kind } });
+  }
+  async recordHandoverSurvey(handoverId: string, nps: number, comment: string) {
+    await this.db.handover.update({ where: { id: handoverId }, data: { surveyNps: nps, surveyComment: comment, surveyAt: new Date() } }).catch(() => {});
   }
   async listHandoverViews(handoverId: string) {
     const rows = await this.db.handoverView.findMany({ where: { handoverId }, orderBy: { at: 'desc' } });

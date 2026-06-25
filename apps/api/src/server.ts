@@ -522,10 +522,25 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // Handover engagement analytics (#4): per-kind aggregate counts + a recent timeline, for the operator.
   // Privacy: built only from referrer-origin + timestamps + the event kind — never an IP or identity.
   app.get('/handovers/:id/analytics', { preHandler: requireAuth }, async (req) => {
-    const views = await scoped(req).listHandoverViews((req.params as { id: string }).id);
+    const id = (req.params as { id: string }).id;
+    const r = scoped(req);
+    const [views, handover] = await Promise.all([r.listHandoverViews(id), r.getHandover(id)]);
     const byKind: Record<string, number> = {};
     for (const v of views) byKind[v.kind] = (byKind[v.kind] ?? 0) + 1;
-    const opens = views.filter((v) => v.kind === 'opened').map((v) => v.at).sort();
+    const opens = views.filter((v) => v.kind === 'opened').map((v) => v.at).sort(); // ascending
+    // Delivery baseline for the engagement curve — when the handover was created/delivered.
+    const deliveredAt = handover?.createdAt ?? null;
+    const baseMs = deliveredAt ? new Date(deliveredAt).getTime() : null;
+    const firstOpenMs = opens[0] ? new Date(opens[0]).getTime() : null;
+    // #3 deeper analytics: time-to-first-open, a 30-day daily decay curve, and a warm/cold verdict.
+    const timeToFirstOpenMs = baseMs !== null && firstOpenMs !== null ? Math.max(0, firstOpenMs - baseMs) : null;
+    const DAY = 86_400_000;
+    const decay = Array.from({ length: 30 }, (_, d) => ({
+      day: d,
+      opens: baseMs === null ? 0 : opens.filter((o) => { const dt = new Date(o).getTime() - baseMs; return dt >= d * DAY && dt < (d + 1) * DAY; }).length,
+    }));
+    const firstWeekOpens = baseMs === null ? opens.length : opens.filter((o) => new Date(o).getTime() - baseMs < 7 * DAY).length;
+    const classification = firstWeekOpens >= 3 ? 'warm' : firstWeekOpens >= 1 ? 'cool' : 'cold';
     return {
       total: views.length,
       opened: byKind.opened ?? 0,
@@ -534,6 +549,11 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       shareViewed: byKind.share_viewed ?? 0,
       firstOpenedAt: opens[0] ?? null,
       lastSeenAt: views[0]?.at ?? null, // listHandoverViews returns newest-first
+      deliveredAt,
+      timeToFirstOpenMs,
+      firstWeekOpens,
+      classification, // warm (3+ opens in week 1) | cool (1-2) | cold (0)
+      decay, // opens per day for 30 days from delivery
       timeline: views.slice(0, 30).map((v) => ({ at: v.at, kind: v.kind, referrer: v.referrer })),
     };
   });
@@ -548,6 +568,72 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (!h || h.state === 'draft') return reply.code(404).send({ error: 'not found' });
     void repo.recordHandoverView(id, 'beacon', kind);
     return { ok: true };
+  });
+
+  // Client survey (#4): a public, one-time NPS (0-10) + open comment from the delivery page. Gated by
+  // the handover id (the capability) + not-draft, exactly like /h/:id. Private to the operator afterward.
+  app.post('/h/:id/survey', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const b = (req.body ?? {}) as { nps?: unknown; comment?: unknown };
+    const npsNum = Number(b.nps);
+    if (!Number.isInteger(npsNum) || npsNum < 0 || npsNum > 10) return reply.code(400).send({ error: 'nps must be an integer 0-10' });
+    const comment = String(b.comment ?? '').slice(0, 2000);
+    const h = await repo.getHandover(id);
+    if (!h || h.state === 'draft') return reply.code(404).send({ error: 'not found' });
+    await repo.recordHandoverSurvey(id, npsNum, comment);
+    return { ok: true };
+  });
+
+  // Operator survey aggregate (#4): NPS score + the responses across this operator's own handovers.
+  app.get('/surveys', { preHandler: requireAuth }, async (req) => {
+    const handovers = await scoped(req).listHandovers();
+    const responded = handovers.filter((h) => h.surveyNps !== null);
+    const promoters = responded.filter((h) => (h.surveyNps ?? 0) >= 9).length;
+    const detractors = responded.filter((h) => (h.surveyNps ?? 0) <= 6).length;
+    return {
+      count: responded.length,
+      avgNps: responded.length ? Math.round((responded.reduce((a, h) => a + (h.surveyNps ?? 0), 0) / responded.length) * 10) / 10 : null,
+      npsScore: responded.length ? Math.round(((promoters - detractors) / responded.length) * 100) : null, // -100..100
+      promoters,
+      detractors,
+      responses: responded
+        .map((h) => ({ handoverId: h.id, nps: h.surveyNps, comment: h.surveyComment, at: h.surveyAt }))
+        .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+        .slice(0, 50),
+    };
+  });
+
+  // Earnings tracker (#6): pure operator-entered receipts — invoiced/paid/outstanding + MRR-equivalent +
+  // YTD + per-template revenue. NO payment processing; just tracking the money the operator records.
+  app.get('/earnings', { preHandler: requireAuth }, async (req) => {
+    const r = scoped(req);
+    const [jobs, clients, names] = await Promise.all([r.listJobs(), r.listClients(), r.snapshotNames()]);
+    const real = jobs.filter((j) => !j.dryRun && !j.canary);
+    const invoicedCents = real.reduce((a, j) => a + (j.invoicedCents ?? 0), 0);
+    const paidCents = real.reduce((a, j) => a + (j.paidCents ?? 0), 0);
+    const year = new Date().getFullYear();
+    const ytdPaidCents = real.filter((j) => new Date(j.createdAt).getFullYear() === year).reduce((a, j) => a + (j.paidCents ?? 0), 0);
+    const mrrCents = clients.reduce((a, c) => a + Math.round((c.monthlyRetainer || 0) * 100), 0); // retainer is $/mo
+    // per-template revenue (paid, grouped by the source template)
+    const nameOf = new Map(names.map((n) => [n.id, n.name]));
+    const perTemplateMap = new Map<string, { name: string; paidCents: number; builds: number }>();
+    for (const j of real) {
+      const key = j.snapshotId ?? 'unknown';
+      const entry = perTemplateMap.get(key) ?? { name: j.snapshotId ? nameOf.get(j.snapshotId) ?? 'deleted template' : 'no template', paidCents: 0, builds: 0 };
+      entry.paidCents += j.paidCents ?? 0;
+      entry.builds += 1;
+      perTemplateMap.set(key, entry);
+    }
+    return {
+      invoicedCents,
+      paidCents,
+      outstandingCents: Math.max(0, invoicedCents - paidCents),
+      ytdPaidCents,
+      mrrCents,
+      billedBuilds: real.filter((j) => (j.invoicedCents ?? 0) > 0).length,
+      totalBuilds: real.length,
+      perTemplate: [...perTemplateMap.values()].sort((a, b) => b.paidCents - a.paidCents).slice(0, 12),
+    };
   });
 
   // First-real-build onboarding wizard (#3): the 6-step activation path, with each step's done-state
@@ -695,6 +781,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       report: null,
       error: null,
       ownerEmail: operatorOf(req),
+      invoicedCents: 0,
+      paidCents: 0,
     });
 
     // Operator activity log (#4): record what was shipped today (real builds + canary, not dry-runs).
@@ -752,6 +840,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       clientName: j.clientId ? clientName.get(j.clientId) ?? null : null,
       error: j.error,
       metrics: j.metrics,
+      invoicedCents: j.invoicedCents,
+      paidCents: j.paidCents,
       createdAt: j.createdAt,
       updatedAt: j.updatedAt,
     }));
@@ -777,6 +867,18 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       };
     }
     return j;
+  });
+
+  // Earnings entry (#6): the operator records what they invoiced/were paid for a build (cents). Owner-
+  // scoped (updateJob no-ops → 404 for a non-owned job). No payment processing — just tracking.
+  app.patch('/jobs/:id/billing', { preHandler: requireAuth }, async (req, reply) => {
+    const b = (req.body ?? {}) as { invoicedCents?: unknown; paidCents?: unknown };
+    const patch: { invoicedCents?: number; paidCents?: number } = {};
+    if (b.invoicedCents !== undefined) patch.invoicedCents = Math.max(0, Math.trunc(Number(b.invoicedCents)) || 0);
+    if (b.paidCents !== undefined) patch.paidCents = Math.max(0, Math.trunc(Number(b.paidCents)) || 0);
+    const j = await scoped(req).updateJob((req.params as { id: string }).id, patch);
+    if (!j) return reply.code(404).send({ error: 'not found' });
+    return { id: j.id, invoicedCents: j.invoicedCents, paidCents: j.paidCents };
   });
 
   // SSE live logs — works identically over the in-memory or Redis channel.
@@ -1082,6 +1184,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       botSetup: job?.report?.botSetup ?? [],
       manualSteps: job?.report?.manualSteps ?? [],
       ownershipSteps: h.ownershipSteps,
+      surveyDone: h.surveyNps !== null, // #4: the delivery page hides the survey once the client submits
     };
   });
 
