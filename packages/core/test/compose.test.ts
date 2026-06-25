@@ -41,6 +41,12 @@ describe('snapshot composability — merge two snapshots (#5)', () => {
       for (const rr of am.exemptRoleRefs) expect(refs.has(rr)).toBe(true);
       for (const cr of am.exemptChannelRefs) expect(refs.has(cr)).toBe(true);
     }
+    // bot config-trace `ref` (lowercase, a LocalRef despite the name) must also be remapped (seam r7 HIGH)
+    for (const bot of snapshot.bots) {
+      for (const t of bot.configTraces) {
+        if (t.ref && t.kind !== 'webhook') expect(refs.has(t.ref)).toBe(true); // non-webhook refs point into the snapshot
+      }
+    }
   });
 
   it("resolution 'b' uses B's content under A's localRef so existing references stay valid", () => {

@@ -37,6 +37,8 @@ export const Handover = z.object({
   surveyNps: z.number().int().min(0).max(10).nullable().default(null),
   surveyComment: z.string().default(''),
   surveyAt: z.string().nullable().default(null),
+  /** When the handover was first delivered (draft→ready/handed_over) — the engagement baseline (#3). */
+  readyAt: z.string().nullable().default(null),
   createdAt: z.string(),
 });
 export type Handover = z.infer<typeof Handover>;

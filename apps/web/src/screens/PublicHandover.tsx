@@ -196,6 +196,8 @@ function ClientSurvey({ id, done }: { id: string; done: boolean }) {
   const [sent, setSent] = useState(done);
   const [nps, setNps] = useState<number | null>(null);
   const [comment, setComment] = useState('');
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   if (sent) {
     return (
@@ -216,10 +218,14 @@ function ClientSurvey({ id, done }: { id: string; done: boolean }) {
     );
   }
 
-  function send() {
-    if (nps === null) return;
-    api.submitSurvey(id, nps, comment.trim());
-    setSent(true);
+  async function send() {
+    if (nps === null || sending) return;
+    setSending(true);
+    setFailed(false);
+    const ok = await api.submitSurvey(id, nps, comment.trim());
+    setSending(false);
+    if (ok) setSent(true); // only show the thank-you when it actually sent
+    else setFailed(true);
   }
 
   return (
@@ -273,11 +279,16 @@ function ClientSurvey({ id, done }: { id: string; done: boolean }) {
       <button
         type="button"
         className="btn btn-primary w-full justify-center"
-        disabled={nps === null}
+        disabled={nps === null || sending}
         onClick={send}
       >
-        Send feedback
+        {sending ? 'Sending…' : 'Send feedback'}
       </button>
+      {failed && (
+        <p className="text-[0.72rem] mt-2 text-center" style={{ color: 'var(--color-danger)' }}>
+          Couldn’t send that — check your connection and try again.
+        </p>
+      )}
     </section>
   );
 }

@@ -152,6 +152,7 @@ model Handover {
   surveyNps       Int? // client survey (#4): 0-10 NPS, set once via the public handover page
   surveyComment   String   @default("")
   surveyAt        DateTime?
+  readyAt         DateTime? // when first delivered (draft→ready/handed_over) — the engagement baseline (#3)
   createdAt       DateTime @default(now())
 
   @@index([ownerEmail])

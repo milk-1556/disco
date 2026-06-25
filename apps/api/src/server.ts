@@ -577,8 +577,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const byKind: Record<string, number> = {};
     for (const v of views) byKind[v.kind] = (byKind[v.kind] ?? 0) + 1;
     const opens = views.filter((v) => v.kind === 'opened').map((v) => v.at).sort(); // ascending
-    // Delivery baseline for the engagement curve — when the handover was created/delivered.
-    const deliveredAt = handover?.createdAt ?? null;
+    // Delivery baseline for the engagement curve — when it was actually DELIVERED (first draft→ready),
+    // falling back to createdAt for handovers delivered before readyAt was tracked.
+    const deliveredAt = handover?.readyAt ?? handover?.createdAt ?? null;
     const baseMs = deliveredAt ? new Date(deliveredAt).getTime() : null;
     const firstOpenMs = opens[0] ? new Date(opens[0]).getTime() : null;
     // #3 deeper analytics: time-to-first-open, a 30-day daily decay curve, and a warm/cold verdict.
@@ -1169,11 +1170,14 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     }
     const r = scoped(req);
     const prior = await r.getHandover(id); // for the transition guard below
+    // Stamp the delivery time on the FIRST draft→ready/handed_over transition — the engagement baseline (#3).
+    const isFirstDeliver = (b.state === 'ready' || b.state === 'handed_over') && prior?.state === 'draft';
+    if (isFirstDeliver) patch.readyAt = new Date().toISOString();
     const h = await r.updateHandover(id, patch);
     if (!h) return reply.code(404).send({ error: 'not found' });
     // Activity log (#4): log "delivered" once — on the FIRST transition OUT of draft. A later ready→
     // handed_over (or an idempotent re-PATCH, or a logo/welcome edit) doesn't re-count the same delivery.
-    if ((b.state === 'ready' || b.state === 'handed_over') && prior?.state === 'draft') {
+    if (isFirstDeliver) {
       await repo.addAudit({ action: 'handover.deliver', target: `handover ${id.slice(-6)}`, detail: b.state === 'handed_over' ? 'handed over' : 'marked ready to share', operator: operatorOf(req) });
     }
     return h;

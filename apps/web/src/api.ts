@@ -61,9 +61,15 @@ export const api = {
   earnings: () => req<Earnings>('/earnings'),
   setBilling: (jobId: string, billing: { invoicedCents?: number; paidCents?: number }) =>
     req<{ id: string; invoicedCents: number; paidCents: number }>(`/jobs/${jobId}/billing`, { method: 'PATCH', body: JSON.stringify(billing) }),
-  // Public, one-time client survey submit from the delivery page (no auth — the handover id is the capability).
-  submitSurvey: (id: string, nps: number, comment: string) => {
-    void fetch(`${BASE}/h/${id}/survey`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nps, comment }) }).catch(() => {});
+  // Public, one-time client survey submit from the delivery page (no auth — the handover id is the
+  // capability). Returns whether it actually succeeded so the page only shows the thank-you on a real send.
+  submitSurvey: async (id: string, nps: number, comment: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${BASE}/h/${id}/survey`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nps, comment }) });
+      return res.ok;
+    } catch {
+      return false;
+    }
   },
   mergePreview: (aId: string, bId: string) =>
     req<{ conflicts: MergeConflict[]; counts: Record<string, number> }>('/snapshots/merge/preview', { method: 'POST', body: JSON.stringify({ aId, bId }) }),

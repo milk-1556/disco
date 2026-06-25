@@ -29,7 +29,9 @@ function deepRemap(value: unknown, rr: (ref: string) => string): unknown {
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       if (k === 'localRef') out[k] = v; // the object's own identity — set explicitly, never remap
       else if (k.endsWith('Refs') && Array.isArray(v)) out[k] = v.map((r) => (typeof r === 'string' ? rr(r) : r));
-      else if (k.endsWith('Ref')) out[k] = typeof v === 'string' ? rr(v) : v;
+      // any field that holds a LocalRef target: the *Ref convention + the bot-trace `ref` (bot.ts) which
+      // is a reference despite its lowercase name. (localRef above is the identity and is excluded first.)
+      else if (k.endsWith('Ref') || k === 'ref') out[k] = typeof v === 'string' ? rr(v) : v;
       else out[k] = deepRemap(v, rr);
     }
     return out;
