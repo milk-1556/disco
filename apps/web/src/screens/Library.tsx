@@ -458,7 +458,23 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
             <div className="panel-soft p-3 mb-4 text-sm" style={{ color: 'var(--color-jade)' }}>✓ No name collisions — a clean union of both.</div>
           ) : (
             <div className="mb-4">
-              <div className="label mb-2">{merge.conflicts.length} name collision{merge.conflicts.length === 1 ? '' : 's'} — pick a winner</div>
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <div className="label" style={{ flex: 1, minWidth: 120 }}>{merge.conflicts.length} name collision{merge.conflicts.length === 1 ? '' : 's'} — pick a winner</div>
+                {merge.conflicts.length > 3 && (
+                  <div className="flex gap-1">
+                    {(['a', 'b'] as const).map((side) => (
+                      <button
+                        key={side}
+                        className="btn btn-ghost text-xs"
+                        title={`Keep every collision from ${side === 'a' ? merge.aName : merge.bName}`}
+                        onClick={() => setMerge({ ...merge, resolutions: Object.fromEntries(merge.conflicts.map((c) => [`${c.kind}:${c.name}`, side])) })}
+                      >
+                        All {(side === 'a' ? merge.aName : merge.bName).slice(0, 12)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="space-y-1.5" style={{ maxHeight: 280, overflowY: 'auto' }}>
                 {merge.conflicts.map((c) => {
                   const key = `${c.kind}:${c.name}`;
