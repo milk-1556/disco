@@ -105,8 +105,11 @@ export function SnapshotTimeline({
   useEffect(() => {
     if (line.length < 2) return;
     let alive = true;
+    // Bound the fan-out: diff only the most recent versions (a template can accrue many) so a long
+    // history can't fire dozens of api.diff calls on open. Older pairs simply don't show a delta.
+    const MAX_DIFF_PAIRS = 12;
     const pairs: { newerId: string; olderId: string }[] = [];
-    for (let i = 0; i < line.length - 1; i += 1) {
+    for (let i = 0; i < line.length - 1 && i < MAX_DIFF_PAIRS; i += 1) {
       pairs.push({ newerId: line[i].id, olderId: line[i + 1].id });
     }
     Promise.all(

@@ -374,8 +374,8 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
               <button
                 className={cx('btn', canary ? 'btn-source' : 'btn-primary')}
                 onClick={() => run({ dryRun: false, canary })}
-                disabled={running || feasibility?.ok === false}
-                title={feasibility?.ok === false ? 'Resolve the pre-flight blocks first' : undefined}
+                disabled={running || feasibility?.ok === false || readiness?.verdict === 'blocked'}
+                title={feasibility?.ok === false || readiness?.verdict === 'blocked' ? 'Resolve the pre-flight blocks first' : undefined}
                 style={canary ? { background: 'var(--color-source)', borderColor: 'var(--color-source)', color: 'var(--color-ink)' } : undefined}
               >
                 {running ? 'Building…' : canary ? 'Build canary →' : 'Build the server →'}

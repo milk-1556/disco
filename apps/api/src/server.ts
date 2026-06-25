@@ -893,10 +893,13 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         patch.logoKey = await store.put(Buffer.from(data, 'base64'), ext);
       }
     }
-    const h = await scoped(req).updateHandover(id, patch);
+    const r = scoped(req);
+    const prior = await r.getHandover(id); // for the transition guard below
+    const h = await r.updateHandover(id, patch);
     if (!h) return reply.code(404).send({ error: 'not found' });
-    // Activity log (#4): delivering a handover (draft → ready/handed_over) is a shipped milestone.
-    if (b.state === 'ready' || b.state === 'handed_over') {
+    // Activity log (#4): only log delivering a handover on a REAL state TRANSITION into ready/handed_over
+    // — not on every PATCH that re-sends the same state (e.g. a logo/welcome edit) → no double-logging.
+    if ((b.state === 'ready' || b.state === 'handed_over') && prior?.state !== b.state) {
       await repo.addAudit({ action: 'handover.deliver', target: `handover ${id.slice(-6)}`, detail: b.state === 'handed_over' ? 'handed over' : 'marked ready to share', operator: operatorOf(req) });
     }
     return h;

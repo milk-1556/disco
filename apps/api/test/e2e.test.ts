@@ -387,6 +387,11 @@ describe('e2e: operator activity log (#4) + build-duration SLO (#5)', () => {
     expect(actions).toContain('snapshot.create');
     expect(actions).toContain('build.start');
     expect(actions).toContain('handover.deliver');
+    // idempotent re-PATCH of the same state must NOT re-log the delivery (transition guard, seam r5)
+    const deliversBefore = actions.filter((a) => a === 'handover.deliver').length;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: auth, payload: JSON.stringify({ state: 'ready', welcomeMessage: 'edit, not a re-deliver' }) });
+    const deliversAfter = ((await app.inject({ method: 'GET', url: '/audit', headers: auth })).json() as { action: string }[]).filter((a) => a.action === 'handover.deliver').length;
+    expect(deliversAfter).toBe(deliversBefore);
     // a dry-run must NOT pollute the activity log with a build.start
     const before = actions.filter((a) => a === 'build.start').length;
     await app.inject({ method: 'POST', url: '/jobs', headers: auth, payload: JSON.stringify({ snapshotId: snap, config: cfg, dryRun: true }) });
