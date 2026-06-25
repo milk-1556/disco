@@ -1,5 +1,5 @@
 import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, dryRunReport, exportBundle, makeSampleSnapshot, makeStarterPacks, parseBundle, rebrand } from '@disco/core';
-import { defaultOwnershipSteps, RebrandConfig, SnapshotMetaPatch } from '@disco/schema';
+import { defaultOwnershipSteps, RebrandConfig, type SnapshotRecord, SnapshotMetaPatch } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, listJoinedGuilds, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
 import { demoGuildSnapshot, listDemoGuilds } from './demoGuilds.js';
 import cors from '@fastify/cors';
@@ -174,6 +174,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       note: s.note,
       favorite: s.favorite,
       isTemplate: s.isTemplate,
+      shared: s.shared,
       lastUsedAt: s.lastUsedAt,
       counts: {
         roles: s.snapshot.roles.length,
@@ -191,7 +192,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid patch', detail: parsed.error.flatten() });
     const rec = await scoped(req).updateSnapshot((req.params as { id: string }).id, parsed.data);
     if (!rec) return reply.code(404).send({ error: 'not found' });
-    return { id: rec.id, name: rec.name, tags: rec.tags, note: rec.note, favorite: rec.favorite, isTemplate: rec.isTemplate };
+    return { id: rec.id, name: rec.name, tags: rec.tags, note: rec.note, favorite: rec.favorite, isTemplate: rec.isTemplate, shared: rec.shared };
   });
 
   app.delete('/snapshots/:id', { preHandler: requireAuth }, async (req, reply) => {
@@ -374,6 +375,61 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     });
     // Clones land as reusable templates, tagged + noted with the pack pitch.
     await r.updateSnapshot(rec.id, { isTemplate: true, tags: [pack.key, 'starter-pack'], note: pack.pitch });
+    pingActivity('imported');
+    return { id: rec.id, name: rec.name, version: rec.version };
+  });
+
+  // ── template marketplace (#1): operators share STRUCTURE-ONLY templates cross-operator ──
+  // SECURITY: only the structural pack (guild settings, roles, categories, channels + their permission
+  // overwrites, emojis, stickers, automod) is ever exposed. Private fields — the copied channel CONTENT
+  // (messages), the source guild's ownerNote, and the operator's curation note — are NEVER shared.
+  const marketplaceItem = (rec: SnapshotRecord, mine: boolean) => ({
+    templateId: rec.id,
+    name: rec.name,
+    sourceOperator: rec.ownerEmail || 'system',
+    version: rec.version,
+    mine,
+    counts: {
+      roles: rec.snapshot.roles.length,
+      channels: rec.snapshot.channels.length,
+      categories: rec.snapshot.categories.length,
+      emojis: rec.snapshot.emojis.length,
+      automod: rec.snapshot.automod.length,
+    },
+    categories: rec.snapshot.categories.map((c) => c.name),
+    sampleChannels: rec.snapshot.channels.slice(0, 12).map((c) => c.name),
+    roles: rec.snapshot.roles.filter((r) => !r.isEveryone).map((r) => r.name),
+  });
+
+  app.get('/marketplace', { preHandler: requireAuth }, async (req) => {
+    const me = operatorOf(req);
+    const shared = await repo.listSharedSnapshots(); // cross-operator catalog (shared==true only)
+    return shared.map((rec) => marketplaceItem(rec, rec.ownerEmail === me));
+  });
+
+  app.post('/marketplace/:id/clone', { preHandler: requireAuth }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const src = (await repo.listSharedSnapshots()).find((s) => s.id === id); // must be a SHARED template
+    if (!src) return reply.code(404).send({ error: 'shared template not found' });
+    // Sanitize to structure-only: strip copied content (messages) + the source ownerNote. The record
+    // note is dropped on clone too (addSnapshot defaults it to ''); attribution is set instead.
+    const safe = {
+      ...src.snapshot,
+      content: [],
+      source: { ...src.snapshot.source, name: `${src.snapshot.guild.name} (shared)`, ownerNote: '' },
+    };
+    const r = scoped(req);
+    const mine = (await r.listSnapshots()).filter((s) => s.sourceGuildId === src.sourceGuildId);
+    const rec = await r.addSnapshot({
+      name: src.name,
+      version: mine.length + 1,
+      sourceGuildId: src.sourceGuildId,
+      capturedAt: src.capturedAt,
+      schemaVersion: src.schemaVersion,
+      snapshot: safe,
+      ownerEmail: operatorOf(req),
+    });
+    await r.updateSnapshot(rec.id, { isTemplate: true, tags: ['shared'], note: `Cloned from a shared template by ${src.ownerEmail || 'system'}.` });
     pingActivity('imported');
     return { id: rec.id, name: rec.name, version: rec.version };
   });

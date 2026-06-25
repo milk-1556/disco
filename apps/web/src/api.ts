@@ -57,6 +57,8 @@ export const api = {
   buildEvents: (jobId?: string) => req<BuildEventEntry[]>(`/events${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ''}`),
   dashboard: () => req<DashboardStats>('/dashboard'),
   onboarding: () => req<OnboardingState>('/onboarding'),
+  marketplace: () => req<MarketplaceItem[]>('/marketplace'),
+  cloneMarketplace: (templateId: string) => req<{ id: string; name: string; version: number }>(`/marketplace/${templateId}/clone`, { method: 'POST' }),
   readiness: (snapshotId: string, config: RebrandConfig, targetTier = 0) =>
     req<ReadinessReport>('/builds/readiness', { method: 'POST', body: JSON.stringify({ snapshotId, config, targetTier }) }),
   starterPacks: () => req<StarterPack[]>('/starter-packs'),
@@ -215,8 +217,20 @@ export interface SnapshotSummary {
   note: string;
   favorite: boolean;
   isTemplate: boolean;
+  shared: boolean;
   lastUsedAt: string | null;
   counts: Record<string, number>;
+}
+export interface MarketplaceItem {
+  templateId: string;
+  name: string;
+  sourceOperator: string;
+  version: number;
+  mine: boolean;
+  counts: { roles: number; channels: number; categories: number; emojis: number; automod: number };
+  categories: string[];
+  sampleChannels: string[];
+  roles: string[];
 }
 export interface SnapshotMetaPatch {
   name?: string;
@@ -224,6 +238,7 @@ export interface SnapshotMetaPatch {
   note?: string;
   favorite?: boolean;
   isTemplate?: boolean;
+  shared?: boolean;
 }
 export interface BrandToken {
   kind: 'name' | 'color' | 'url';

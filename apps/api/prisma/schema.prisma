@@ -70,6 +70,7 @@ model Snapshot {
   note          String    @default("")
   favorite      Boolean   @default(false)
   isTemplate    Boolean   @default(false)
+  shared        Boolean   @default(false) // shared to the cross-operator template marketplace (structure-only)
   lastUsedAt    DateTime?
   ownerEmail    String    @default("") // multi-operator access scoping
   createdAt     DateTime  @default(now())

@@ -36,6 +36,9 @@ export function scopeRepo(base: Repo, actor: Actor): Repo {
   return {
     // ── snapshots ──
     listSnapshots: async () => (await base.listSnapshots()).filter(owns),
+    // The marketplace catalog is cross-operator BY DESIGN (shared==true items). NOT filtered by owner —
+    // the route sanitizes each item (structure-only) before returning, so no private field leaks.
+    listSharedSnapshots: () => base.listSharedSnapshots(),
     snapshotNames: async () => (await base.snapshotNames()).filter(owns),
     getSnapshot: async (id) => gate(await base.getSnapshot(id)),
     addSnapshot: (rec) => base.addSnapshot(rec), // route stamps ownerEmail

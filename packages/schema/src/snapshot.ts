@@ -58,6 +58,8 @@ export const SnapshotRecord = z.object({
   lastUsedAt: z.string().nullable().default(null),
   /** The operator who owns this record (multi-operator access scoping). Defaults to the sole operator. */
   ownerEmail: z.string().default(''),
+  /** Shared to the cross-operator template marketplace (structure-only; private fields are never shared). */
+  shared: z.boolean().default(false),
 });
 export type SnapshotRecord = z.infer<typeof SnapshotRecord>;
 
@@ -69,6 +71,7 @@ export const SnapshotMetaPatch = z
     note: z.string(),
     favorite: z.boolean(),
     isTemplate: z.boolean(),
+    shared: z.boolean(),
     lastUsedAt: z.string().nullable(),
   })
   .partial();

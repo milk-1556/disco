@@ -510,3 +510,50 @@ describe('e2e: seam-audit r6 fixes — delivered counted once + scoped today rol
     expect((await repo.listAudit(1000, { sinceIso: future })).length).toBe(0); // nothing after "now+1min"
   });
 });
+
+describe('e2e: template marketplace — share is STRUCTURE-ONLY (#1, security-critical)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' }; // admin
+  const B = { authorization: `Bearer ${signSession({ email: 'recipient@evil.com' })}`, 'content-type': 'application/json' }; // a 2nd operator
+  let sharedId = '';
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+    // A captures a snapshot (has copied content for info channels + a source ownerNote), adds a private note, shares it.
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: A })).json() as { guilds: { id: string }[] };
+    sharedId = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: A, payload: JSON.stringify({ sourceGuildId: guilds.guilds[0]!.id }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/snapshots/${sharedId}`, headers: A, payload: JSON.stringify({ note: 'SECRET internal pricing note', shared: true }) });
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('the marketplace exposes structure-only metadata — never content, note, or source details', async () => {
+    const market = (await app.inject({ method: 'GET', url: '/marketplace', headers: B })).json() as Record<string, unknown>[];
+    const item = market.find((m) => m.templateId === sharedId)!;
+    expect(item).toBeTruthy(); // cross-operator: B sees A's shared template
+    expect(item.mine).toBe(false);
+    expect(JSON.stringify(item)).not.toMatch(/SECRET/); // the private note never appears
+    expect(item).not.toHaveProperty('content');
+    expect(item).not.toHaveProperty('note');
+    expect(item).not.toHaveProperty('snapshot'); // no raw artifact
+    expect(Array.isArray(item.roles)).toBe(true); // structure IS exposed
+    expect((item.counts as { channels: number }).channels).toBeGreaterThan(0);
+  });
+
+  it('cloning a shared template gives B the STRUCTURE but strips content + source ownerNote + the original note', async () => {
+    const clone = (await app.inject({ method: 'POST', url: `/marketplace/${sharedId}/clone`, headers: B })).json() as { id: string };
+    expect(clone.id).toBeTruthy();
+    const cloned = (await app.inject({ method: 'GET', url: `/snapshots/${clone.id}`, headers: B })).json() as { snapshot: { content: unknown[]; source: { ownerNote: string }; roles: unknown[]; channels: unknown[] }; note: string };
+    expect(cloned.snapshot.content).toEqual([]); // copied messages stripped
+    expect(cloned.snapshot.source.ownerNote).toBe(''); // source note stripped
+    expect(cloned.note).not.toMatch(/SECRET/); // A's private note never reaches B
+    expect(cloned.snapshot.roles.length).toBeGreaterThan(0); // structure preserved
+    expect(cloned.snapshot.channels.length).toBeGreaterThan(0);
+  });
+
+  it('a NON-shared template is not in the marketplace and cannot be cloned (404)', async () => {
+    const privId = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: A, payload: JSON.stringify({ sourceGuildId: '111111111111111111' }) })).json() as { id: string }).id;
+    const market = (await app.inject({ method: 'GET', url: '/marketplace', headers: B })).json() as { templateId: string }[];
+    expect(market.find((m) => m.templateId === privId)).toBeUndefined();
+    expect((await app.inject({ method: 'POST', url: `/marketplace/${privId}/clone`, headers: B })).statusCode).toBe(404);
+  });
+});

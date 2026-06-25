@@ -2,7 +2,7 @@ import { extractBrandTokens, makeSampleSnapshot } from '@disco/core';
 import type { Client, Handover, Job, SnapshotMetaPatch, SnapshotRecord } from '@disco/schema';
 
 /** Fields supplied when capturing/importing a snapshot — metadata (tags/note/…) defaults on insert. */
-export type SnapshotCreate = Omit<SnapshotRecord, 'id' | 'tags' | 'note' | 'favorite' | 'isTemplate' | 'lastUsedAt'>;
+export type SnapshotCreate = Omit<SnapshotRecord, 'id' | 'tags' | 'note' | 'favorite' | 'isTemplate' | 'shared' | 'lastUsedAt'>;
 
 /** One accountability record for a destructive operation. */
 export interface AuditEntry {
@@ -61,6 +61,9 @@ export type HandoverPatch = Partial<{
  */
 export interface Repo {
   listSnapshots(): Promise<SnapshotRecord[]>;
+  /** All snapshots shared to the marketplace, ACROSS operators (a deliberate cross-operator catalog of
+   *  shared==true items). NOT owner-scoped — the marketplace is shared by design; callers must sanitize. */
+  listSharedSnapshots(): Promise<SnapshotRecord[]>;
   /** Cheap id→name lookup (no artifact-blob parse) — for joining names onto the polled /jobs list. */
   snapshotNames(): Promise<{ id: string; name: string; ownerEmail: string }[]>;
   getSnapshot(id: string): Promise<SnapshotRecord | undefined>;
@@ -126,6 +129,7 @@ export class InMemoryRepo implements Repo {
       note: 'Master template — polished slots community.',
       favorite: true,
       isTemplate: true,
+      shared: false,
       lastUsedAt: null,
       ownerEmail: '', // system/unowned — the sole operator is admin and sees it via bypass
     };
@@ -157,8 +161,11 @@ export class InMemoryRepo implements Repo {
   async getSnapshot(sid: string) {
     return this.snapshots.get(sid);
   }
+  async listSharedSnapshots() {
+    return [...this.snapshots.values()].filter((s) => s.shared);
+  }
   async addSnapshot(rec: SnapshotCreate) {
-    const full: SnapshotRecord = { ...rec, id: newId('snap'), tags: [], note: '', favorite: false, isTemplate: false, lastUsedAt: null };
+    const full: SnapshotRecord = { ...rec, id: newId('snap'), tags: [], note: '', favorite: false, isTemplate: false, shared: false, lastUsedAt: null };
     this.snapshots.set(full.id, full);
     return full;
   }

@@ -43,7 +43,7 @@ export class PrismaRepo implements Repo {
   // ── snapshots ──
   private toSnapshot = (r: {
     id: string; name: string; version: number; sourceGuildId: string; schemaVersion: string; capturedAt: Date; artifact: Prisma.JsonValue;
-    tags: string[]; note: string; favorite: boolean; isTemplate: boolean; lastUsedAt: Date | null; ownerEmail?: string;
+    tags: string[]; note: string; favorite: boolean; isTemplate: boolean; shared?: boolean; lastUsedAt: Date | null; ownerEmail?: string;
   }): SnapshotRecord => ({
     id: r.id,
     name: r.name,
@@ -56,12 +56,17 @@ export class PrismaRepo implements Repo {
     note: r.note,
     favorite: r.favorite,
     isTemplate: r.isTemplate,
+    shared: r.shared ?? false,
     lastUsedAt: r.lastUsedAt ? iso(r.lastUsedAt) : null,
     ownerEmail: r.ownerEmail ?? '',
   });
 
   async listSnapshots() {
     const rows = await this.db.snapshot.findMany({ orderBy: { capturedAt: 'desc' } });
+    return rows.map(this.toSnapshot);
+  }
+  async listSharedSnapshots() {
+    const rows = await this.db.snapshot.findMany({ where: { shared: true }, orderBy: { capturedAt: 'desc' } });
     return rows.map(this.toSnapshot);
   }
   async snapshotNames() {
@@ -93,6 +98,7 @@ export class PrismaRepo implements Repo {
     if (patch.note !== undefined) data.note = patch.note;
     if (patch.favorite !== undefined) data.favorite = patch.favorite;
     if (patch.isTemplate !== undefined) data.isTemplate = patch.isTemplate;
+    if (patch.shared !== undefined) data.shared = patch.shared;
     if (patch.lastUsedAt !== undefined) data.lastUsedAt = patch.lastUsedAt ? new Date(patch.lastUsedAt) : null;
     try {
       return this.toSnapshot(await this.db.snapshot.update({ where: { id }, data }));
