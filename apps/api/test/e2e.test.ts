@@ -542,9 +542,12 @@ describe('e2e: template marketplace — share is STRUCTURE-ONLY (#1, security-cr
   it('cloning a shared template gives B the STRUCTURE but strips content + source ownerNote + the original note', async () => {
     const clone = (await app.inject({ method: 'POST', url: `/marketplace/${sharedId}/clone`, headers: B })).json() as { id: string };
     expect(clone.id).toBeTruthy();
-    const cloned = (await app.inject({ method: 'GET', url: `/snapshots/${clone.id}`, headers: B })).json() as { snapshot: { content: unknown[]; source: { ownerNote: string }; roles: unknown[]; channels: unknown[] }; note: string };
+    const cloned = (await app.inject({ method: 'GET', url: `/snapshots/${clone.id}`, headers: B })).json() as { snapshot: { content: unknown[]; brandTokens: unknown[]; source: { ownerNote: string }; guild: { assets: Record<string, unknown> }; roles: unknown[]; channels: unknown[]; emojis: { asset: string }[] }; note: string };
     expect(cloned.snapshot.content).toEqual([]); // copied messages stripped
     expect(cloned.snapshot.source.ownerNote).toBe(''); // source note stripped
+    expect(cloned.snapshot.brandTokens).toEqual([]); // source client's brand identity stripped
+    expect(Object.keys(cloned.snapshot.guild.assets)).toHaveLength(0); // client logo/banner bytes not referenced
+    expect(cloned.snapshot.emojis.every((e) => e.asset === 'assets/00000000.png')).toBe(true); // no asset-byte leak
     expect(cloned.note).not.toMatch(/SECRET/); // A's private note never reaches B
     expect(cloned.snapshot.roles.length).toBeGreaterThan(0); // structure preserved
     expect(cloned.snapshot.channels.length).toBeGreaterThan(0);

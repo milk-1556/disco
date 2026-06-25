@@ -411,12 +411,23 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const id = (req.params as { id: string }).id;
     const src = (await repo.listSharedSnapshots()).find((s) => s.id === id); // must be a SHARED template
     if (!src) return reply.code(404).send({ error: 'shared template not found' });
-    // Sanitize to structure-only: strip copied content (messages) + the source ownerNote. The record
-    // note is dropped on clone too (addSnapshot defaults it to ''); attribution is set instead.
+    // Sanitize to STRUCTURE-ONLY. Strip everything that carries the source operator's private/client
+    // data or references their stored asset bytes (which /assets serves by capability-hash to anyone):
+    //  • content       — copied channel messages
+    //  • source.ownerNote — the source-capture note
+    //  • guild.assets   — the client's icon/banner/splash (logo) bytes
+    //  • brandTokens    — the source client's detected name/colors/links (identity)
+    //  • emoji/sticker asset keys — the custom-expression image bytes (→ a harmless placeholder; the
+    //    structure/names survive, the bytes don't, and the recipient's build skips a missing asset)
+    const PLACEHOLDER = 'assets/00000000.png';
     const safe = {
       ...src.snapshot,
       content: [],
+      brandTokens: [],
       source: { ...src.snapshot.source, name: `${src.snapshot.guild.name} (shared)`, ownerNote: '' },
+      guild: { ...src.snapshot.guild, assets: {} },
+      emojis: src.snapshot.emojis.map((e) => ({ ...e, asset: PLACEHOLDER })),
+      stickers: src.snapshot.stickers.map((s) => ({ ...s, asset: PLACEHOLDER })),
     };
     const r = scoped(req);
     const mine = (await r.listSnapshots()).filter((s) => s.sourceGuildId === src.sourceGuildId);
