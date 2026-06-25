@@ -369,7 +369,10 @@ function DiffSection({
           {changed.map((c, i) => (
             <details key={`c-${i}`} className="panel-soft px-3 py-2">
               <summary className="text-sm cursor-pointer" style={{ color: 'var(--color-gold)' }}>
-                ~ {c.name} <span className="mono text-[0.66rem]" style={{ color: 'var(--color-faint)' }}>({c.fields.length} field{c.fields.length === 1 ? '' : 's'})</span>
+                ~ {c.name}{' '}
+                <span className="mono text-[0.66rem]" style={{ color: 'var(--color-faint)' }}>
+                  ({c.fields.length === 0 && c.permissionDelta ? 'permissions' : `${c.fields.length} field${c.fields.length === 1 ? '' : 's'}`})
+                </span>
               </summary>
               <div className="mt-2 space-y-1">
                 {c.fields.map((f, j) => (

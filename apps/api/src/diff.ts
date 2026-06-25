@@ -109,9 +109,11 @@ export function diffSnapshots(before: Snapshot, after: Snapshot): SnapshotDiff {
   const afterRoles = new Map(after.roles.map((r) => [r.name, r]));
   const diff: SnapshotDiff = {
     guildNameChanged: before.guild.name !== after.guild.name ? { before: before.guild.name, after: after.guild.name } : null,
+    // `permissions` and `overwrites` are intentionally NOT raw-diffed here — they're decoded to
+    // plain-English permission deltas below (roles) and in computeOverwriteChanges (channels/categories),
+    // so the UI shows "+ Manage Channels" instead of an unreadable bitfield/`ref:allow/deny` string.
     roles: diffCategory(before.roles, after.roles, (r) => ({
       color: `#${r.colors.primary.toString(16).padStart(6, '0')}`,
-      permissions: r.permissions,
       hoist: r.hoist,
       mentionable: r.mentionable,
       position: r.position,
@@ -121,11 +123,9 @@ export function diffSnapshots(before: Snapshot, after: Snapshot): SnapshotDiff {
       nsfw: c.nsfw,
       slowmode: c.rateLimitPerUser,
       copyPolicy: c.copyPolicy,
-      overwrites: c.overwrites.map((o) => `${o.targetRef}:${o.allow}/${o.deny}`).sort(),
     })),
     categories: diffCategory(before.categories, after.categories, (c) => ({
       position: c.position,
-      overwrites: c.overwrites.map((o) => `${o.targetRef}:${o.allow}/${o.deny}`).sort(),
     })),
     emojis: diffCategory(before.emojis, after.emojis, (e) => ({ animated: e.animated, roles: e.roleRefs.length })),
     automod: diffCategory(before.automod, after.automod, (a) => ({
@@ -146,12 +146,22 @@ export function diffSnapshots(before: Snapshot, after: Snapshot): SnapshotDiff {
     },
   };
 
-  // Enrich each changed role with a decoded permission delta (added/revoked permission names).
-  for (const ch of diff.roles.changed) {
-    const r0 = beforeRoles.get(ch.name);
-    const r1 = afterRoles.get(ch.name);
-    if (!r0 || !r1 || r0.permissions === r1.permissions) continue;
-    ch.permissionDelta = diffPermissions(r0.permissions, r1.permissions);
+  // Decode role permission changes into added/revoked permission NAMES. Because `permissions` is no
+  // longer a raw field above, a role whose ONLY change is its permission set won't be in `changed` yet —
+  // so attach the delta to an existing entry, or push a permission-only entry (empty fields) for it.
+  const changedRoleByName = new Map(diff.roles.changed.map((c) => [c.name, c]));
+  for (const [name, r1] of afterRoles) {
+    const r0 = beforeRoles.get(name);
+    if (!r0 || r0.permissions === r1.permissions) continue;
+    const delta = diffPermissions(r0.permissions, r1.permissions);
+    if (delta.added.length === 0 && delta.removed.length === 0) continue;
+    const existing = changedRoleByName.get(name);
+    if (existing) existing.permissionDelta = delta;
+    else {
+      const entry: ChangedObject = { name, fields: [], permissionDelta: delta };
+      diff.roles.changed.push(entry);
+      changedRoleByName.set(name, entry);
+    }
   }
 
   return diff;
