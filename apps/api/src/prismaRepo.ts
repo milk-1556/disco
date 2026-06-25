@@ -3,6 +3,8 @@ import {
   type Handover,
   type Job,
   JobManifest,
+  type OperatorPrefs,
+  type OperatorPrefsPatch,
   type OwnershipStep,
   RebrandConfig,
   RebuildReport,
@@ -11,7 +13,7 @@ import {
   type SnapshotRecord,
 } from '@disco/schema';
 import { Prisma, PrismaClient } from '@prisma/client';
-import type { AuditEntry, BuildEventEntry, HandoverCreate, HandoverPatch, Repo, SnapshotCreate } from './repo.js';
+import type { AuditEntry, BuildEventEntry, HandoverCreate, HandoverPatch, Repo, SnapshotCreate, WebhookEventEntry } from './repo.js';
 
 let _prisma: PrismaClient | undefined;
 /** Memoized singleton PrismaClient (one pool per process). */
@@ -289,6 +291,7 @@ export class PrismaRepo implements Repo {
         clientId: h.clientId,
         state: h.state,
         passwordHash: h.passwordHash ?? null,
+        welcomeMessage: h.welcomeMessage ?? '',
         ownershipSteps: asJson(h.ownershipSteps),
         upsellStatus: h.upsellStatus,
         ownerEmail: h.ownerEmail,
@@ -330,6 +333,13 @@ export class PrismaRepo implements Repo {
     const rows = await this.db.buildEvent.findMany({ where: jobId ? { jobId } : undefined, orderBy: { at: 'desc' }, take: limit });
     return rows.map((r) => ({ id: r.id, jobId: r.jobId, at: iso(r.at), kind: r.kind, detail: r.detail, ownerEmail: r.ownerEmail ?? '' }));
   }
+  async addWebhookEvent(e: Omit<WebhookEventEntry, 'id' | 'at'>) {
+    await this.db.webhookEvent.create({ data: { source: e.source, eventId: e.eventId, eventType: e.eventType, signatureValid: e.signatureValid, outcome: e.outcome, detail: e.detail } }).catch(() => {});
+  }
+  async listWebhookEvents(limit = 200, source?: string) {
+    const rows = await this.db.webhookEvent.findMany({ where: source ? { source } : undefined, orderBy: { at: 'desc' }, take: limit });
+    return rows.map((r) => ({ id: r.id, at: iso(r.at), source: r.source, eventId: r.eventId, eventType: r.eventType, signatureValid: r.signatureValid, outcome: r.outcome, detail: r.detail }));
+  }
   async recordHandoverView(handoverId: string, referrer: string, kind = 'opened') {
     await this.db.handoverView.create({ data: { handoverId, referrer, kind } });
   }
@@ -344,5 +354,30 @@ export class PrismaRepo implements Repo {
   async getHandoverPasswordHash(id: string) {
     const r = await this.db.handover.findUnique({ where: { id }, select: { passwordHash: true } });
     return r ? r.passwordHash : undefined;
+  }
+
+  async getOperatorPrefs(operatorEmail: string) {
+    const r = await this.db.operatorPrefs.findUnique({ where: { operatorEmail } });
+    return r ? this.toPrefs(r) : undefined;
+  }
+  async upsertOperatorPrefs(operatorEmail: string, patch: OperatorPrefsPatch) {
+    const data: Prisma.OperatorPrefsUncheckedCreateInput = { operatorEmail };
+    if (patch.defaultCanary !== undefined) data.defaultCanary = patch.defaultCanary;
+    if (patch.defaultDryRun !== undefined) data.defaultDryRun = patch.defaultDryRun;
+    if (patch.defaultWelcomeMessage !== undefined) data.defaultWelcomeMessage = patch.defaultWelcomeMessage;
+    if (patch.defaultOwnershipSteps !== undefined) data.defaultOwnershipSteps = (patch.defaultOwnershipSteps ?? Prisma.JsonNull) as Prisma.InputJsonValue;
+    const { operatorEmail: _e, ...update } = data;
+    const r = await this.db.operatorPrefs.upsert({ where: { operatorEmail }, create: data, update });
+    return this.toPrefs(r);
+  }
+  private toPrefs(r: { operatorEmail: string; defaultCanary: boolean; defaultDryRun: boolean; defaultWelcomeMessage: string; defaultOwnershipSteps: Prisma.JsonValue; updatedAt: Date }): OperatorPrefs {
+    return {
+      operatorEmail: r.operatorEmail,
+      defaultCanary: r.defaultCanary,
+      defaultDryRun: r.defaultDryRun,
+      defaultWelcomeMessage: r.defaultWelcomeMessage,
+      defaultOwnershipSteps: (r.defaultOwnershipSteps as OwnershipStep[] | null) ?? null,
+      updatedAt: iso(r.updatedAt),
+    };
   }
 }

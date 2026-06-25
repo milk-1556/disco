@@ -282,3 +282,46 @@ describe('stripe webhook idempotency (unique session-id dedup)', () => {
     }
   });
 });
+
+describe('webhook event log (#6)', () => {
+  let app: FastifyInstance;
+  let repo: InMemoryRepo;
+  const admin = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}` }; // OPERATOR_EMAIL → admin
+  const operator2 = { authorization: `Bearer ${signSession({ email: 'whk-op-2@x.com' })}` };
+  beforeEach(async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    repo = new InMemoryRepo(true);
+    app = buildServer({ repo });
+    await app.ready();
+  });
+  afterEach(async () => { await app.close(); });
+
+  it('logs a processed checkout + an unhandled event, admin can read, non-admin gets 403', async () => {
+    // a fulfilled checkout → 'processed'
+    await app.inject({ method: 'POST', url: '/stripe/webhook', headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ type: 'checkout.session.completed', data: { object: { id: 'cs_log_1', payment_status: 'paid', metadata: { clientName: 'Logged Co' } } } }) });
+    // an event type we don't handle → 'ignored'
+    await app.inject({ method: 'POST', url: '/stripe/webhook', headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ type: 'payment_intent.created', data: { object: { id: 'pi_1' } } }) });
+
+    const log = (await app.inject({ method: 'GET', url: '/admin/webhooks', headers: admin })).json() as { source: string; eventType: string; outcome: string; detail: string }[];
+    expect(log.length).toBe(2);
+    expect(log.every((e) => e.source === 'stripe')).toBe(true);
+    const processed = log.find((e) => e.eventType === 'checkout.session.completed')!;
+    expect(processed.outcome).toBe('processed');
+    expect(log.find((e) => e.eventType === 'payment_intent.created')!.outcome).toBe('ignored');
+    // redaction: detail is a short summary, never a raw payload blob
+    expect(processed.detail).not.toContain('payment_status');
+
+    // a bad-signature hit (secret set, no/var sig) → 'rejected', still logged
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    await app.inject({ method: 'POST', url: '/stripe/webhook', headers: { 'content-type': 'application/json', 'stripe-signature': 't=1,v1=deadbeef' }, payload: JSON.stringify({ type: 'checkout.session.completed' }) });
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    const filtered = (await app.inject({ method: 'GET', url: '/admin/webhooks?limit=1', headers: admin })).json() as { outcome: string; signatureValid: boolean }[];
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]!.outcome).toBe('rejected');
+    expect(filtered[0]!.signatureValid).toBe(false);
+
+    // non-admin operator is forbidden
+    expect((await app.inject({ method: 'GET', url: '/admin/webhooks', headers: operator2 })).statusCode).toBe(403);
+  });
+});

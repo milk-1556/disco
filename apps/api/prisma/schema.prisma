@@ -17,6 +17,16 @@ model Operator {
   createdAt    DateTime @default(now())
 }
 
+/// Per-operator defaults (#4): pre-fill new builds + handovers. Keyed by operatorEmail (one row each).
+model OperatorPrefs {
+  operatorEmail        String   @id
+  defaultCanary        Boolean  @default(false)
+  defaultDryRun        Boolean  @default(false)
+  defaultWelcomeMessage String  @default("")
+  defaultOwnershipSteps Json? // null → built-in defaultOwnershipSteps()
+  updatedAt            DateTime @updatedAt
+}
+
 /// Append-only accountability log for destructive operations (client/snapshot delete, build cancel,
 /// password change). Operator-visible for debugging + a trust record on a high-value delivery.
 model AuditLog {
@@ -43,6 +53,23 @@ model BuildEvent {
   @@index([jobId])
   @@index([at])
   @@index([ownerEmail])
+}
+
+/// Inbound webhook receipt log (#6): one row per Stripe/Discord webhook hit — signature-verification
+/// result + processing outcome — so a delivery failure is debuggable. Stores a REDACTED summary only,
+/// never the raw provider payload (avoids persisting customer PII/card metadata). Admin-viewable.
+model WebhookEvent {
+  id             String   @id @default(cuid())
+  at             DateTime @default(now())
+  source         String // stripe | discord
+  eventId        String   @default("") // provider event id (Stripe event.id), '' if unsigned/unparseable
+  eventType      String   @default("") // e.g. checkout.session.completed
+  signatureValid Boolean
+  outcome        String // processed | ignored | rejected | failed
+  detail         String   @default("") // short human summary — NO raw payload
+
+  @@index([at])
+  @@index([source, at])
 }
 
 /// One anonymous open of a public handover page (#14). Referrer ORIGIN only — never an IP or any

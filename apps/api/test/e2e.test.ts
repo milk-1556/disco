@@ -654,3 +654,90 @@ describe('e2e: snapshot composability — merge endpoints (#5)', () => {
     expect((await app.inject({ method: 'POST', url: '/snapshots/merge', headers: B, payload: JSON.stringify({ aId, bId, resolutions: {} }) })).statusCode).toBe(404);
   });
 });
+
+describe('e2e: operator preferences / defaults (#4)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'prefs-op-2@x.com' })}`, 'content-type': 'application/json' };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it('defaults are empty until saved, then persist and round-trip', async () => {
+    const empty = (await app.inject({ method: 'GET', url: '/operator/prefs', headers: A })).json() as { defaultCanary: boolean; updatedAt: string | null };
+    expect(empty.defaultCanary).toBe(false);
+    expect(empty.updatedAt).toBeNull();
+    const saved = (await app.inject({ method: 'PATCH', url: '/operator/prefs', headers: A, payload: JSON.stringify({ defaultCanary: true, defaultDryRun: true, defaultWelcomeMessage: 'Welcome aboard 🎉', defaultOwnershipSteps: [{ title: 'Custom step', detail: 'do this', done: false }] }) })).json() as { defaultCanary: boolean; updatedAt: string | null };
+    expect(saved.defaultCanary).toBe(true);
+    expect(saved.updatedAt).not.toBeNull();
+    const got = (await app.inject({ method: 'GET', url: '/operator/prefs', headers: A })).json() as { defaultWelcomeMessage: string; defaultOwnershipSteps: unknown[] };
+    expect(got.defaultWelcomeMessage).toBe('Welcome aboard 🎉');
+    expect(got.defaultOwnershipSteps).toHaveLength(1);
+  });
+
+  it('new builds + handovers inherit the saved defaults', async () => {
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const cfg = { clientId: 'c', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    const jobId = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, config: cfg }) })).json() as { id: string }).id;
+    const id2 = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, canary: false, config: cfg }) })).json() as { id: string }).id;
+    // POST /jobs returns {id,status}; verify the applied flags via the jobs list.
+    const jobs = (await app.inject({ method: 'GET', url: '/jobs', headers: A })).json() as { id: string; canary: boolean; dryRun: boolean }[];
+    const job = jobs.find((j) => j.id === jobId)!;
+    expect(job.canary).toBe(true); // omitted → inherits the saved pref
+    expect(job.dryRun).toBe(true);
+    expect(jobs.find((j) => j.id === id2)!.canary).toBe(false); // explicit false beats the pref
+    // a NON-canary job → its handover inherits the welcome + custom checklist
+    const dJobId = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, canary: false, dryRun: false, config: cfg }) })).json() as { id: string }).id;
+    const ho = await app.inject({ method: 'POST', url: '/handovers', headers: A, payload: JSON.stringify({ jobId: dJobId }) });
+    expect(ho.statusCode).toBe(200);
+    const h = ho.json() as { welcomeMessage: string; ownershipSteps: unknown[] };
+    expect(h.welcomeMessage).toBe('Welcome aboard 🎉');
+    expect(h.ownershipSteps).toHaveLength(1);
+  });
+
+  it('prefs are per-operator — operator B sees their own empty defaults, not A\'s', async () => {
+    const b = (await app.inject({ method: 'GET', url: '/operator/prefs', headers: B })).json() as { defaultCanary: boolean; defaultWelcomeMessage: string };
+    expect(b.defaultCanary).toBe(false);
+    expect(b.defaultWelcomeMessage).toBe('');
+  });
+});
+
+describe('e2e: build replay (#3) + snapshot scan preview (#2)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'replay-op-2@x.com' })}`, 'content-type': 'application/json' };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it('#3 replays a build against a NEW target guild, copying snapshot + config, owner-scoped', async () => {
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const cfg = { clientId: 'orig', serverName: 'Original Build', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    const parentId = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, dryRun: true, config: cfg }) })).json() as { id: string }).id;
+
+    const replay = await app.inject({ method: 'POST', url: `/jobs/${parentId}/replay`, headers: A, payload: JSON.stringify({ targetGuildId: '123456789012345678', dryRun: true }) });
+    expect(replay.statusCode).toBe(200);
+    const rj = replay.json() as { id: string; replayOf: string };
+    expect(rj.replayOf).toBe(parentId);
+    expect(rj.id).not.toBe(parentId); // a fresh job
+    // the new job carries the parent's snapshot + config + the new target guild
+    const nj = (await app.inject({ method: 'GET', url: `/jobs/${rj.id}`, headers: A })).json() as { targetGuildId: string | null; snapshotId: string; rebrandConfig: { serverName?: string } };
+    expect(nj.targetGuildId).toBe('123456789012345678');
+    expect(nj.snapshotId).toBe(snaps[0]!.id);
+    expect(nj.rebrandConfig.serverName).toBe('Original Build'); // config copied from the parent
+    // a 2nd operator cannot replay operator A's build
+    expect((await app.inject({ method: 'POST', url: `/jobs/${parentId}/replay`, headers: B, payload: JSON.stringify({}) })).statusCode).toBe(404);
+  });
+
+  it('#2 scans a guild read-only and returns a preview WITHOUT persisting', async () => {
+    const before = ((await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as unknown[]).length;
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: A })).json() as { guilds: { id: string }[] };
+    const scan = await app.inject({ method: 'POST', url: '/snapshots/scan', headers: A, payload: JSON.stringify({ sourceGuildId: guilds.guilds[0]!.id }) });
+    expect(scan.statusCode).toBe(200);
+    const s = scan.json() as { guildName: string; counts: { roles: number; channels: number }; headsUp: string[] };
+    expect(s.guildName).toBeTruthy();
+    expect(s.counts.channels).toBeGreaterThan(0);
+    expect(Array.isArray(s.headsUp)).toBe(true);
+    // the preview did NOT write a snapshot to the library
+    const after = ((await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as unknown[]).length;
+    expect(after).toBe(before);
+  });
+});

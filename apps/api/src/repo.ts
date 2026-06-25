@@ -1,5 +1,5 @@
 import { extractBrandTokens, makeSampleSnapshot } from '@disco/core';
-import type { Client, Handover, Job, SnapshotMetaPatch, SnapshotRecord } from '@disco/schema';
+import type { Client, Handover, Job, OperatorPrefs, OperatorPrefsPatch, SnapshotMetaPatch, SnapshotRecord } from '@disco/schema';
 
 /** Fields supplied when capturing/importing a snapshot — metadata (tags/note/…) defaults on insert. */
 export type SnapshotCreate = Omit<SnapshotRecord, 'id' | 'tags' | 'note' | 'favorite' | 'isTemplate' | 'shared' | 'lastUsedAt'>;
@@ -24,6 +24,19 @@ export interface BuildEventEntry {
   ownerEmail: string; // multi-operator scoping (copied from the owning job)
 }
 
+/** One inbound webhook receipt (#6): provider + signature result + processing outcome, redacted summary
+ *  only (never the raw payload, which would persist customer PII). Admin-viewable for debugging delivery. */
+export interface WebhookEventEntry {
+  id: string;
+  at: string;
+  source: string; // stripe | discord
+  eventId: string; // provider event id ('' if unsigned/unparseable)
+  eventType: string; // e.g. checkout.session.completed
+  signatureValid: boolean;
+  outcome: string; // processed | ignored | rejected | failed
+  detail: string; // short human summary; NO raw payload
+}
+
 /** One anonymous open of a public handover page. We store the referrer ORIGIN only — never an IP or
  *  any other identifier — so the operator gets an engagement signal without compiling personal data. */
 export interface HandoverViewEntry {
@@ -41,6 +54,8 @@ export interface HandoverCreate {
   state: Handover['state'];
   ownershipSteps: Handover['ownershipSteps'];
   upsellStatus: Handover['upsellStatus'];
+  /** Optional pre-filled welcome (seeded from operator prefs #4); defaults to empty. */
+  welcomeMessage?: string;
   passwordHash?: string | null;
   ownerEmail: string;
 }
@@ -97,11 +112,19 @@ export interface Repo {
   /** Build-lifecycle event log (#12). `listBuildEvents()` is global; pass a jobId to scope to one build. */
   addBuildEvent(e: Omit<BuildEventEntry, 'id' | 'at'>): Promise<void>;
   listBuildEvents(jobId?: string, limit?: number): Promise<BuildEventEntry[]>;
+  /** Inbound webhook receipt log (#6). System-written (Stripe/Discord handlers); admin-read at the route. */
+  addWebhookEvent(e: Omit<WebhookEventEntry, 'id' | 'at'>): Promise<void>;
+  listWebhookEvents(limit?: number, source?: string): Promise<WebhookEventEntry[]>;
   /** Record + read anonymous public-handover opens (#14 engagement signal; referrer-origin only). */
   recordHandoverView(handoverId: string, referrer: string, kind?: string): Promise<void>;
   /** Record the client's one-time survey (#4) — public submit from the delivery page (system path). */
   recordHandoverSurvey(handoverId: string, nps: number, comment: string): Promise<void>;
   listHandoverViews(handoverId: string): Promise<HandoverViewEntry[]>;
+  /** Per-operator defaults (#4). `get` returns undefined if the operator has never saved any; `upsert`
+   *  creates-or-patches and stamps updatedAt. Keyed by operatorEmail; the scope wrapper forces the actor's
+   *  own email so an operator can only read/write their own prefs. */
+  getOperatorPrefs(operatorEmail: string): Promise<OperatorPrefs | undefined>;
+  upsertOperatorPrefs(operatorEmail: string, patch: OperatorPrefsPatch): Promise<OperatorPrefs>;
 }
 
 let seq = 1;
@@ -112,6 +135,7 @@ export class InMemoryRepo implements Repo {
   private snapshots = new Map<string, SnapshotRecord>();
   private clients = new Map<string, Client>();
   private jobs = new Map<string, Job>();
+  private operatorPrefs = new Map<string, OperatorPrefs>();
 
   constructor(seed = true) {
     if (seed) this.seed();
@@ -254,7 +278,7 @@ export class InMemoryRepo implements Repo {
       state: h.state,
       hasPassword: !!h.passwordHash,
       logoKey: null,
-      welcomeMessage: '',
+      welcomeMessage: h.welcomeMessage ?? '',
       ownershipSteps: h.ownershipSteps,
       upsellStatus: h.upsellStatus,
       ownerEmail: h.ownerEmail,
@@ -314,6 +338,16 @@ export class InMemoryRepo implements Repo {
     return [...all].reverse().slice(0, limit);
   }
 
+  private webhookEvents: WebhookEventEntry[] = [];
+  async addWebhookEvent(e: Omit<WebhookEventEntry, 'id' | 'at'>) {
+    this.webhookEvents.push({ ...e, id: newId('whk'), at: now() });
+    if (this.webhookEvents.length > 2000) this.webhookEvents.shift();
+  }
+  async listWebhookEvents(limit = 200, source?: string) {
+    const all = source ? this.webhookEvents.filter((e) => e.source === source) : this.webhookEvents;
+    return [...all].reverse().slice(0, limit);
+  }
+
   private handoverViews: HandoverViewEntry[] = [];
   async recordHandoverView(handoverId: string, referrer: string, kind = 'opened') {
     this.handoverViews.push({ id: newId('view'), handoverId, at: now(), referrer, kind });
@@ -321,5 +355,23 @@ export class InMemoryRepo implements Repo {
   }
   async listHandoverViews(handoverId: string) {
     return this.handoverViews.filter((v) => v.handoverId === handoverId).reverse();
+  }
+
+  async getOperatorPrefs(operatorEmail: string) {
+    return this.operatorPrefs.get(operatorEmail);
+  }
+
+  async upsertOperatorPrefs(operatorEmail: string, patch: OperatorPrefsPatch) {
+    const prior = this.operatorPrefs.get(operatorEmail);
+    const next: OperatorPrefs = {
+      operatorEmail,
+      defaultCanary: patch.defaultCanary ?? prior?.defaultCanary ?? false,
+      defaultDryRun: patch.defaultDryRun ?? prior?.defaultDryRun ?? false,
+      defaultWelcomeMessage: patch.defaultWelcomeMessage ?? prior?.defaultWelcomeMessage ?? '',
+      defaultOwnershipSteps: patch.defaultOwnershipSteps !== undefined ? patch.defaultOwnershipSteps : (prior?.defaultOwnershipSteps ?? null),
+      updatedAt: now(),
+    };
+    this.operatorPrefs.set(operatorEmail, next);
+    return next;
   }
 }

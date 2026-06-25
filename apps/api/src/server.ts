@@ -1,5 +1,5 @@
 import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, dryRunReport, exportBundle, makeSampleSnapshot, makeStarterPacks, mergeSnapshots, type MergeResolutions, parseBundle, rebrand } from '@disco/core';
-import { defaultOwnershipSteps, RebrandConfig, type SnapshotRecord, SnapshotMetaPatch } from '@disco/schema';
+import { defaultOwnershipSteps, emptyOperatorPrefs, OperatorPrefsPatch, RebrandConfig, type SnapshotRecord, SnapshotMetaPatch } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, listJoinedGuilds, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
 import { demoGuildSnapshot, listDemoGuilds } from './demoGuilds.js';
 import cors from '@fastify/cors';
@@ -288,6 +288,49 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
+  // Read-only SCAN preview (#2): scan a guild and return a structural summary WITHOUT persisting, so the
+  // operator reviews what a white-label import would pull before committing. Saving is the separate
+  // /snapshots/capture step. Live use needs the bot token (read-only); demo uses the fixture guilds.
+  app.post('/snapshots/scan', { preHandler: requireAuth }, async (req, reply) => {
+    const body = (req.body ?? {}) as { sourceGuildId?: string };
+    try {
+      let snapshot;
+      if (isLiveMode()) {
+        if (!body.sourceGuildId) return reply.code(400).send({ error: 'Pick a server to scan.' });
+        snapshot = await captureSnapshot(new DiscordGuildClient({ token: env.discordBotToken, guildId: body.sourceGuildId, store }), { ownerNote: 'scan preview' });
+      } else if (body.sourceGuildId) {
+        const source = demoGuildSnapshot(body.sourceGuildId);
+        if (!source) return reply.code(404).send({ error: 'Unknown server.' });
+        snapshot = await captureSnapshot(mockGuildFromSnapshot(source), { ownerNote: 'scan preview' });
+      } else {
+        snapshot = await captureSnapshot(mockGuildFromSnapshot(makeSampleSnapshot()), { ownerNote: 'scan preview' });
+      }
+      // Pure preview — NOT written to the library. The operator saves via /snapshots/capture.
+      const adminRoles = snapshot.roles.filter((r) => !r.isEveryone && auditAuthority(r.permissions).hasAdmin).map((r) => r.name);
+      return {
+        live: isLiveMode(),
+        sourceGuildId: snapshot.source.guildId,
+        guildName: snapshot.guild.name,
+        counts: {
+          roles: snapshot.roles.length,
+          channels: snapshot.channels.length,
+          categories: snapshot.categories.length,
+          emojis: snapshot.emojis.length,
+          stickers: snapshot.stickers.length,
+          automod: snapshot.automod.length,
+          bots: snapshot.bots.length,
+        },
+        headsUp: [
+          ...(adminRoles.length ? [`${adminRoles.length} role(s) carry Administrator — review before recreating on a client server: ${adminRoles.slice(0, 5).join(', ')}${adminRoles.length > 5 ? '…' : ''}`] : []),
+          ...(snapshot.bots.length ? [`${snapshot.bots.length} third-party bot(s) detected — bots can't be cloned and will need manual re-invite + reconfigure.`] : []),
+        ],
+      };
+    } catch (err) {
+      console.error('snapshot scan failed:', err);
+      return reply.code(isLiveMode() ? 502 : 500).send({ error: 'scan failed' });
+    }
+  });
+
   // Export a snapshot (+ optional config) as a portable, checksummed .discobundle (§7).
   app.get('/snapshots/:id/export', { preHandler: requireAuth }, async (req, reply) => {
     const rec = await scoped(req).getSnapshot((req.params as { id: string }).id);
@@ -332,6 +375,26 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       console.error('bundle import failed:', err); // detail server-side; generic to the client
       return reply.code(500).send({ error: 'could not import bundle' });
     }
+  });
+
+  // ── operator preferences / defaults (#4): per-operator defaults for new builds + handovers ──
+  // Always scoped to the caller's own prefs (scopeRepo forces the actor's email).
+  app.get('/operator/prefs', { preHandler: requireAuth }, async (req) => {
+    return (await scoped(req).getOperatorPrefs(operatorOf(req))) ?? emptyOperatorPrefs(operatorOf(req));
+  });
+  app.patch('/operator/prefs', { preHandler: requireAuth }, async (req, reply) => {
+    const parsed = OperatorPrefsPatch.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid prefs', detail: parsed.error.flatten() });
+    return scoped(req).upsertOperatorPrefs(operatorOf(req), parsed.data);
+  });
+
+  // ── inbound webhook receipt log (#6): admin-only. Stripe/Discord hits + signature result + outcome. ──
+  app.get('/admin/webhooks', { preHandler: requireAuth }, async (req, reply) => {
+    if (actorOf(req).role !== 'admin') return reply.code(403).send({ error: 'admin only' });
+    const q = req.query as { source?: string; limit?: string };
+    const limit = Math.min(500, Math.max(1, Number(q.limit) || 200));
+    const source = q.source === 'stripe' || q.source === 'discord' ? q.source : undefined;
+    return repo.listWebhookEvents(limit, source); // system-wide log (not owner-scoped)
   });
 
   // ── snapshot composability (#5): merge two owned snapshots into a composite template ──
@@ -816,14 +879,16 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     // logical clientId lives in rebrandConfig, not here). Unknown/unowned/absent → null.
     const clientId = body.clientId && (await r.getClient(body.clientId)) ? body.clientId : null;
 
+    // Fall back to this operator's saved defaults (#4) when the request doesn't specify dryRun/canary.
+    const prefs = await r.getOperatorPrefs(operatorOf(req));
     const job = await r.addJob({
       kind: 'rebuild',
       status: 'queued',
       snapshotId: rec.id,
       clientId,
       targetGuildId: body.targetGuildId ?? null,
-      dryRun: body.dryRun ?? false,
-      canary: !!body.canary,
+      dryRun: body.dryRun ?? prefs?.defaultDryRun ?? false,
+      canary: body.canary ?? prefs?.defaultCanary ?? false,
       rebrandConfig: parsed.data,
       metrics: null,
       progress: 0,
@@ -1074,6 +1139,49 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { id, status: 'queued' };
   });
 
+  /** Replay (#3): re-run an existing build's SAME snapshot + rebrand config against a NEW target guild —
+   *  productizes delivery (sell the same template to the next client). A fresh job, owner-scoped to the
+   *  caller; the parent must be owned (→ 404). dryRun/canary fall back to the operator's saved defaults. */
+  app.post('/jobs/:id/replay', { preHandler: requireAuth }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = (req.body ?? {}) as { targetGuildId?: string; dryRun?: boolean; canary?: boolean };
+    const r = scoped(req);
+    const prior = await r.getJob(id);
+    if (!prior) return reply.code(404).send({ error: 'not found' });
+    if (!prior.snapshotId || !prior.rebrandConfig) return reply.code(400).send({ error: 'this build has no snapshot or config to replay' });
+    const snap = await r.getSnapshot(prior.snapshotId);
+    if (!snap) return reply.code(404).send({ error: 'snapshot not found' });
+    const prefs = await r.getOperatorPrefs(operatorOf(req));
+    const job = await r.addJob({
+      kind: 'rebuild',
+      status: 'queued',
+      snapshotId: snap.id,
+      clientId: prior.clientId,
+      targetGuildId: body.targetGuildId ?? null,
+      dryRun: body.dryRun ?? prefs?.defaultDryRun ?? false,
+      canary: body.canary ?? prefs?.defaultCanary ?? false,
+      rebrandConfig: prior.rebrandConfig,
+      metrics: null,
+      progress: 0,
+      manifest: null,
+      report: null,
+      error: null,
+      ownerEmail: operatorOf(req),
+      invoicedCents: 0,
+      paidCents: 0,
+    });
+    if (!job.dryRun) await repo.addAudit({ action: 'build.replay', target: snap.name, detail: `replay of build ${id.slice(-6)} → ${prior.rebrandConfig.serverName ?? snap.snapshot.guild.name}`, operator: operatorOf(req) });
+    const data: BuildJobData = { jobId: job.id, snapshot: snap.snapshot, config: prior.rebrandConfig, dryRun: job.dryRun, targetGuildId: job.targetGuildId, contentIdentity: 'server' };
+    if (useQueue()) {
+      await getQueue().add('rebuild', data, { jobId: job.id, attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: { age: 86400 }, removeOnFail: false });
+    } else {
+      void runBuild(repo, channel, { jobId: job.id, snapshot: snap.snapshot, config: prior.rebrandConfig, dryRun: job.dryRun });
+    }
+    void repo.updateSnapshot(snap.id, { lastUsedAt: new Date().toISOString() }).catch(() => {});
+    pingActivity('build');
+    return { id: job.id, status: job.status, replayOf: id };
+  });
+
   /** Cancel a queued (not-yet-started) job. A running build can't be interrupted mid-flight — be honest. */
   app.post('/jobs/:id/cancel', { preHandler: requireAuth }, async (req, reply) => {
     const id = (req.params as { id: string }).id;
@@ -1124,11 +1232,14 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const existing = await r.getHandoverByJob(job.id);
     if (existing) return existing;
     pingActivity('handover');
+    // Seed the welcome + ownership checklist from this operator's saved defaults (#4), if any.
+    const prefs = await r.getOperatorPrefs(operatorOf(req));
     return r.addHandover({
       jobId: job.id,
       clientId: job.clientId,
       state: 'draft',
-      ownershipSteps: defaultOwnershipSteps(),
+      welcomeMessage: prefs?.defaultWelcomeMessage || '',
+      ownershipSteps: prefs?.defaultOwnershipSteps ?? defaultOwnershipSteps(),
       upsellStatus: 'none',
       ownerEmail: operatorOf(req),
     });

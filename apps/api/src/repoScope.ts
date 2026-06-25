@@ -75,9 +75,16 @@ export function scopeRepo(base: Repo, actor: Actor): Repo {
     listAudit: (limit, filter) => base.listAudit(limit, filter), // callers pass an operator/date filter
     addBuildEvent: (e) => base.addBuildEvent(e), // system (emitted by the worker)
     listBuildEvents: async (jobId, limit) => (await base.listBuildEvents(jobId, limit)).filter(owns),
+    addWebhookEvent: (e) => base.addWebhookEvent(e), // system (Stripe/Discord handlers)
+    listWebhookEvents: (limit, source) => base.listWebhookEvents(limit, source), // admin-gated at the route
     recordHandoverView: (hid, ref, kind) => base.recordHandoverView(hid, ref, kind), // public open
     recordHandoverSurvey: (hid, nps, comment) => base.recordHandoverSurvey(hid, nps, comment), // public survey submit
     listHandoverViews: async (handoverId) =>
       owns(await base.getHandover(handoverId)) ? base.listHandoverViews(handoverId) : [],
+
+    // ── operator prefs (#4) — FORCE the actor's own key, ignoring any passed email, so an operator can
+    // only ever read/write their own defaults regardless of what a route hands in.
+    getOperatorPrefs: () => base.getOperatorPrefs(actor.email),
+    upsertOperatorPrefs: (_email, patch) => base.upsertOperatorPrefs(actor.email, patch),
   };
 }

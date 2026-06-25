@@ -210,24 +210,33 @@ export function registerStripeRoutes(
     const rawBody = (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
     const liveMode = !!process.env.STRIPE_SECRET_KEY;
 
+    // Inbound webhook log (#6): record every hit (signature result + outcome) with a REDACTED summary —
+    // never the raw payload. Admin-viewable via GET /admin/webhooks for debugging delivery failures.
+    const logHook = (signatureValid: boolean, outcome: string, detail: string, ev?: StripeEvent) =>
+      void repo.addWebhookEvent({ source: 'stripe', eventId: ev?.data?.object?.id ?? '', eventType: ev?.type ?? '', signatureValid, outcome, detail }).catch(() => {});
+
     if (secret) {
       if (!verifyStripeSignature(rawBody, sig, secret)) {
+        logHook(false, 'rejected', 'invalid signature');
         return reply.code(400).send({ error: 'invalid signature' });
       }
     } else if (liveMode) {
       // FAIL CLOSED: a live key is configured but no webhook secret → refuse to fulfil unsigned events.
       // (Scaffold convenience must never disable signature checks on a real money path.)
       app.log.error('STRIPE_WEBHOOK_SECRET missing while live — rejecting unsigned webhook');
+      logHook(false, 'rejected', 'live key set but no STRIPE_WEBHOOK_SECRET');
       return reply.code(400).send({ error: 'webhook signing secret not configured' });
     } else if (process.env.NODE_ENV === 'production') {
       // No keys at all in PRODUCTION is a misconfiguration, not a test — refuse rather than accept a
       // forged unsigned event that would create a client record. The unsigned-accept path below is
       // strictly a local/dev convenience.
       app.log.error('Stripe webhook hit with no keys configured in production — rejecting unsigned event');
+      logHook(false, 'rejected', 'no Stripe keys configured in production');
       return reply.code(400).send({ error: 'stripe not configured' });
     }
     // else: local/dev scaffold (no keys, non-prod) → accept unverified so the flow is testable.
 
+    const signatureVerified = !!secret; // true only when a secret was present and the check above passed
     const event = (req.body ?? {}) as StripeEvent;
 
     if (event.type === 'checkout.session.completed') {
@@ -260,9 +269,11 @@ export function registerStripeRoutes(
             ownerEmail: env.operatorEmail, // Stripe-fulfilled clients are owned by the configured operator
           });
           void client;
+          logHook(signatureVerified, 'processed', `client created from paid checkout (${clientName})`, event);
         } catch (err) {
           // unique-constraint race: a concurrent retry already fulfilled this session — safe to ignore.
           app.log.warn({ err: err instanceof Error ? err.message : String(err) }, 'stripe fulfilment deduped (session already processed)');
+          logHook(signatureVerified, 'ignored', 'fulfilment deduped (session already processed)', event);
         }
 
         // ── KICK THE BUILD (TODO) ──
@@ -272,7 +283,12 @@ export function registerStripeRoutes(
         //   const job = await repo.addJob({ kind: 'rebuild', status: 'queued', clientId: client.id, ... });
         //   useQueue() ? getQueue().add('rebuild', data, { jobId: job.id, ... })
         //              : runBuild(repo, channel, { jobId: job.id, ... });
+      } else {
+        // Received + signature-checked, but not fulfilled (already done, unpaid, or no client name).
+        logHook(signatureVerified, 'ignored', !clientName ? 'no client name in metadata' : !paid ? 'session not paid' : 'already fulfilled', event);
       }
+    } else {
+      logHook(signatureVerified, 'ignored', `unhandled event type: ${event.type ?? '(none)'}`, event);
     }
 
     // Acknowledge fast so Stripe doesn't retry. Any heavy fulfilment work should be enqueued, not
