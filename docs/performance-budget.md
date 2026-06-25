@@ -73,3 +73,73 @@ suspected cause).
    (the classic O(n) blob-parse trap `snapshotNames()` was introduced to avoid).
 3. Check the `scopeRepo` wrapper for an accidental O(n²) filter (e.g. a per-row ownership re-fetch).
 4. Only after fixing the cause — never by loosening the budget to make the table green.
+
+---
+
+# Load & concurrency (#1)
+
+The benchmark above times **one request at a time** — the latency floor. This section measures the
+opposite: the system under **concurrent load** along the three axes that actually contend in production,
+and reports where the first thing degrades.
+
+- **Harness:** [`apps/api/test/load.harness.test.ts`](../apps/api/test/load.harness.test.ts)
+- **Run it:** `cd apps/api && npx vitest run test/load.harness.test.ts` (the printed report block is the
+  source of truth; numbers below are a representative M1 run, 2026-06-25)
+- **Backend:** in-memory repo + the in-process `JobBus` — no Postgres/Redis/Discord token. This isolates
+  the **application's own** concurrency behavior; the real-backend ceiling is infra (see §Where it breaks).
+
+## 1. Concurrent builds — `runBuildJob()` against MockGuild (dry-run), ramped
+
+| Concurrency | per-build p50 | p95 | p99 | wall | throughput | slowdown× |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1  | 2.54 ms | 2.54 | 2.54 | 2.56 ms | 390 builds/s | 1.00 |
+| 2  | 0.89 ms | 0.89 | 0.89 | 0.91 ms | 2202 builds/s | 0.35 |
+| 5  | 1.63 ms | 1.64 | 1.64 | 1.67 ms | 3000 builds/s | 0.64 |
+| 10 | 2.85 ms | 2.88 | 2.88 | 2.92 ms | 3425 builds/s | 1.12 |
+| 20 | 4.33 ms | 4.41 | 4.41 | 4.44 ms | 4505 builds/s | 1.71 |
+
+Throughput rises monotonically to 20 — the in-process compute path has headroom well past the
+10-concurrent target. **Caveat (the real finding):** at concurrency 20 the *tail* becomes GC-sensitive
+and bimodal run-to-run — a representative second run spiked p99 from ~4 ms to ~20 ms (an 8× slowdown) on
+a garbage-collection pause, while median stayed flat. So **~10 concurrent in-process builds is the
+comfortable ceiling**; past that, expect GC-driven tail spikes and scale horizontally (more workers)
+rather than packing one process. The harness asserts 10 concurrent dry-run builds finish < 10 s wall.
+
+## 2. 50 concurrent handover-view beacons — `POST /h/:id/event` over a real socket
+
+| Metric | Value |
+|---|---|
+| latency p50 / p95 / p99 | **38.9 / 42.0 / 42.4 ms** |
+| writes recorded | **50 / 50** (zero dropped) |
+
+The write-beacon path absorbs 50 simultaneous clicks with every view persisted and p95 ~42 ms (dominated
+by real-socket round-trip, not repo cost). The harness asserts all 50 are recorded and p95 < 250 ms.
+
+## 3. 100 concurrent SSE listeners — `/activity/stream` + measured fan-out
+
+| Metric | p50 | p95 | p99 |
+|---|---:|---:|---:|
+| connection accept | 28.9 ms | 35.6 ms | 36.1 ms |
+| **fan-out** (1 ping → all 100 receive) | **3.4 ms** | 4.2 ms | 4.4 ms |
+
+100 listeners connect and a single `pingActivity` fans out to all of them in ~4 ms p95. The harness
+asserts all 100 connect and fan-out p95 < 1 s.
+
+## Where it breaks first
+
+In-process, **nothing in the 10-build / 50-click / 100-listener envelope breaks** — the application layer
+has headroom. The first real ceiling is **infrastructure this harness deliberately does not stub**, in
+likely order:
+
+1. **BullMQ worker concurrency** — real builds run in the worker, not the API; throughput is gated by
+   how many workers × their concurrency setting, not by the in-process numbers above.
+2. **Postgres connection pool** — under the Prisma backend, concurrent builds each hold a connection for
+   their checkpoint writes; the pool size (not CPU) caps simultaneous in-flight builds.
+3. **Redis subscriber connections** — each SSE listener holds a pub/sub subscription; at thousands of
+   concurrent delivery pages, Redis `maxclients` / file descriptors bound it, not the ~4 ms fan-out.
+4. **GC tail latency** — already visible at ~20 in-process builds (above); a single-process box should
+   cap build concurrency to ~10 and scale out.
+
+These are named, not measured, because measuring them requires the live infra and would make the test
+flaky/non-hermetic. When the Prisma+Redis backend becomes the hot path, give it its own integration-level
+load test with the real pool sizes — that is where a production budget for these limits belongs.
