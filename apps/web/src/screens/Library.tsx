@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, type JoinedGuild, type MarketplaceItem, type SnapshotSummary, type StarterPack } from '../api.js';
+import { api, type JoinedGuild, type MarketplaceItem, type ScanPreview, type SnapshotSummary, type StarterPack } from '../api.js';
 import { Modal } from '../components/Modal.js';
 import { SkeletonCard } from '../components/Skeleton.js';
 import { SnapshotTimeline } from '../components/SnapshotTimeline.js';
@@ -268,6 +268,64 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       setImportErr(e instanceof Error ? e.message : String(e));
     } finally {
       setImportingId(null);
+    }
+  }
+
+  // Scan-a-server flow: read-only preview of what an import would pull from a live
+  // server, BEFORE persisting it as a library template. Helps the operator eyeball
+  // the structure (and any heads-up caveats) before recreating it on a client server.
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanGuilds, setScanGuilds] = useState<JoinedGuild[] | null>(null);
+  const [scanGuildsLive, setScanGuildsLive] = useState(false);
+  const [scanSel, setScanSel] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [scanPreview, setScanPreview] = useState<ScanPreview | null>(null);
+  const [scanErr, setScanErr] = useState<string | null>(null);
+  const [scanSaving, setScanSaving] = useState(false);
+
+  async function openScan() {
+    setScanOpen(true);
+    setScanGuilds(null);
+    setScanSel('');
+    setScanPreview(null);
+    setScanErr(null);
+    try {
+      const r = await api.guilds();
+      setScanGuilds(r.guilds);
+      setScanGuildsLive(r.live);
+      setScanSel(r.guilds[0]?.id ?? '');
+    } catch (e) {
+      setScanErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function runScan() {
+    setScanning(true);
+    setScanErr(null);
+    setScanPreview(null);
+    try {
+      setScanPreview(await api.scanGuild(scanSel || undefined));
+    } catch (e) {
+      setScanErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function saveScan() {
+    if (!scanPreview) return;
+    setScanSaving(true);
+    setScanErr(null);
+    try {
+      const r = await api.capture({ sourceGuildId: scanPreview.sourceGuildId });
+      setNote(r.unchanged ? `${r.name} is already in your library (v${r.version}, no changes).` : `Saved ${r.name} as a template in your library.`);
+      setTimeout(() => setNote(null), 5000);
+      await load();
+      setScanOpen(false);
+    } catch (e) {
+      setScanErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setScanSaving(false);
     }
   }
 
@@ -642,6 +700,114 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
         </Modal>
       )}
 
+      {scanOpen && (
+        <Modal
+          title="Scan a server"
+          maxWidth={560}
+          closeOnBackdrop={!scanning && !scanSaving}
+          onClose={() => !scanning && !scanSaving && setScanOpen(false)}
+        >
+          <div className="eyebrow mb-2">read-only preview</div>
+          <h2 className="text-lg mb-1">Scan a server</h2>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+            Look at exactly what an import would pull — channels, roles, emojis, automod and more — before you save it as a template. Nothing is written until you choose <strong>Save as template</strong>.
+          </p>
+
+          <label htmlFor="scan-guild" className="label">Server to scan</label>
+          <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
+            <select
+              id="scan-guild"
+              className="input"
+              style={{ flex: 1, minWidth: 200 }}
+              value={scanSel}
+              disabled={!scanGuilds || scanning || scanSaving}
+              onChange={(e) => setScanSel(e.target.value)}
+            >
+              {!scanGuilds ? (
+                <option value="">Loading your servers…</option>
+              ) : scanGuilds.length === 0 ? (
+                <option value="">No servers available</option>
+              ) : (
+                scanGuilds.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))
+              )}
+            </select>
+            <button
+              className="btn btn-primary shrink-0"
+              disabled={!scanGuilds || scanGuilds.length === 0 || scanning || scanSaving}
+              onClick={runScan}
+            >
+              {scanning ? 'Scanning…' : '🔍 Scan'}
+            </button>
+          </div>
+          {scanGuilds && !scanGuildsLive && (
+            <p className="text-[0.72rem] mb-3" style={{ color: 'var(--color-faint)' }}>
+              Demo servers — a real bot token scans your actual Discord servers.
+            </p>
+          )}
+
+          {scanErr && (
+            <div className="panel-soft p-3 mb-3 text-sm flex items-center justify-between gap-3" style={{ color: 'var(--color-danger)' }}>
+              <span>Couldn’t scan — {scanErr}</span>
+              <button className="btn btn-ghost shrink-0" disabled={scanning || scanSaving} onClick={scanPreview ? saveScan : runScan}>Retry</button>
+            </div>
+          )}
+
+          {scanPreview && (
+            <div className="rise">
+              <div className="panel-soft p-4 mb-4">
+                <div className="eyebrow mb-1">would import</div>
+                <h3 className="text-base mb-3" style={{ fontFamily: 'var(--font-display)' }}>{scanPreview.guildName}</h3>
+                <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))' }}>
+                  {([
+                    ['roles', scanPreview.counts.roles],
+                    ['channels', scanPreview.counts.channels],
+                    ['categories', scanPreview.counts.categories],
+                    ['emojis', scanPreview.counts.emojis],
+                    ['stickers', scanPreview.counts.stickers],
+                    ['automod', scanPreview.counts.automod],
+                    ['bots', scanPreview.counts.bots],
+                  ] as const).map(([k, v]) => (
+                    <div key={k} className="panel-soft px-2.5 py-2">
+                      <div className="text-lg leading-none" style={{ fontFamily: 'var(--font-display)' }}>{v}</div>
+                      <div className="text-[0.62rem] mono mt-1" style={{ color: 'var(--color-faint)' }}>{k}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {scanPreview.headsUp.length > 0 && (
+                <div className="mb-4">
+                  <div className="label mb-2">heads-up before you recreate this</div>
+                  <div className="space-y-1.5">
+                    {scanPreview.headsUp.map((h, i) => (
+                      <div key={i} className="panel-soft px-3 py-2 text-[0.82rem] flex items-start gap-2" style={{ color: 'var(--color-gold)' }}>
+                        <span aria-hidden className="shrink-0">⚠</span>
+                        <span>{h}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button className="btn btn-primary flex-1 justify-center" disabled={scanSaving} onClick={saveScan}>
+                  {scanSaving ? 'Saving…' : '＋ Save as template'}
+                </button>
+                <button className="btn btn-ghost" disabled={scanSaving} onClick={() => setScanOpen(false)}>Close</button>
+              </div>
+            </div>
+          )}
+
+          {!scanPreview && (
+            <div className="flex justify-end mt-2">
+              <button className="btn btn-ghost" disabled={scanning} onClick={() => setScanOpen(false)}>Close</button>
+            </div>
+          )}
+        </Modal>
+      )}
+
       {importOpen && (
         <Modal
           title="Pick a server to snapshot into your library"
@@ -745,6 +911,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
             }}
           />
           <button className="btn" onClick={() => fileRef.current?.click()}>↑ Import file</button>
+          <button className="btn" onClick={openScan}>🔍 Scan a server</button>
           <button className="btn" onClick={openPacks}>✨ Starter packs</button>
           <button className="btn" onClick={openMarket}>🛒 Marketplace</button>
           <button className="btn btn-primary" onClick={openImport}>

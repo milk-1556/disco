@@ -12,6 +12,7 @@ import { Login } from './screens/Login.js';
 import { PublicHandover } from './screens/PublicHandover.js';
 import { Queue } from './screens/Queue.js';
 import { Operations } from './screens/Operations.js';
+import { Preferences } from './screens/Preferences.js';
 import { Setup } from './screens/Setup.js';
 import { Today } from './screens/Today.js';
 import { Shortcuts } from './components/Shortcuts.js';
@@ -139,6 +140,8 @@ export default function App() {
         <Operations />
       ) : view === 'setup' ? (
         <Setup go={go} />
+      ) : view === 'preferences' ? (
+        <Preferences />
       ) : (
         <Invite applicationId={applicationId} />
       )}

@@ -93,6 +93,18 @@ export const api = {
   job: (id: string) => req<Job>(`/jobs/${id}`),
   retryJob: (id: string) => req<{ id: string; status: string }>(`/jobs/${id}/retry`, { method: 'POST' }),
   cancelJob: (id: string) => req<{ id: string; status: string }>(`/jobs/${id}/cancel`, { method: 'POST' }),
+  // #3 build replay: re-run a build's snapshot+config against a NEW target guild.
+  replayJob: (id: string, body: { targetGuildId?: string; dryRun?: boolean; canary?: boolean }) =>
+    req<{ id: string; status: string; replayOf: string }>(`/jobs/${id}/replay`, { method: 'POST', body: JSON.stringify(body) }),
+  // #2 guild scan: read-only preview of what a white-label import would pull (no persist).
+  scanGuild: (sourceGuildId?: string) =>
+    req<ScanPreview>('/snapshots/scan', { method: 'POST', body: JSON.stringify({ sourceGuildId }) }),
+  // #4 operator preferences / defaults.
+  prefs: () => req<OperatorPrefs>('/operator/prefs'),
+  setPrefs: (patch: Partial<OperatorPrefs>) => req<OperatorPrefs>('/operator/prefs', { method: 'PATCH', body: JSON.stringify(patch) }),
+  // #6 webhook event log (admin only).
+  webhookEvents: (source?: 'stripe' | 'discord', limit = 200) =>
+    req<WebhookEvent[]>(`/admin/webhooks?limit=${limit}${source ? `&source=${source}` : ''}`),
   clients: () => req<Client[]>('/clients'),
   addClient: (body: Partial<Client>) => req<Client>('/clients', { method: 'POST', body: JSON.stringify(body) }),
   deleteClient: (id: string) => req<{ ok: boolean }>(`/clients/${id}`, { method: 'DELETE' }),
@@ -521,6 +533,34 @@ export interface OwnershipStep {
   title: string;
   detail: string;
   done: boolean;
+}
+// #2 read-only guild scan preview (not persisted).
+export interface ScanPreview {
+  live: boolean;
+  sourceGuildId: string;
+  guildName: string;
+  counts: { roles: number; channels: number; categories: number; emojis: number; stickers: number; automod: number; bots: number };
+  headsUp: string[];
+}
+// #4 per-operator defaults.
+export interface OperatorPrefs {
+  operatorEmail: string;
+  defaultCanary: boolean;
+  defaultDryRun: boolean;
+  defaultWelcomeMessage: string;
+  defaultOwnershipSteps: OwnershipStep[] | null;
+  updatedAt: string | null;
+}
+// #6 inbound webhook receipt (admin log).
+export interface WebhookEvent {
+  id: string;
+  at: string;
+  source: string;
+  eventId: string;
+  eventType: string;
+  signatureValid: boolean;
+  outcome: string;
+  detail: string;
 }
 export interface Handover {
   id: string;

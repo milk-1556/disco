@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, streamJobLogs, type Job, type JobEvent, type JobSummary } from '../api.js';
+import { api, streamJobLogs, type Job, type JobEvent, type JobSummary, type JoinedGuild } from '../api.js';
 import { BuildSteps } from '../components/BuildSteps.js';
 import { EmptyArt } from '../components/EmptyArt.js';
 import { SkeletonRows } from '../components/Skeleton.js';
@@ -51,6 +51,13 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
   const [detail, setDetail] = useState<Job | null>(null);
   const [logs, setLogs] = useState<JobEvent[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  // Replay: which job's panel is open, its form fields, joined-guild picker, and per-job "queued ✓" flash.
+  const [replayFor, setReplayFor] = useState<string | null>(null);
+  const [replayGuild, setReplayGuild] = useState('');
+  const [replayDryRun, setReplayDryRun] = useState(true);
+  const [replayBusy, setReplayBusy] = useState(false);
+  const [replayDone, setReplayDone] = useState<string | null>(null);
+  const [guildOpts, setGuildOpts] = useState<JoinedGuild[] | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const logBoxRef = useRef<HTMLDivElement>(null);
 
@@ -95,6 +102,31 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
       /* surfaced via the list refresh */
     } finally {
       setBusy(null);
+    }
+  };
+
+  // Open the replay panel for a job, resetting the form; lazily fetch the joined-guild picker once.
+  const openReplay = (id: string) => {
+    setReplayFor((cur) => (cur === id ? null : id));
+    setReplayGuild('');
+    setReplayDryRun(true);
+    setReplayDone(null);
+    if (guildOpts === null) api.guilds().then((r) => setGuildOpts(r.guilds)).catch(() => setGuildOpts([]));
+  };
+
+  const submitReplay = async (id: string) => {
+    setReplayBusy(true);
+    try {
+      const targetGuildId = replayGuild.trim();
+      await api.replayJob(id, { dryRun: replayDryRun, ...(targetGuildId ? { targetGuildId } : {}) });
+      setReplayFor(null);
+      setReplayDone(id);
+      setJobs(await api.jobs());
+      setTimeout(() => setReplayDone((cur) => (cur === id ? null : cur)), 3000);
+    } catch {
+      /* surfaced via the list refresh */
+    } finally {
+      setReplayBusy(false);
     }
   };
 
@@ -177,6 +209,20 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
                   {j.status === 'completed' && (j.dryRun || j.canary) && (
                     <span className="label" style={{ color: 'var(--color-faint)' }}>{j.canary ? 'canary — inspect, then build for real' : 'preview only'}</span>
                   )}
+                  {j.status === 'completed' && j.snapshotId && (
+                    replayDone === j.id ? (
+                      <span className="chip chip-jade" role="status">Queued replay ✓</span>
+                    ) : (
+                      <button
+                        className="btn btn-ghost text-xs"
+                        onClick={() => openReplay(j.id)}
+                        aria-expanded={replayFor === j.id}
+                        title="Re-run this build's snapshot + config for a new client"
+                      >
+                        ⤳ Replay
+                      </button>
+                    )
+                  )}
                   {(j.status === 'failed' || j.status === 'canceled') && (
                     <button className="btn text-xs" disabled={busy === j.id} onClick={() => act(j.id, () => api.retryJob(j.id))}>
                       {busy === j.id ? 'Retrying…' : '↻ Retry'}
@@ -189,6 +235,66 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
                   )}
                 </div>
               </div>
+
+              {replayFor === j.id && (
+                <div className="px-4 pb-4">
+                  <div className="panel-soft p-4 space-y-3">
+                    <div>
+                      <div className="eyebrow mb-1">replay this build</div>
+                      <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                        Re-runs the same snapshot <span style={{ color: 'var(--color-source)' }}>{j.snapshotName ?? 'template'}</span> and config against a new target — sell this template to the next client.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3 items-end">
+                      <div className="flex-1" style={{ minWidth: 180 }}>
+                        <label className="label block mb-1" htmlFor={`replay-guild-${j.id}`}>target guild</label>
+                        {guildOpts && guildOpts.length > 0 ? (
+                          <select
+                            id={`replay-guild-${j.id}`}
+                            className="input w-full"
+                            value={replayGuild}
+                            onChange={(e) => setReplayGuild(e.target.value)}
+                          >
+                            <option value="">Same as original</option>
+                            {guildOpts.map((g) => (
+                              <option key={g.id} value={g.id}>{g.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            id={`replay-guild-${j.id}`}
+                            className="input w-full"
+                            placeholder={guildOpts === null ? 'Loading guilds…' : 'Guild ID (blank = same as original)'}
+                            value={replayGuild}
+                            onChange={(e) => setReplayGuild(e.target.value)}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none" htmlFor={`replay-dry-${j.id}`}>
+                      <input
+                        id={`replay-dry-${j.id}`}
+                        type="checkbox"
+                        className="accent-[var(--color-source)]"
+                        checked={replayDryRun}
+                        onChange={(e) => setReplayDryRun(e.target.checked)}
+                      />
+                      <span>Dry-run first <span style={{ color: 'var(--color-faint)' }}>— preview without touching the target (safer)</span></span>
+                    </label>
+
+                    <div className="flex gap-2 items-center">
+                      <button className="btn btn-primary text-xs" disabled={replayBusy} onClick={() => submitReplay(j.id)}>
+                        {replayBusy ? 'Queuing…' : 'Replay build'}
+                      </button>
+                      <button className="btn btn-ghost text-xs" disabled={replayBusy} onClick={() => setReplayFor(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {isOpen && (
                 <div className="px-4 pb-4 space-y-3">

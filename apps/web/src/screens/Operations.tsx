@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, type AuditEntry, type BuildEventEntry, type StatusInfo } from '../api.js';
+import { api, type AuditEntry, type BuildEventEntry, type StatusInfo, type WebhookEvent } from '../api.js';
 import { usePoll } from '../usePoll.js';
 
 function ago(iso: string | null): string {
@@ -82,12 +82,31 @@ function buildKindStyle(kind: string): { color: string; bg: string; border: stri
   };
 }
 
+/** Map a webhook outcome to a chip color (processed=jade, ignored=muted, rejected/failed=danger/gold). */
+function outcomeStyle(outcome: string): { color: string; bg: string; border: string } {
+  const o = outcome.toLowerCase();
+  if (o === 'processed')
+    return { color: 'var(--color-jade)', bg: 'color-mix(in srgb, var(--color-jade) 14%, transparent)', border: 'color-mix(in srgb, var(--color-jade) 35%, transparent)' };
+  if (o === 'rejected')
+    return { color: 'var(--color-danger)', bg: 'color-mix(in srgb, var(--color-danger) 14%, transparent)', border: 'color-mix(in srgb, var(--color-danger) 35%, transparent)' };
+  if (o === 'failed')
+    return { color: 'var(--color-gold)', bg: 'color-mix(in srgb, var(--color-gold) 14%, transparent)', border: 'color-mix(in srgb, var(--color-gold) 35%, transparent)' };
+  // ignored & anything else → muted
+  return { color: 'var(--color-muted)', bg: 'var(--color-line-soft)', border: 'var(--color-line)' };
+}
+
+const WEBHOOK_SOURCES = ['all', 'stripe', 'discord'] as const;
+type WebhookSourceFilter = (typeof WEBHOOK_SOURCES)[number];
+
 /** A premium, read-only ops dashboard: live system health + an accountability audit log. */
 export function Operations() {
   const [status, setStatus] = useState<StatusInfo | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [builds, setBuilds] = useState<BuildEventEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [webhooks, setWebhooks] = useState<WebhookEvent[]>([]);
+  const [webhooksOk, setWebhooksOk] = useState(false);
+  const [webhookSource, setWebhookSource] = useState<WebhookSourceFilter>('all');
 
   usePoll(() => {
     void (async () => {
@@ -99,6 +118,20 @@ export function Operations() {
         setLoaded(true);
       } catch {
         /* keep last good values on a transient blip */
+      }
+    })();
+  }, 5000);
+
+  // Webhook log is ADMIN-ONLY: api.req throws (e.g. 403) for non-admins.
+  // Wrap in try/catch — on failure we simply never flip webhooksOk, so the section stays hidden.
+  usePoll(() => {
+    void (async () => {
+      try {
+        const w = await api.webhookEvents(webhookSource === 'all' ? undefined : webhookSource);
+        setWebhooks(w);
+        setWebhooksOk(true);
+      } catch {
+        setWebhooksOk(false);
       }
     })();
   }, 5000);
@@ -257,6 +290,85 @@ export function Operations() {
                         <div className="text-[0.72rem] truncate" style={{ color: 'var(--color-faint)' }}>{e.detail}</div>
                       )}
                       <div className="text-[0.7rem] mono mt-0.5" style={{ color: 'var(--color-muted)' }}>{e.operator}</div>
+                    </div>
+                    <span className="mono text-[0.7rem] shrink-0 mt-0.5" style={{ color: 'var(--color-faint)' }}>{ago(e.at)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── WEBHOOK LOG (admin only) ───────────────────────── */}
+      {webhooksOk && (
+        <section className="mt-8" aria-label="Webhook log">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <div className="eyebrow">webhook log</div>
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter webhooks by source">
+              {WEBHOOK_SOURCES.map((s) => {
+                const active = webhookSource === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setWebhookSource(s)}
+                    className="chip"
+                    style={{
+                      cursor: 'pointer',
+                      color: active ? 'var(--color-source)' : 'var(--color-muted)',
+                      background: active ? 'color-mix(in srgb, var(--color-source) 14%, transparent)' : 'var(--color-line-soft)',
+                      borderColor: active ? 'color-mix(in srgb, var(--color-source) 35%, transparent)' : 'var(--color-line)',
+                      transition: 'color 120ms, background-color 120ms, border-color 120ms',
+                    }}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {webhooks.length === 0 ? (
+            <div className="panel p-8 text-center">
+              <div className="text-sm font-medium mb-1">No webhooks received yet.</div>
+              <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
+                Inbound Stripe &amp; Discord receipts show here for delivery debugging.
+              </p>
+            </div>
+          ) : (
+            <div className="panel p-2">
+              {webhooks.map((e, idx) => {
+                const st = outcomeStyle(e.outcome);
+                return (
+                  <div
+                    key={e.id}
+                    className="flex items-start gap-3 px-3 py-2.5"
+                    style={{ borderBottom: idx === webhooks.length - 1 ? 'none' : '1px solid var(--color-line-soft)' }}
+                  >
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0 mt-0.5">
+                      <span
+                        className="chip"
+                        style={
+                          e.signatureValid
+                            ? { color: 'var(--color-jade)', background: 'color-mix(in srgb, var(--color-jade) 14%, transparent)', borderColor: 'color-mix(in srgb, var(--color-jade) 35%, transparent)' }
+                            : { color: 'var(--color-danger)', background: 'color-mix(in srgb, var(--color-danger) 14%, transparent)', borderColor: 'color-mix(in srgb, var(--color-danger) 35%, transparent)' }
+                        }
+                      >
+                        {e.signatureValid ? '✓ signed' : '⚠ unsigned/invalid'}
+                      </span>
+                      <span className="chip" style={{ color: st.color, background: st.bg, borderColor: st.border }}>
+                        {e.outcome}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[0.78rem] mono truncate" style={{ color: 'var(--color-bone)' }}>
+                        <span style={{ color: 'var(--color-faint)' }}>{e.source}</span>{' '}{e.eventType}
+                      </div>
+                      {e.detail && (
+                        <div className="text-[0.72rem] truncate" style={{ color: 'var(--color-faint)' }}>{e.detail}</div>
+                      )}
                     </div>
                     <span className="mono text-[0.7rem] shrink-0 mt-0.5" style={{ color: 'var(--color-faint)' }}>{ago(e.at)}</span>
                   </div>
