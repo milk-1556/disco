@@ -838,8 +838,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // (channel/role/overwrite plan, what skips, manual steps) against the rebranded snapshot, and returns
   // a single verdict: ready | ready_with_warnings | blocked. Run this green, THEN flip to a real build.
   app.post('/builds/readiness', { preHandler: requireAuth }, async (req, reply) => {
-    const body = (req.body ?? {}) as { snapshotId?: string; config?: unknown; targetTier?: number };
-    const rec = body.snapshotId ? await scoped(req).getSnapshot(body.snapshotId) : undefined;
+    const body = (req.body ?? {}) as { snapshotId?: string; config?: unknown; targetTier?: number; targetGuildId?: string };
+    const r = scoped(req);
+    const rec = body.snapshotId ? await r.getSnapshot(body.snapshotId) : undefined;
     if (!rec) return reply.code(404).send({ error: 'snapshot not found' });
     const parsed = RebrandConfig.safeParse(body.config);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid config', detail: parsed.error.flatten() });
@@ -850,7 +851,35 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const warnings = feasibility.findings.filter((f) => f.severity === 'warn');
     const { snapshot: rebranded } = rebrand(rec.snapshot, parsed.data);
     const report = dryRunReport(rebranded, 'readiness', new Date().toISOString());
-    const verdict = blocks.length ? 'blocked' : warnings.length || report.skipped.length ? 'ready_with_warnings' : 'ready';
+
+    // (#1) Operator history — the caller's OWN real (non-dry, non-canary) build success rate. A run of
+    // recent failures is itself a reason to pause before a $40k client build.
+    const ownJobs = await r.listJobs();
+    const real = ownJobs.filter((j) => !j.dryRun && !j.canary && (j.status === 'completed' || j.status === 'failed'));
+    const completed = real.filter((j) => j.status === 'completed').length;
+    const history = { realBuilds: real.length, completed, failed: real.length - completed, successRate: real.length ? completed / real.length : null };
+
+    // (#1) Live target-guild probe — bot-token validity + permission audit + reachability (= rate-limit
+    // headroom: a clean response means we're not currently throttled). Degrades gracefully in demo mode.
+    let live: { mode: 'live' | 'demo'; reachable: boolean; tokenValid: boolean; permissions: ReturnType<typeof auditAuthority> | null; detail: string } | null = null;
+    if (body.targetGuildId) {
+      const guildId = body.targetGuildId;
+      try {
+        const perms = isLiveMode()
+          ? await new DiscordGuildClient({ token: env.discordBotToken, guildId, store }).getBotPermissions()
+          : await new MockGuild(guildId).getBotPermissions();
+        live = { mode: isLiveMode() ? 'live' : 'demo', reachable: true, tokenValid: true, permissions: auditAuthority(perms), detail: isLiveMode() ? 'Reached Discord; bot token valid.' : 'Demo mode — simulated permissions (no real token used).' };
+      } catch (err) {
+        // In LIVE mode this is a hard block (the build will fail at the first API call); never leak the raw error.
+        console.error('readiness live probe failed:', err);
+        live = { mode: 'live', reachable: false, tokenValid: false, permissions: null, detail: 'Could not reach Discord with the configured bot token — it may be missing, invalid, or rate-limited.' };
+      }
+    }
+
+    // The bot lacking a required permission on the real target guild is a hard BLOCK — the build would
+    // half-apply and strand a client server. Token/reachability failure in live mode blocks too.
+    const liveBlocked = !!live && (!live.reachable || (live.permissions ? !live.permissions.ok : false));
+    const verdict = blocks.length || liveBlocked ? 'blocked' : warnings.length || report.skipped.length ? 'ready_with_warnings' : 'ready';
     return {
       verdict,
       serverName: rebranded.guild.name,
@@ -863,6 +892,40 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       warnings,
       skipped: report.skipped.slice(0, 20),
       steps: report.created.slice(0, 12), // a sample of the create plan, in dependency order
+      history,
+      live,
+    };
+  });
+
+  // (#3) Per-build TRACE — roll the persisted manifest (per-step timing + attempts), the per-object
+  // outcomes, the lifecycle events, and the metrics into one ordered timeline so an operator can see
+  // exactly where a build spent its time and which step (if any) had to retry. Owner-scoped.
+  app.get('/builds/:id/trace', { preHandler: requireAuth }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const r = scoped(req);
+    const job = await r.getJob(id);
+    if (!job) return reply.code(404).send({ error: 'not found' }); // non-owner → 404
+    const events = await r.listBuildEvents(id, 200);
+    const manifest = job.manifest;
+    // entry.kind → the rebuild step that creates it, so per-object outcomes roll up under their step.
+    const KIND_STEP: Record<string, string> = { role: 'roles', emoji: 'expressions', sticker: 'expressions', category: 'categories', channel: 'channels', automod: 'automod', webhook: 'content' };
+    const ms = (a: string | null, b: string | null) => (a && b ? Math.max(0, Date.parse(b) - Date.parse(a)) : null);
+    const steps = (manifest?.steps ?? []).map((s) => {
+      const objs = (manifest?.entries ?? []).filter((e) => KIND_STEP[e.kind] === s.step);
+      const tally = { created: 0, updated: 0, skipped: 0, failed: 0 };
+      for (const o of objs) if (o.status in tally) tally[o.status as keyof typeof tally]++;
+      return { step: s.step, status: s.status, attempts: s.attempts ?? 0, startedAt: s.startedAt, finishedAt: s.finishedAt, durationMs: ms(s.startedAt, s.finishedAt), objects: tally };
+    });
+    return {
+      jobId: id,
+      status: job.status,
+      dryRun: job.dryRun,
+      targetGuildId: job.targetGuildId,
+      metrics: job.metrics ?? null,
+      resumes: events.filter((e) => e.kind === 'resumed').length, // how many times this build resumed from a checkpoint
+      retriedSteps: steps.filter((s) => s.attempts > 1).map((s) => s.step), // steps a prior attempt failed in
+      steps,
+      events: events.map((e) => ({ at: e.at, kind: e.kind, detail: e.detail })),
     };
   });
 

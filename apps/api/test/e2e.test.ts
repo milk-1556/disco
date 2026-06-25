@@ -746,3 +746,56 @@ describe('e2e: build replay (#3) + snapshot scan preview (#2)', () => {
     expect(after).toBe(before);
   });
 });
+
+describe('e2e: first-build trust — readiness expansion (#1) + build trace (#3)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'trust-op-2@x.com' })}`, 'content-type': 'application/json' };
+  const cfg = { clientId: 'c', serverName: 'Trust HQ', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it('#1 readiness includes operator history + a (demo) live target-guild probe', async () => {
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const r = (await app.inject({ method: 'POST', url: '/builds/readiness', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, config: cfg, targetGuildId: '900000000000000000' }) })).json() as {
+      verdict: string; history: { realBuilds: number; successRate: number | null }; live: { mode: string; reachable: boolean; permissions: { ok: boolean; hasAdmin: boolean } | null } | null;
+    };
+    expect(['ready', 'ready_with_warnings', 'blocked']).toContain(r.verdict);
+    expect(r.history).toBeTruthy();
+    expect(typeof r.history.realBuilds).toBe('number');
+    // a targetGuildId was given → a live probe ran (demo mode → simulated perms, reachable)
+    expect(r.live).toBeTruthy();
+    expect(r.live!.mode).toBe('demo');
+    expect(r.live!.reachable).toBe(true);
+    expect(r.live!.permissions).toBeTruthy();
+    // without a targetGuildId, no live probe
+    const noGuild = (await app.inject({ method: 'POST', url: '/builds/readiness', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, config: cfg }) })).json() as { live: unknown };
+    expect(noGuild.live).toBeNull();
+  });
+
+  it('#3 /builds/:id/trace rolls up per-step timing + attempts + events, owner-scoped', async () => {
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const jobId = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+    // poll to completion (in-process build)
+    for (let i = 0; i < 80; i++) {
+      const j = (await app.inject({ method: 'GET', url: `/jobs/${jobId}`, headers: A })).json() as { status: string };
+      if (j.status === 'completed' || j.status === 'failed') break;
+      await new Promise((res) => setTimeout(res, 25));
+    }
+    const trace = (await app.inject({ method: 'GET', url: `/builds/${jobId}/trace`, headers: A })).json() as {
+      status: string; metrics: { durationMs: number } | null; resumes: number; retriedSteps: string[];
+      steps: { step: string; status: string; attempts: number; durationMs: number | null }[]; events: { kind: string }[];
+    };
+    expect(trace.status).toBe('completed');
+    expect(trace.steps.length).toBeGreaterThan(0);
+    // every step ran once and finished (no resume on a clean build)
+    expect(trace.steps.every((s) => s.status === 'done')).toBe(true);
+    expect(trace.steps.every((s) => s.attempts === 1)).toBe(true);
+    expect(trace.resumes).toBe(0);
+    expect(trace.retriedSteps).toHaveLength(0);
+    expect(trace.metrics).toBeTruthy();
+    expect(trace.events.some((e) => e.kind === 'completed')).toBe(true);
+    // a 2nd operator cannot read this build's trace
+    expect((await app.inject({ method: 'GET', url: `/builds/${jobId}/trace`, headers: B })).statusCode).toBe(404);
+  });
+});

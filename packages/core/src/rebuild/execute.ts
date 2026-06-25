@@ -139,12 +139,16 @@ export async function rebuildGuild(
     const s = manifest.steps.find((x) => x.step === step);
     if (s) {
       s.status = status === 'running' ? 'running' : 'done';
-      if (status === 'running') s.startedAt = opts.generatedAt ?? new Date().toISOString();
-      else s.finishedAt = opts.generatedAt ?? new Date().toISOString();
+      if (status === 'running') {
+        s.startedAt = opts.generatedAt ?? new Date().toISOString();
+        s.attempts = (s.attempts ?? 0) + 1; // count each entry — >1 means a prior attempt failed here (#3)
+      } else s.finishedAt = opts.generatedAt ?? new Date().toISOString();
     }
     const done = manifest.steps.filter((x) => x.status === 'done').length;
     opts.onProgress?.(done / manifest.steps.length, step);
-    if (status === 'done') checkpoint();
+    // Checkpoint on BOTH entry and completion so the attempt count survives a crash that happens before
+    // any object in the step commits (otherwise a step that fails immediately wouldn't record its retry).
+    checkpoint();
   };
   const isDone = (step: RebuildStep) => manifest.steps.find((x) => x.step === step)?.status === 'done';
 

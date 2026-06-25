@@ -64,6 +64,9 @@ export const StepState = z.object({
   status: z.enum(['pending', 'running', 'done', 'failed']).default('pending'),
   startedAt: z.string().nullable().default(null),
   finishedAt: z.string().nullable().default(null),
+  /** How many times the engine has ENTERED this step. >1 means a prior attempt failed here and the
+   *  build resumed into it again — a per-step retry count for the build trace (#3 observability). */
+  attempts: z.number().int().min(0).default(0),
 });
 export type StepState = z.infer<typeof StepState>;
 

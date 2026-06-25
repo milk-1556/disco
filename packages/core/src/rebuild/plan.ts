@@ -24,6 +24,7 @@ export function freshSteps(): StepState[] {
     status: 'pending' as const,
     startedAt: null,
     finishedAt: null,
+    attempts: 0,
   }));
 }
 
