@@ -69,7 +69,7 @@ export function scopeRepo(base: Repo, actor: Actor): Repo {
 
     // ── audit / build events / views ──
     addAudit: (e) => base.addAudit(e),
-    listAudit: (limit) => base.listAudit(limit), // route scopes audit by operator already
+    listAudit: (limit, filter) => base.listAudit(limit, filter), // callers pass an operator/date filter
     addBuildEvent: (e) => base.addBuildEvent(e), // system (emitted by the worker)
     listBuildEvents: async (jobId, limit) => (await base.listBuildEvents(jobId, limit)).filter(owns),
     recordHandoverView: (hid, ref, kind) => base.recordHandoverView(hid, ref, kind), // public open

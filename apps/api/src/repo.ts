@@ -87,7 +87,9 @@ export interface Repo {
   getHandoverPasswordHash(id: string): Promise<string | null | undefined>;
   /** Append a destructive-op accountability record; list the most recent first. */
   addAudit(e: Omit<AuditEntry, 'id' | 'at'>): Promise<void>;
-  listAudit(limit?: number): Promise<AuditEntry[]>;
+  /** List audit rows. The optional filter is applied at the DATA layer (before the cap) so a busy
+   *  operator's same-day rows can't be evicted by other operators' volume (multi-op accuracy). */
+  listAudit(limit?: number, filter?: { operator?: string; sinceIso?: string }): Promise<AuditEntry[]>;
   /** Build-lifecycle event log (#12). `listBuildEvents()` is global; pass a jobId to scope to one build. */
   addBuildEvent(e: Omit<BuildEventEntry, 'id' | 'at'>): Promise<void>;
   listBuildEvents(jobId?: string, limit?: number): Promise<BuildEventEntry[]>;
@@ -277,8 +279,11 @@ export class InMemoryRepo implements Repo {
     this.audits.push({ ...e, id: newId('audit'), at: now() });
     if (this.audits.length > 1000) this.audits.shift(); // bound demo memory
   }
-  async listAudit(limit = 200) {
-    return [...this.audits].reverse().slice(0, limit);
+  async listAudit(limit = 200, filter?: { operator?: string; sinceIso?: string }) {
+    let rows = [...this.audits].reverse(); // newest-first
+    if (filter?.operator) rows = rows.filter((a) => a.operator === filter.operator);
+    if (filter?.sinceIso) rows = rows.filter((a) => a.at >= filter.sinceIso!); // ISO strings sort chronologically
+    return rows.slice(0, limit);
   }
 
   private buildEvents: BuildEventEntry[] = [];

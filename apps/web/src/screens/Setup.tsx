@@ -78,21 +78,33 @@ function stepsFor(o: OnboardingState): Step[] {
 
 export function Setup({ go }: { go: (v: View) => void }) {
   const [steps, setSteps] = useState<Step[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [journey, setJourney] = useState<{ start: string; firstDelivery: string | null } | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
+    let alive = true;
     (async () => {
-      const [o, snaps, jobs] = await Promise.all([
-        api.onboarding(),
-        api.snapshots().catch(() => []),
-        api.jobs().catch(() => []),
-      ]);
-      setSteps(stepsFor(o));
-      const starts = [...snaps.map((s) => s.capturedAt), ...jobs.map((j) => j.createdAt)].sort();
-      const firstDelivery = jobs.filter((j) => j.status === 'completed' && !j.dryRun && !j.canary).map((j) => j.updatedAt).sort()[0];
-      if (starts[0]) setJourney({ start: starts[0], firstDelivery: firstDelivery ?? null });
+      try {
+        setErr(null);
+        const [o, snaps, jobs] = await Promise.all([
+          api.onboarding(),
+          api.snapshots().catch(() => []),
+          api.jobs().catch(() => []),
+        ]);
+        if (!alive) return;
+        setSteps(stepsFor(o));
+        const starts = [...snaps.map((s) => s.capturedAt), ...jobs.map((j) => j.createdAt)].sort();
+        const firstDelivery = jobs.filter((j) => j.status === 'completed' && !j.dryRun && !j.canary).map((j) => j.updatedAt).sort()[0];
+        if (starts[0]) setJourney({ start: starts[0], firstDelivery: firstDelivery ?? null });
+      } catch (e) {
+        if (alive) setErr(e instanceof Error ? e.message : String(e));
+      }
     })();
-  }, []);
+    return () => {
+      alive = false;
+    };
+  }, [reload]);
 
   const done = steps?.filter((s) => s.done).length ?? 0;
   const total = steps?.length ?? 6;
@@ -110,7 +122,12 @@ export function Setup({ go }: { go: (v: View) => void }) {
         </p>
       </header>
 
-      {!steps ? (
+      {err && !steps ? (
+        <div className="panel-soft px-4 py-3 mb-5 flex items-center gap-3 flex-wrap">
+          <span className="text-sm" style={{ color: 'var(--color-danger)' }}>Couldn’t load your progress.</span>
+          <button className="btn btn-ghost text-xs ml-auto" onClick={() => setReload((n) => n + 1)}>Retry</button>
+        </div>
+      ) : !steps ? (
         <div className="panel-soft px-4 py-3 mb-5 flex items-center gap-3" style={{ color: 'var(--color-muted)' }}>
           <span className="w-2 h-2 rounded-full live-dot" style={{ background: 'var(--color-source)' }} />
           <span className="text-sm">Checking where you are on the assembly line…</span>

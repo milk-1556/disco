@@ -297,8 +297,11 @@ export class PrismaRepo implements Repo {
   async addAudit(e: Omit<AuditEntry, 'id' | 'at'>) {
     await this.db.auditLog.create({ data: { action: e.action, target: e.target, detail: e.detail, operator: e.operator } });
   }
-  async listAudit(limit = 200) {
-    const rows = await this.db.auditLog.findMany({ orderBy: { at: 'desc' }, take: limit });
+  async listAudit(limit = 200, filter?: { operator?: string; sinceIso?: string }) {
+    const where: Prisma.AuditLogWhereInput = {};
+    if (filter?.operator) where.operator = filter.operator;
+    if (filter?.sinceIso) where.at = { gte: new Date(filter.sinceIso) };
+    const rows = await this.db.auditLog.findMany({ where, orderBy: { at: 'desc' }, take: limit });
     return rows.map((r) => ({ id: r.id, at: iso(r.at), action: r.action, target: r.target, detail: r.detail, operator: r.operator }));
   }
 

@@ -475,3 +475,38 @@ describe('e2e: daily summary rollup (#4)', () => {
     expect(d.today.clientOpens).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('e2e: seam-audit r6 fixes — delivered counted once + scoped today rollup', () => {
+  let app: FastifyInstance;
+  const auth = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it('a handover walked draft→ready→handed_over logs delivered ONCE (no double-count)', async () => {
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: auth })).json() as { guilds: { id: string }[] };
+    const snap = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: auth, payload: JSON.stringify({ sourceGuildId: guilds.guilds[0]!.id }) })).json() as { id: string }).id;
+    const cfg = { clientId: 'x', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: auth, payload: JSON.stringify({ snapshotId: snap, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) { const s = ((await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: auth })).json() as { status: string }).status; if (s === 'completed') break; await new Promise((r) => setTimeout(r, 25)); }
+    const hid = ((await app.inject({ method: 'POST', url: '/handovers', headers: auth, payload: JSON.stringify({ jobId: jid }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: auth, payload: JSON.stringify({ state: 'ready' }) }); // draft→ready (delivered)
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: auth, payload: JSON.stringify({ state: 'handed_over' }) }); // ready→handed_over (NOT a new delivery)
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: auth, payload: JSON.stringify({ welcomeMessage: 'edit' }) }); // not a deliver
+
+    const delivers = ((await app.inject({ method: 'GET', url: '/audit', headers: auth })).json() as { action: string }[]).filter((a) => a.action === 'handover.deliver').length;
+    expect(delivers).toBe(1);
+    const d = (await app.inject({ method: 'GET', url: '/dashboard', headers: auth })).json() as { today: { delivered: number } };
+    expect(d.today.delivered).toBe(1);
+  });
+
+  it("listAudit filters by operator + since at the data layer (the today-window can't be evicted)", async () => {
+    const repo = new InMemoryRepo(true);
+    await repo.addAudit({ action: 'build.start', target: 't', detail: 'd', operator: 'a@x.com' });
+    await repo.addAudit({ action: 'build.start', target: 't', detail: 'd', operator: 'b@x.com' });
+    const aRows = await repo.listAudit(1000, { operator: 'a@x.com' });
+    expect(aRows.every((r) => r.operator === 'a@x.com')).toBe(true);
+    expect(aRows.length).toBe(1);
+    const future = new Date(Date.now() + 60_000).toISOString();
+    expect((await repo.listAudit(1000, { sinceIso: future })).length).toBe(0); // nothing after "now+1min"
+  });
+});

@@ -478,7 +478,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       ranCanary: jobs.some((j) => j.canary && j.status === 'completed'),
       ranRealBuild: completed.some((j) => !j.dryRun && !j.canary),
       deliveredHandover: handovers.some((h) => h.state === 'ready' || h.state === 'handed_over'),
-      counts: { templates: snaps.length, builds: completed.filter((j) => !j.dryRun).length, handovers: handovers.length },
+      counts: { templates: snaps.length, builds: completed.filter((j) => !j.dryRun && !j.canary).length, handovers: handovers.length },
     };
   });
 
@@ -499,18 +499,23 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const slow = builds.filter((j) => (j.metrics?.durationMs ?? 0) > sloMs);
     const slowestMs = builds.reduce((m, j) => Math.max(m, j.metrics?.durationMs ?? 0), 0);
     // Stuck = a DELIVERED handover (not a draft) that's >72h old and the client has never opened.
-    // Same pass counts today's client opens (#4 daily summary).
+    // Same pass counts today's client opens (#4). Parallelized + drafts skip the views query (a draft
+    // can't be stuck and has no client opens) → no sequential N+1 over the handover list.
     const sameDay = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
+    const nonDraft = handovers.filter((h) => h.state !== 'draft');
+    const viewsPer = await Promise.all(nonDraft.map((h) => r.listHandoverViews(h.id)));
     let stuckHandovers = 0;
     let clientOpensToday = 0;
-    for (const h of handovers) {
-      const views = await r.listHandoverViews(h.id);
-      if (h.state !== 'draft' && now - new Date(h.createdAt).getTime() >= H72 && views.length === 0) stuckHandovers += 1;
+    nonDraft.forEach((h, i) => {
+      const views = viewsPer[i]!;
+      if (now - new Date(h.createdAt).getTime() >= H72 && views.length === 0) stuckHandovers += 1;
       clientOpensToday += views.filter((v) => v.kind === 'opened' && sameDay(v.at)).length;
-    }
-    // Daily summary (#4): "today you ran N builds, delivered M handovers, K client opens" — from the
-    // operator's own activity-log entries today (scoped by the operator field) + today's opens.
-    const mineToday = (await repo.listAudit(500)).filter((a) => a.operator === operatorOf(req) && sameDay(a.at));
+    });
+    // Daily summary (#4): from the operator's OWN activity-log rows for today — filtered at the data
+    // layer (operator + since-midnight) so other operators' volume can't evict this operator's rows.
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    const mineToday = await repo.listAudit(1000, { operator: operatorOf(req), sinceIso: since.toISOString() });
     const today = {
       builds: mineToday.filter((a) => a.action === 'build.start' || a.action === 'build.canary').length,
       delivered: mineToday.filter((a) => a.action === 'handover.deliver').length,
@@ -929,9 +934,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const prior = await r.getHandover(id); // for the transition guard below
     const h = await r.updateHandover(id, patch);
     if (!h) return reply.code(404).send({ error: 'not found' });
-    // Activity log (#4): only log delivering a handover on a REAL state TRANSITION into ready/handed_over
-    // — not on every PATCH that re-sends the same state (e.g. a logo/welcome edit) → no double-logging.
-    if ((b.state === 'ready' || b.state === 'handed_over') && prior?.state !== b.state) {
+    // Activity log (#4): log "delivered" once — on the FIRST transition OUT of draft. A later ready→
+    // handed_over (or an idempotent re-PATCH, or a logo/welcome edit) doesn't re-count the same delivery.
+    if ((b.state === 'ready' || b.state === 'handed_over') && prior?.state === 'draft') {
       await repo.addAudit({ action: 'handover.deliver', target: `handover ${id.slice(-6)}`, detail: b.state === 'handed_over' ? 'handed over' : 'marked ready to share', operator: operatorOf(req) });
     }
     return h;
