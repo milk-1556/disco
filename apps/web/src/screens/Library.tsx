@@ -140,6 +140,35 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
     }
   }
 
+  // Snapshot composability (#5): merge two selected snapshots into a composite template.
+  const [merge, setMerge] = useState<{ aId: string; bId: string; aName: string; bName: string; conflicts: { kind: string; name: string }[]; resolutions: Record<string, 'a' | 'b'>; name: string; busy: boolean } | null>(null);
+  async function openMerge(ids: string[]) {
+    const [aId, bId] = ids;
+    const a = snaps.find((s) => s.id === aId);
+    const b = snaps.find((s) => s.id === bId);
+    if (!a || !b) return;
+    try {
+      const { conflicts } = await api.mergePreview(aId, bId);
+      setMerge({ aId, bId, aName: a.name, bName: b.name, conflicts, resolutions: {}, name: `${a.name} + ${b.name}`, busy: false });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+  async function doMerge() {
+    if (!merge) return;
+    setMerge({ ...merge, busy: true });
+    try {
+      await api.mergeSnapshots(merge.aId, merge.bId, merge.resolutions, merge.name.trim() || undefined);
+      await load();
+      exitSelectMode();
+      setMerge(null);
+      setNote('Composite template created in your library.');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setMerge((m) => (m ? { ...m, busy: false } : m));
+    }
+  }
+
   // Marketplace (#1 web): browse + clone shared operator templates into the library.
   const [marketOpen, setMarketOpen] = useState(false);
   const [market, setMarket] = useState<MarketplaceItem[] | null>(null);
@@ -415,6 +444,52 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
     >
       {timelineFor && (
         <SnapshotTimeline templateName={timelineFor.templateName} sourceGuildId={timelineFor.sourceGuildId} onClose={() => setTimelineFor(null)} />
+      )}
+
+      {merge && (
+        <Modal title="Merge into a composite template" onClose={() => setMerge(null)}>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+            Combining <span style={{ color: 'var(--color-source)' }}>{merge.aName}</span> + <span style={{ color: 'var(--color-client)' }}>{merge.bName}</span>. Unique
+            channels/roles from both are kept; for any name that appears in both, pick which version wins.
+          </p>
+          <label className="label">Composite name</label>
+          <input className="input mb-4 mt-1" value={merge.name} onChange={(e) => setMerge({ ...merge, name: e.target.value })} />
+          {merge.conflicts.length === 0 ? (
+            <div className="panel-soft p-3 mb-4 text-sm" style={{ color: 'var(--color-jade)' }}>✓ No name collisions — a clean union of both.</div>
+          ) : (
+            <div className="mb-4">
+              <div className="label mb-2">{merge.conflicts.length} name collision{merge.conflicts.length === 1 ? '' : 's'} — pick a winner</div>
+              <div className="space-y-1.5" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                {merge.conflicts.map((c) => {
+                  const key = `${c.kind}:${c.name}`;
+                  const pick = merge.resolutions[key] ?? 'a';
+                  return (
+                    <div key={key} className="panel-soft px-3 py-2 flex items-center gap-2 flex-wrap">
+                      <span className="chip" style={{ color: 'var(--color-faint)' }}>{c.kind.replace(/s$/, '')}</span>
+                      <span className="text-sm truncate" style={{ flex: 1, minWidth: 80 }}>{c.name}</span>
+                      <div className="flex gap-1">
+                        {(['a', 'b'] as const).map((side) => (
+                          <button
+                            key={side}
+                            className="btn text-xs"
+                            aria-pressed={pick === side}
+                            onClick={() => setMerge({ ...merge, resolutions: { ...merge.resolutions, [key]: side } })}
+                            style={pick === side ? { background: side === 'a' ? 'var(--color-source)' : 'var(--color-client)', borderColor: 'transparent', color: 'var(--color-ink)' } : undefined}
+                          >
+                            {side === 'a' ? merge.aName.slice(0, 14) : merge.bName.slice(0, 14)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          <button className="btn btn-primary w-full justify-center" disabled={merge.busy} onClick={doMerge}>
+            {merge.busy ? 'Merging…' : '⊕ Create composite template'}
+          </button>
+        </Modal>
       )}
 
       {packsOpen && (
@@ -883,6 +958,11 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
               {allVisibleSelected ? 'Clear' : 'Select all'}
             </button>
             <div style={{ flex: 1, minWidth: 8 }} />
+            {selected.size === 2 && (
+              <button className="btn" disabled={bulkBusy} onClick={() => openMerge([...selected])} title="Merge these two into a composite template">
+                ⊕ Merge
+              </button>
+            )}
             <button className="btn" disabled={bulkBusy} onClick={() => bulkPatch({ favorite: !allStarred })}>
               {allStarred ? '☆ Unstar' : '★ Star'}
             </button>

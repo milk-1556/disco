@@ -65,6 +65,10 @@ export const api = {
   submitSurvey: (id: string, nps: number, comment: string) => {
     void fetch(`${BASE}/h/${id}/survey`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nps, comment }) }).catch(() => {});
   },
+  mergePreview: (aId: string, bId: string) =>
+    req<{ conflicts: MergeConflict[]; counts: Record<string, number> }>('/snapshots/merge/preview', { method: 'POST', body: JSON.stringify({ aId, bId }) }),
+  mergeSnapshots: (aId: string, bId: string, resolutions: Record<string, 'a' | 'b'>, name?: string) =>
+    req<{ id: string; name: string; version: number }>('/snapshots/merge', { method: 'POST', body: JSON.stringify({ aId, bId, resolutions, name }) }),
   marketplace: () => req<MarketplaceItem[]>('/marketplace'),
   cloneMarketplace: (templateId: string) => req<{ id: string; name: string; version: number }>(`/marketplace/${templateId}/clone`, { method: 'POST' }),
   readiness: (snapshotId: string, config: RebrandConfig, targetTier = 0) =>
@@ -228,6 +232,10 @@ export interface SnapshotSummary {
   shared: boolean;
   lastUsedAt: string | null;
   counts: Record<string, number>;
+}
+export interface MergeConflict {
+  kind: string;
+  name: string;
 }
 export interface MarketplaceItem {
   templateId: string;
