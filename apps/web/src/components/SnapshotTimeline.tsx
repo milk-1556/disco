@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
-import type { JobSummary, SnapshotSummary } from '../api.js';
+import type { CategoryDiff, JobSummary, SnapshotDiff, SnapshotSummary } from '../api.js';
 
 function relative(iso: string): string {
   const then = new Date(iso).getTime();
@@ -48,6 +48,8 @@ export function SnapshotTimeline({
   const [snapshots, setSnapshots] = useState<SnapshotSummary[] | null>(null);
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Diff between each version and its prior, keyed by the NEWER snapshot's id.
+  const [diffs, setDiffs] = useState<Map<string, SnapshotDiff>>(new Map());
 
   useEffect(() => {
     let alive = true;
@@ -96,6 +98,36 @@ export function SnapshotTimeline({
     }
     return map;
   }, [jobs]);
+
+  // After the version line resolves, fetch the diff for each adjacent pair
+  // (older → newer). The list is sorted newest-first, so each version's prior
+  // sits at the next index. Only a handful of versions, so sequential is fine.
+  useEffect(() => {
+    if (line.length < 2) return;
+    let alive = true;
+    const pairs: { newerId: string; olderId: string }[] = [];
+    for (let i = 0; i < line.length - 1; i += 1) {
+      pairs.push({ newerId: line[i].id, olderId: line[i + 1].id });
+    }
+    Promise.all(
+      pairs.map((p) =>
+        api
+          .diff(p.newerId, p.olderId)
+          .then((d) => [p.newerId, d] as const)
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      if (!alive) return;
+      const next = new Map<string, SnapshotDiff>();
+      for (const r of results) {
+        if (r) next.set(r[0], r[1]);
+      }
+      setDiffs(next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [line]);
 
   const loading = snapshots === null || jobs === null;
 
@@ -185,13 +217,13 @@ export function SnapshotTimeline({
             </p>
           ) : line.length === 1 ? (
             <>
-              <Spine line={line} buildsBySnapshot={buildsBySnapshot} />
+              <Spine line={line} buildsBySnapshot={buildsBySnapshot} diffs={diffs} />
               <p className="label" style={{ margin: '1rem 0 0', opacity: 0.85 }}>
                 Just one version so far — re-snapshot to start a history.
               </p>
             </>
           ) : (
-            <Spine line={line} buildsBySnapshot={buildsBySnapshot} />
+            <Spine line={line} buildsBySnapshot={buildsBySnapshot} diffs={diffs} />
           )}
         </div>
       </div>
@@ -202,9 +234,11 @@ export function SnapshotTimeline({
 function Spine({
   line,
   buildsBySnapshot,
+  diffs,
 }: {
   line: SnapshotSummary[];
   buildsBySnapshot: Map<string, JobSummary[]>;
+  diffs: Map<string, SnapshotDiff>;
 }) {
   return (
     <ol
@@ -231,7 +265,9 @@ function Spine({
       />
       {line.map((s, i) => {
         const newest = i === 0;
+        const oldest = i === line.length - 1;
         const builds = buildsBySnapshot.get(s.id) ?? [];
+        const delta = diffs.get(s.id) ?? null;
         return (
           <li
             key={s.id}
@@ -296,6 +332,9 @@ function Spine({
               {/* Counts */}
               <CountRow counts={s.counts} />
 
+              {/* What changed vs the prior version */}
+              <VersionDelta delta={delta} oldest={oldest} />
+
               {/* Builds that used this version */}
               {builds.length > 0 && (
                 <ul style={{ listStyle: 'none', margin: '0.6rem 0 0', padding: 0, display: 'grid', gap: '0.3rem' }}>
@@ -350,6 +389,230 @@ function Spine({
         );
       })}
     </ol>
+  );
+}
+
+function pluralChannels(n: number): string {
+  return `${n} channel${n === 1 ? '' : 's'}`;
+}
+
+function pluralRoles(n: number): string {
+  return `${n} role${n === 1 ? '' : 's'}`;
+}
+
+function categoryTotal(c: CategoryDiff): number {
+  return c.added.length + c.removed.length + c.changed.length;
+}
+
+// A small +added / −removed pill pair, reusing the diff jade/danger vocabulary.
+function DeltaPill({ added, removed, noun }: { added: number; removed: number; noun: string }) {
+  if (added === 0 && removed === 0) return null;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.3rem', fontSize: '0.72rem' }}>
+      {added > 0 && (
+        <span className="mono" style={{ color: 'var(--color-jade)' }}>
+          +{noun === 'channels' ? pluralChannels(added) : `${added} ${noun}`}
+        </span>
+      )}
+      {removed > 0 && (
+        <span className="mono" style={{ color: 'var(--color-danger)' }}>
+          −{noun === 'channels' ? pluralChannels(removed) : `${removed} ${noun}`}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// Decoded permission delta for a single role: "+ Send Messages / − Mention Everyone".
+function PermLine({ added, removed }: { added: string[]; removed: string[] }) {
+  if (added.length === 0 && removed.length === 0) return null;
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '0.25rem 0.45rem', fontSize: '0.68rem' }}>
+      {added.map((p) => (
+        <span key={`a-${p}`} className="mono" style={{ color: 'var(--color-jade)' }}>
+          + {p}
+        </span>
+      ))}
+      {removed.map((p) => (
+        <span key={`r-${p}`} className="mono" style={{ color: 'var(--color-danger)' }}>
+          − {p}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+// Name chips for added / removed items in a category (jade = added, danger = removed).
+function NameChips({ names, tone }: { names: string[]; tone: 'jade' | 'danger' }) {
+  if (names.length === 0) return null;
+  const color = tone === 'jade' ? 'var(--color-jade)' : 'var(--color-danger)';
+  const sign = tone === 'jade' ? '+' : '−';
+  return (
+    <>
+      {names.map((n) => (
+        <span
+          key={`${tone}-${n}`}
+          className="chip mono"
+          style={{
+            fontSize: '0.65rem',
+            padding: '0.05rem 0.4rem',
+            color,
+            borderColor: `color-mix(in srgb, ${color} 40%, var(--color-line))`,
+          }}
+        >
+          {sign} {n}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function VersionDelta({ delta, oldest }: { delta: SnapshotDiff | null; oldest: boolean }) {
+  const [open, setOpen] = useState(false);
+
+  if (oldest) {
+    return (
+      <p className="label" style={{ margin: '0.5rem 0 0', opacity: 0.7, fontStyle: 'italic' }}>
+        initial capture · no prior version
+      </p>
+    );
+  }
+  if (!delta) {
+    return (
+      <p className="label" style={{ margin: '0.5rem 0 0', opacity: 0.6 }}>
+        Comparing to prior version…
+      </p>
+    );
+  }
+
+  const channelAdded = delta.channels.added.length;
+  const channelRemoved = delta.channels.removed.length;
+  const roleChanges = categoryTotal(delta.roles);
+  const overwriteCount = delta.overwriteChanges.length;
+  const changedRoles = delta.roles.changed.filter(
+    (r) => r.permissionDelta && (r.permissionDelta.added.length > 0 || r.permissionDelta.removed.length > 0),
+  );
+
+  const nothing =
+    channelAdded === 0 &&
+    channelRemoved === 0 &&
+    roleChanges === 0 &&
+    overwriteCount === 0 &&
+    delta.channels.changed.length === 0 &&
+    delta.guildNameChanged === null;
+
+  if (nothing) {
+    return (
+      <p className="label" style={{ margin: '0.5rem 0 0', opacity: 0.7 }}>
+        No structural changes from prior version.
+      </p>
+    );
+  }
+
+  const hasDetail =
+    delta.channels.added.length > 0 ||
+    delta.channels.removed.length > 0 ||
+    changedRoles.length > 0 ||
+    delta.guildNameChanged !== null;
+
+  return (
+    <div style={{ margin: '0.55rem 0 0' }}>
+      {/* Summary row */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: '0.3rem 0.65rem',
+        }}
+      >
+        <span className="eyebrow" style={{ opacity: 0.75 }}>
+          vs prior
+        </span>
+        <DeltaPill added={channelAdded} removed={channelRemoved} noun="channels" />
+        {roleChanges > 0 && (
+          <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--color-source)' }}>
+            {pluralRoles(roleChanges)} changed
+          </span>
+        )}
+        {overwriteCount > 0 && (
+          <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--color-muted)' }}>
+            {overwriteCount} overwrite{overwriteCount === 1 ? '' : 's'}
+          </span>
+        )}
+      </div>
+
+      {hasDetail && (
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          style={{ marginTop: '0.4rem', padding: '0.2rem 0.5rem', fontSize: '0.72rem' }}
+        >
+          {open ? 'Hide changes' : 'Show changes'}
+        </button>
+      )}
+
+      {open && hasDetail && (
+        <div
+          style={{
+            marginTop: '0.5rem',
+            display: 'grid',
+            gap: '0.5rem',
+            paddingLeft: '0.6rem',
+            borderLeft: '2px solid var(--color-line)',
+          }}
+        >
+          {delta.guildNameChanged && (
+            <div style={{ fontSize: '0.72rem' }}>
+              <span className="label" style={{ marginRight: '0.4rem' }}>
+                name
+              </span>
+              <span className="mono" style={{ color: 'var(--color-danger)' }}>
+                − {delta.guildNameChanged.before}
+              </span>{' '}
+              <span className="mono" style={{ color: 'var(--color-jade)' }}>
+                + {delta.guildNameChanged.after}
+              </span>
+            </div>
+          )}
+
+          {(delta.channels.added.length > 0 || delta.channels.removed.length > 0) && (
+            <div>
+              <div className="label" style={{ marginBottom: '0.3rem' }}>
+                channels
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                <NameChips names={delta.channels.added} tone="jade" />
+                <NameChips names={delta.channels.removed} tone="danger" />
+              </div>
+            </div>
+          )}
+
+          {changedRoles.length > 0 && (
+            <div>
+              <div className="label" style={{ marginBottom: '0.3rem' }}>
+                role permissions
+              </div>
+              <div style={{ display: 'grid', gap: '0.3rem' }}>
+                {changedRoles.map((r) => (
+                  <div key={r.name} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0.4rem' }}>
+                    <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--color-bone)' }}>
+                      {r.name}
+                    </span>
+                    <PermLine
+                      added={r.permissionDelta?.added ?? []}
+                      removed={r.permissionDelta?.removed ?? []}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

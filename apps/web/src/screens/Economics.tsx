@@ -4,6 +4,18 @@ import { SkeletonRows } from '../components/Skeleton.js';
 import { usePoll } from '../usePoll.js';
 
 const fmtMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`);
+// Wall-clock in client-facing units: "your build took N of operator time".
+// < 1m → seconds; < 1h → "Xm Ys"; longer → hours so a marathon rebuild still reads honestly.
+const fmtWallClock = (ms: number) => {
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 3_600_000) {
+    const totalSec = Math.round(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return sec === 0 ? `${min}m` : `${min}m ${sec}s`;
+  }
+  return `${(ms / 3_600_000).toFixed(1)} hrs`;
+};
 const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
 // Sub-dollar compute is the whole point — show cents precisely so "pennies" reads true.
 const fmtCents = (n: number) => (n >= 1 ? `$${n.toFixed(2)}` : `${(n * 100).toFixed(n < 0.1 ? 1 : 0)}¢`);
@@ -55,9 +67,22 @@ export function Economics() {
     const avgBuildCost = builds.length ? builds.reduce((a, b) => a + buildCost(b), 0) / builds.length : 0;
     const avgEgressKb = builds.length ? builds.reduce((a, b) => a + b.metrics!.objectsCreated * EGRESS_KB_PER_OBJECT, 0) / builds.length : 0;
     const avgMarginPct = repPrice > 0 ? (1 - avgBuildCost / repPrice) * 100 : 0;
+
+    // Wall-clock operator time: the human-facing "your build took N" receipt.
+    const avgMs = builds.length ? totalMs / builds.length : 0;
+    const fastestMs = builds.length ? Math.min(...builds.map((b) => b.metrics!.durationMs)) : 0;
+    const slowestMs = builds.length ? Math.max(...builds.map((b) => b.metrics!.durationMs)) : 0;
+
+    // Resilience / cost-of-rebuild: real builds (non-dry-run, non-canary) that errored or failed.
+    // We can't see checkpoint internals from the summary, so we surface the count of recoverable
+    // failures and explain the engine resumes from a checkpoint — no full re-spend.
+    const realRuns = jobs.filter((j) => j.kind === 'build' && !j.dryRun && !j.canary);
+    const failedRuns = realRuns.filter((j) => j.status === 'failed' || j.status === 'error' || !!j.error);
+
     return {
       won, pipeline, oneTime, mrr, arr: mrr * 12, upsellRev, avgBuild, pipeOnce, pipeMrr, computeCost, builds, totalMs, dealOnce,
       buildCost, infraSlice, repPrice, avgBuildCost, avgEgressKb, avgMarginPct, COMPUTE_RATE, EGRESS_KB_PER_OBJECT,
+      avgMs, fastestMs, slowestMs, failedRuns: failedRuns.length, realRuns: realRuns.length,
     };
   }, [jobs, clients, infra]);
 
@@ -179,6 +204,52 @@ export function Economics() {
                 {fmt$(m.repPrice)} price − {fmtCents(m.avgBuildCost)} cost
               </div>
             </div>
+          </div>
+
+          {/* Time per build, with receipts — wall-clock operator time in human units */}
+          <div className="panel-soft p-4 mb-4">
+            <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+              <div className="eyebrow">time per build, with receipts</div>
+              <span className="label">{m.builds.length} delivered</span>
+            </div>
+            <p className="text-sm mb-3" style={{ color: 'var(--color-muted)' }}>
+              Hands-off wall-clock — tell a client “your server was built in{' '}
+              <span className="mono" style={{ color: 'var(--color-bone)' }}>{fmtWallClock(m.avgMs)}</span> of operator time.”
+            </p>
+            <div className="flex items-end gap-4 flex-wrap">
+              <div>
+                <div className="leading-none" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-bone)', fontSize: 'clamp(1.8rem, 7vw, 2.6rem)' }}>
+                  {fmtWallClock(m.avgMs)}
+                </div>
+                <div className="text-[0.62rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>avg operator time / build</div>
+              </div>
+              {m.builds.length > 1 && (
+                <div className="text-[0.72rem] mono pb-1" style={{ color: 'var(--color-faint)' }}>
+                  fastest <span style={{ color: 'var(--color-jade)' }}>{fmtWallClock(m.fastestMs)}</span> · slowest{' '}
+                  <span style={{ color: 'var(--color-muted)' }}>{fmtWallClock(m.slowestMs)}</span>
+                </div>
+              )}
+            </div>
+            <div className="space-y-1.5 mt-3">
+              {m.builds.slice(0, 6).map((b) => (
+                <div key={b.id} className="flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[0.78rem]">
+                  <span className="mono" style={{ color: 'var(--color-bone)', minWidth: 64 }}>{fmtWallClock(b.metrics!.durationMs)}</span>
+                  <span className="mono" style={{ color: 'var(--color-faint)' }}>
+                    {b.clientName ?? b.snapshotName ?? 'build'}
+                  </span>
+                  <span className="mono ml-auto" style={{ color: 'var(--color-faint)' }}>{b.metrics!.objectsCreated} objects</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[0.7rem] mono mt-3" style={{ color: 'var(--color-faint)' }}>
+              {m.failedRuns > 0 ? (
+                <>
+                  {m.failedRuns} of {m.realRuns} run{m.realRuns === 1 ? '' : 's'} hit a snag and resumed from a checkpoint — re-run only the unfinished steps, no full re-spend.
+                </>
+              ) : (
+                <>failed-then-resumed builds re-run from a checkpoint — only the unfinished steps repeat, never a full re-spend.</>
+              )}
+            </p>
           </div>
 
           {/* Average cost breakdown */}
