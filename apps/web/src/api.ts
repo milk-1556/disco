@@ -105,6 +105,8 @@ export const api = {
   // #6 webhook event log (admin only).
   webhookEvents: (source?: 'stripe' | 'discord', limit = 200) =>
     req<WebhookEvent[]>(`/admin/webhooks?limit=${limit}${source ? `&source=${source}` : ''}`),
+  // Trust lane #3: per-build trace — per-step timing + retry count + outcomes.
+  buildTrace: (jobId: string) => req<BuildTrace>(`/builds/${jobId}/trace`),
   clients: () => req<Client[]>('/clients'),
   addClient: (body: Partial<Client>) => req<Client>('/clients', { method: 'POST', body: JSON.stringify(body) }),
   deleteClient: (id: string) => req<{ ok: boolean }>(`/clients/${id}`, { method: 'DELETE' }),
@@ -343,6 +345,8 @@ export interface StepState {
   status: 'pending' | 'running' | 'done' | 'failed';
   startedAt: string | null;
   finishedAt: string | null;
+  /** How many times the engine entered this step; >1 means a prior attempt failed here and it resumed. */
+  attempts?: number;
 }
 export interface JobManifest {
   steps: StepState[];
@@ -550,6 +554,26 @@ export interface OperatorPrefs {
   defaultWelcomeMessage: string;
   defaultOwnershipSteps: OwnershipStep[] | null;
   updatedAt: string | null;
+}
+// Trust lane #3: a synthesized per-build trace.
+export interface BuildTrace {
+  jobId: string;
+  status: string;
+  dryRun: boolean;
+  targetGuildId: string | null;
+  metrics: { apiCalls: number; durationMs: number; objectsCreated: number } | null;
+  resumes: number;
+  retriedSteps: string[];
+  steps: {
+    step: string;
+    status: string;
+    attempts: number;
+    startedAt: string | null;
+    finishedAt: string | null;
+    durationMs: number | null;
+    objects: { created: number; updated: number; skipped: number; failed: number };
+  }[];
+  events: { at: string; kind: string; detail: string }[];
 }
 // #6 inbound webhook receipt (admin log).
 export interface WebhookEvent {
