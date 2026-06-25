@@ -7,6 +7,7 @@ import { cx, shortId } from '../util.js';
 
 const COUNT_ORDER = ['channels', 'roles', 'categories', 'emojis', 'automod', 'bots'];
 type Sort = 'used' | 'captured' | 'name';
+type Category = 'all' | 'templates' | 'captures';
 
 const STALE_DAYS = 30;
 const DAY_MS = 86_400_000;
@@ -109,6 +110,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
   const [err, setErr] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState<string | null>(null);
+  const [category, setCategory] = useState<Category>('all');
   const [sort, setSort] = useState<Sort>('used');
   const [editing, setEditing] = useState<string | null>(null);
   const [timelineFor, setTimelineFor] = useState<{ templateName: string; sourceGuildId: string } | null>(null);
@@ -320,6 +322,8 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       xs = xs.filter((s) => s.name.toLowerCase().includes(q) || s.tags.some((t) => t.includes(q)) || s.note.toLowerCase().includes(q));
     }
     if (tag) xs = xs.filter((s) => s.tags.includes(tag));
+    if (category === 'templates') xs = xs.filter((s) => s.isTemplate);
+    else if (category === 'captures') xs = xs.filter((s) => !s.isTemplate);
     const sorted = [...xs].sort((a, b) => {
       if (sort === 'name') return a.name.localeCompare(b.name);
       if (sort === 'captured') return b.capturedAt.localeCompare(a.capturedAt);
@@ -327,7 +331,21 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
     });
     // favorites always float to the top
     return sorted.sort((a, b) => Number(b.favorite) - Number(a.favorite));
-  }, [snaps, search, tag, sort]);
+  }, [snaps, search, tag, category, sort]);
+
+  // Cheap per-category counts honoring the active search + tag filters (but not the
+  // category itself), so each segment shows how many snapshots it would reveal.
+  const catCounts = useMemo(() => {
+    let xs = snaps;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      xs = xs.filter((s) => s.name.toLowerCase().includes(q) || s.tags.some((t) => t.includes(q)) || s.note.toLowerCase().includes(q));
+    }
+    if (tag) xs = xs.filter((s) => s.tags.includes(tag));
+    let templates = 0;
+    for (const s of xs) if (s.isTemplate) templates++;
+    return { all: xs.length, templates, captures: xs.length - templates };
+  }, [snaps, search, tag]);
 
   return (
     <div
@@ -534,6 +552,18 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
           <option value="captured">Sort: captured</option>
           <option value="name">Sort: name</option>
         </select>
+        <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by category">
+          {(['all', 'templates', 'captures'] as const).map((c) => (
+            <button
+              key={c}
+              className={cx('chip', category === c && 'chip-source')}
+              aria-pressed={category === c}
+              onClick={() => setCategory(c)}
+            >
+              {c === 'all' ? 'All' : c === 'templates' ? '★ Templates' : 'Captures'} · {catCounts[c]}
+            </button>
+          ))}
+        </div>
         {allTags.length > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {[null, ...allTags].map((t) => (
@@ -578,7 +608,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       ) : visible.length === 0 && !err ? (
         <div className="panel-soft p-8 text-center" style={{ color: 'var(--color-muted)' }}>
           <p className="text-sm mb-3">No snapshots match {search.trim() ? <>“{search.trim()}”</> : 'this filter'}.</p>
-          <button className="btn btn-ghost" onClick={() => { setSearch(''); setTag(null); }}>Clear search & filters</button>
+          <button className="btn btn-ghost" onClick={() => { setSearch(''); setTag(null); setCategory('all'); }}>Clear search & filters</button>
         </div>
       ) : (
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))' }}>
