@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { api, type Client, type JobSummary } from '../api.js';
+import { api, type Client, type Earnings, type JobSummary } from '../api.js';
 import { SkeletonRows } from '../components/Skeleton.js';
 import { usePoll } from '../usePoll.js';
 
@@ -17,6 +17,8 @@ const fmtWallClock = (ms: number) => {
   return `${(ms / 3_600_000).toFixed(1)} hrs`;
 };
 const fmt$ = (n: number) => `$${Math.round(n).toLocaleString()}`;
+// Money stored in cents → dollars with cents precision (revenue is real money, show the change).
+const fmtMoney = (cents: number) => `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 // Sub-dollar compute is the whole point — show cents precisely so "pennies" reads true.
 const fmtCents = (n: number) => (n >= 1 ? `$${n.toFixed(2)}` : `${(n * 100).toFixed(n < 0.1 ? 1 : 0)}¢`);
 const fmtKb = (kb: number) => (kb < 1024 ? `${Math.round(kb)} KB` : `${(kb / 1024).toFixed(1)} MB`);
@@ -29,15 +31,18 @@ const fmtKb = (kb: number) => (kb < 1024 ? `${Math.round(kb)} KB` : `${(kb / 102
 export function Economics() {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [earnings, setEarnings] = useState<Earnings | null>(null);
   const [infra, setInfra] = useState(40); // $/mo infra (postgres + redis + host)
   const [loading, setLoading] = useState(true);
 
-  usePoll(() => {
+  const refresh = () =>
     Promise.allSettled([
       api.jobs().then(setJobs),
       api.clients().then(setClients),
+      api.earnings().then(setEarnings),
     ]).finally(() => setLoading(false));
-  }, 4000);
+
+  usePoll(refresh, 4000);
 
   const m = useMemo(() => {
     const dealOnce = (c: Client) => c.buildPrice + c.upsells.reduce((a, u) => a + u.price, 0);
@@ -79,10 +84,42 @@ export function Economics() {
     const realRuns = jobs.filter((j) => j.kind === 'build' && !j.dryRun && !j.canary);
     const failedRuns = realRuns.filter((j) => j.status === 'failed' || j.status === 'error' || !!j.error);
 
+    // Cost-by-template: group completed, real (non-dry-run, non-canary) builds by snapshotName and
+    // measure how PREDICTABLE each template is. Spread (min–max) + stddev around the mean tells Max
+    // which templates are safe to quote a flat fee on vs. which are risky. apiCalls-per-build is the
+    // closest proxy we have for "work done" — a true per-operation breakdown (channels vs roles)
+    // isn't instrumented (metrics only carries apiCalls/durationMs/objectsCreated).
+    const tplBuilds = jobs.filter(
+      (j) => j.status === 'completed' && !j.dryRun && !j.canary && j.metrics,
+    );
+    const tplMap = new Map<string, JobSummary[]>();
+    for (const b of tplBuilds) {
+      const key = b.snapshotName ?? 'untitled template';
+      const arr = tplMap.get(key);
+      if (arr) arr.push(b);
+      else tplMap.set(key, [b]);
+    }
+    const templates = [...tplMap.entries()]
+      .map(([name, bs]) => {
+        const durations = bs.map((b) => b.metrics!.durationMs);
+        const n = durations.length;
+        const avg = durations.reduce((a, d) => a + d, 0) / n;
+        const min = Math.min(...durations);
+        const max = Math.max(...durations);
+        const variance = durations.reduce((a, d) => a + (d - avg) ** 2, 0) / n;
+        const stddev = Math.sqrt(variance);
+        // Coefficient of variation: stddev as % of mean → unit-free predictability score.
+        const cov = avg > 0 ? (stddev / avg) * 100 : 0;
+        const avgCalls = bs.reduce((a, b) => a + b.metrics!.apiCalls, 0) / n;
+        return { name, count: n, avg, min, max, stddev, cov, avgCalls };
+      })
+      .sort((a, b) => b.count - a.count);
+
     return {
       won, pipeline, oneTime, mrr, arr: mrr * 12, upsellRev, avgBuild, pipeOnce, pipeMrr, computeCost, builds, totalMs, dealOnce,
       buildCost, infraSlice, repPrice, avgBuildCost, avgEgressKb, avgMarginPct, COMPUTE_RATE, EGRESS_KB_PER_OBJECT,
       avgMs, fastestMs, slowestMs, failedRuns: failedRuns.length, realRuns: realRuns.length,
+      templates,
     };
   }, [jobs, clients, infra]);
 
@@ -283,6 +320,108 @@ export function Economics() {
         </div>
       )}
 
+      {m.templates.length > 0 && (
+        <div className="panel p-5 mb-6">
+          <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+            <div className="eyebrow">build cost by template</div>
+            <span className="label">{m.templates.length} template{m.templates.length === 1 ? '' : 's'} · {m.templates.reduce((a, t) => a + t.count, 0)} real build{m.templates.reduce((a, t) => a + t.count, 0) === 1 ? '' : 's'}</span>
+          </div>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+            Which snapshots are <span style={{ color: 'var(--color-jade)' }}>predictable</span> to quote and which run{' '}
+            <span style={{ color: 'var(--color-gold)' }}>hot-and-cold</span>. Spread is the min–max range; ± is the
+            standard deviation around the mean.
+          </p>
+          <div className="space-y-1.5">
+            {m.templates.map((t) => {
+              // Tight (cov < 15%) → flat-fee safe; wide (cov > 40%) → risky/variable.
+              const predictable = t.count < 2 ? null : t.cov < 15 ? 'tight' : t.cov > 40 ? 'wide' : 'mixed';
+              return (
+                <div key={t.name} className="panel-soft px-3 py-2.5">
+                  <div className="flex items-center gap-2.5 flex-wrap text-sm mb-1.5">
+                    <span className="font-medium truncate" style={{ maxWidth: 200 }}>{t.name}</span>
+                    {predictable === 'tight' && <span className="chip chip-jade">predictable</span>}
+                    {predictable === 'wide' && <span className="chip chip-gold">variable</span>}
+                    {predictable === 'mixed' && <span className="chip">mixed</span>}
+                    <span className="mono ml-auto" style={{ color: 'var(--color-bone)' }}>{fmtWallClock(t.avg)}</span>
+                    <span className="text-[0.6rem] mono" style={{ color: 'var(--color-faint)' }}>avg</span>
+                  </div>
+                  <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[0.72rem] mono" style={{ color: 'var(--color-faint)' }}>
+                    <span>{t.count} build{t.count === 1 ? '' : 's'}</span>
+                    {t.count > 1 ? (
+                      <>
+                        <span>
+                          spread <span style={{ color: 'var(--color-jade)' }}>{fmtWallClock(t.min)}</span>–
+                          <span style={{ color: 'var(--color-muted)' }}>{fmtWallClock(t.max)}</span>
+                        </span>
+                        <span>± {fmtWallClock(t.stddev)} <span style={{ color: t.cov > 40 ? 'var(--color-gold)' : 'var(--color-faint)' }}>({t.cov.toFixed(0)}% cov)</span></span>
+                      </>
+                    ) : (
+                      <span>single build — no spread yet</span>
+                    )}
+                    <span className="ml-auto" style={{ color: 'var(--color-source)' }}>{t.avgCalls.toFixed(0)} API calls/build</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[0.7rem] mono mt-3" style={{ color: 'var(--color-faint)' }}>
+            per-operation cost (channel-create vs role-create) isn’t instrumented yet — metrics only carry
+            apiCalls / durationMs / objectsCreated, so API-calls-per-build is the closest proxy for work done.
+          </p>
+        </div>
+      )}
+
+      {earnings && (
+        <div className="panel p-5 mb-6">
+          <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+            <div className="eyebrow">receipts &amp; earnings</div>
+            <span className="label">{earnings.billedBuilds} of {earnings.totalBuilds} build{earnings.totalBuilds === 1 ? '' : 's'} billed</span>
+          </div>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+            What you’ve invoiced, what’s landed, and what’s still owed. Mark builds invoiced and paid below to
+            keep this honest.
+          </p>
+
+          <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px,1fr))' }}>
+            <BigMoney n={fmtMoney(earnings.invoicedCents)} label="invoiced" tone="bone" />
+            <BigMoney n={fmtMoney(earnings.paidCents)} label="paid" tone="jade" />
+            <BigMoney n={fmtMoney(earnings.outstandingCents)} label="outstanding" tone={earnings.outstandingCents > 0 ? 'gold' : 'muted'} />
+          </div>
+          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px,1fr))' }}>
+            <BigMoney n={fmtMoney(earnings.ytdPaidCents)} label="paid YTD" tone="jade" small />
+            <BigMoney n={`${fmtMoney(earnings.mrrCents)}/mo`} label="from retainers (MRR)" tone="bone" small />
+          </div>
+
+          {earnings.perTemplate.length > 0 && (
+            <>
+              <div className="eyebrow mb-2">revenue by template</div>
+              <div className="space-y-1.5 mb-5">
+                {earnings.perTemplate.map((t) => (
+                  <div key={t.name} className="panel-soft px-3 py-2 flex items-center gap-2.5 flex-wrap text-[0.8rem]">
+                    <span className="font-medium truncate" style={{ maxWidth: 200 }}>{t.name}</span>
+                    <span className="text-[0.62rem] mono" style={{ color: 'var(--color-faint)' }}>{t.builds} build{t.builds === 1 ? '' : 's'}</span>
+                    <span className="mono ml-auto" style={{ color: 'var(--color-jade)' }}>{fmtMoney(t.paidCents)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="eyebrow mb-2">mark builds invoiced &amp; paid</div>
+          <div className="space-y-1.5">
+            {jobs
+              .filter((j) => j.status === 'completed' && !j.dryRun && !j.canary)
+              .slice(0, 8)
+              .map((j) => (
+                <BillingRow key={j.id} job={j} onSaved={refresh} />
+              ))}
+          </div>
+          <p className="text-[0.7rem] mono mt-3" style={{ color: 'var(--color-faint)' }}>
+            enter dollars — saved to the penny. outstanding = invoiced − paid across all builds.
+          </p>
+        </div>
+      )}
+
       {m.builds.length > 0 && (
         <div className="panel p-5">
           <div className="flex items-center justify-between mb-3">
@@ -320,6 +459,82 @@ function CostStat({ n, label, tone }: { n: string; label: string; tone: 'source'
     <div className="panel-soft px-3 py-2.5">
       <div className="mono leading-none" style={{ color, fontSize: 'clamp(0.95rem, 2vw, 1.15rem)' }}>{n}</div>
       <div className="text-[0.6rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>{label}</div>
+    </div>
+  );
+}
+
+function BigMoney({ n, label, tone, small }: { n: string; label: string; tone: 'bone' | 'jade' | 'gold' | 'muted'; small?: boolean }) {
+  const color = tone === 'jade' ? 'var(--color-jade)' : tone === 'gold' ? 'var(--color-gold)' : tone === 'muted' ? 'var(--color-muted)' : 'var(--color-bone)';
+  return (
+    <div className="panel-soft px-3 py-3">
+      <div
+        className="leading-none"
+        style={{ fontFamily: 'var(--font-display)', color, fontSize: small ? 'clamp(1.1rem, 3.4vw, 1.5rem)' : 'clamp(1.5rem, 5vw, 2.1rem)' }}
+      >
+        {n}
+      </div>
+      <div className="text-[0.62rem] mono mt-1.5" style={{ color: 'var(--color-faint)' }}>{label}</div>
+    </div>
+  );
+}
+
+// Inline billing editor: dollars in, cents out via api.setBilling, then refresh the page data.
+function BillingRow({ job, onSaved }: { job: JobSummary; onSaved: () => void }) {
+  const toDollars = (cents: number) => (cents > 0 ? (cents / 100).toFixed(2) : '');
+  const [invoiced, setInvoiced] = useState(toDollars(job.invoicedCents));
+  const [paid, setPaid] = useState(toDollars(job.paidCents));
+  const [saving, setSaving] = useState(false);
+
+  const dirty =
+    invoiced !== toDollars(job.invoicedCents) || paid !== toDollars(job.paidCents);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.setBilling(job.id, {
+        invoicedCents: Math.round((Number(invoiced) || 0) * 100),
+        paidCents: Math.round((Number(paid) || 0) * 100),
+      });
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="panel-soft px-3 py-2.5 flex items-center gap-2.5 flex-wrap text-sm">
+      <span className="font-medium truncate" style={{ maxWidth: 160 }}>
+        {job.clientName ?? job.snapshotName ?? 'build'}
+      </span>
+      <label className="flex items-center gap-1.5 ml-auto">
+        <span className="label">inv $</span>
+        <input
+          className="input mono"
+          style={{ width: 84 }}
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          value={invoiced}
+          onChange={(e) => setInvoiced(e.target.value)}
+        />
+      </label>
+      <label className="flex items-center gap-1.5">
+        <span className="label">paid $</span>
+        <input
+          className="input mono"
+          style={{ width: 84 }}
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          value={paid}
+          onChange={(e) => setPaid(e.target.value)}
+        />
+      </label>
+      <button className="btn" disabled={!dirty || saving} onClick={save}>
+        {saving ? 'Saving…' : 'Save'}
+      </button>
     </div>
   );
 }

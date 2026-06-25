@@ -175,12 +175,110 @@ export function PublicHandover({ id }: { id: string }) {
           </ol>
         </section>
 
+        <ClientSurvey id={id} done={data.surveyDone} />
+
         <footer className="flex items-center justify-center gap-2 py-6">
           <Logo size={14} />
           <span className="mono text-[0.7rem]" style={{ color: 'var(--color-faint)' }}>delivered with Disco</span>
         </footer>
       </div>
     </div>
+  );
+}
+
+/**
+ * One-question client feedback card (#4): an NPS "how likely to recommend" selector plus an
+ * optional free-text comment. Friendly, non-technical, creator-facing voice — this is the client,
+ * not the operator. Submits via the public fire-and-forget survey endpoint, then flips to a local
+ * thank-you state. If feedback was already given (`done`), shows only the confirmation.
+ */
+function ClientSurvey({ id, done }: { id: string; done: boolean }) {
+  const [sent, setSent] = useState(done);
+  const [nps, setNps] = useState<number | null>(null);
+  const [comment, setComment] = useState('');
+
+  if (sent) {
+    return (
+      <section className="panel p-5 mb-6">
+        <div className="flex items-center gap-2.5">
+          <span
+            className="grid place-items-center shrink-0"
+            style={{ width: 26, height: 26, borderRadius: 999, background: 'color-mix(in srgb, var(--color-jade) 18%, transparent)', color: 'var(--color-jade)' }}
+            aria-hidden="true"
+          >
+            ✓
+          </span>
+          <p className="text-sm" style={{ color: 'var(--color-bone)' }}>
+            Thanks for your feedback ✓
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  function send() {
+    if (nps === null) return;
+    api.submitSurvey(id, nps, comment.trim());
+    setSent(true);
+  }
+
+  return (
+    <section className="panel p-5 mb-6">
+      <div className="eyebrow mb-2">one quick thing</div>
+      <h2 className="text-sm font-medium mb-1">How likely are you to recommend us?</h2>
+      <p className="text-[0.78rem] leading-relaxed mb-4" style={{ color: 'var(--color-faint)' }}>
+        Tap a number, from 0 (not likely) to 10 (absolutely). It takes a second and really helps us.
+      </p>
+
+      <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Recommendation score from 0 to 10">
+        {Array.from({ length: 11 }, (_, n) => {
+          const selected = nps === n;
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setNps(n)}
+              aria-pressed={selected}
+              className="mono text-sm grid place-items-center transition"
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                border: '1px solid var(--color-line)',
+                background: selected ? 'var(--color-client)' : 'transparent',
+                color: selected ? '#fff' : 'var(--color-muted)',
+                borderColor: selected ? 'var(--color-client)' : 'var(--color-line)',
+                fontWeight: selected ? 600 : 400,
+              }}
+            >
+              {n}
+            </button>
+          );
+        })}
+      </div>
+
+      <label className="label block mb-1.5" htmlFor="survey-comment">
+        Anything you’d like us to know? <span style={{ color: 'var(--color-faint)' }}>(optional)</span>
+      </label>
+      <textarea
+        id="survey-comment"
+        className="input mb-4"
+        rows={3}
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="What you loved, what we could do better…"
+        style={{ resize: 'vertical' }}
+      />
+
+      <button
+        type="button"
+        className="btn btn-primary w-full justify-center"
+        disabled={nps === null}
+        onClick={send}
+      >
+        Send feedback
+      </button>
+    </section>
   );
 }
 

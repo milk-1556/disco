@@ -1,5 +1,12 @@
-import { useEffect, useState } from 'react';
-import { api, assetUrl, type HandoverAnalytics, type HandoverBundle, type OwnershipStep } from '../api.js';
+import { useEffect, useState, type CSSProperties } from 'react';
+import {
+  api,
+  assetUrl,
+  type HandoverAnalytics,
+  type HandoverBundle,
+  type OwnershipStep,
+  type SurveyAggregate,
+} from '../api.js';
 import { BotSetupList } from '../components/BotSetupList.js';
 import { printReport } from '../components/ReportPrint.js';
 import { deliveredScope } from '../scope.js';
@@ -53,8 +60,26 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
   const [saving, setSaving] = useState(false);
   const [analytics, setAnalytics] = useState<HandoverAnalytics | null>(null);
   const [viewsOpen, setViewsOpen] = useState(false);
+  const [survey, setSurvey] = useState<SurveyAggregate['responses'][number] | null>(null);
 
   const handoverId = bundle?.handover.id ?? null;
+
+  useEffect(() => {
+    if (!handoverId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const s = await api.surveys();
+        if (alive) setSurvey(s.responses.find((r) => r.handoverId === handoverId) ?? null);
+      } catch {
+        // survey feedback is a soft signal — stay silent if it can't load
+        if (alive) setSurvey(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [handoverId]);
 
   useEffect(() => {
     if (!handoverId) return;
@@ -358,6 +383,9 @@ export function HandoverPage({ jobId, onBack }: { jobId: string; onBack: () => v
       {/* ── branding & sharing ── */}
       <Branding handover={handover} onPatch={patch} saving={saving} />
 
+      {/* ── client survey (NPS feedback) ── */}
+      <ClientSurvey survey={survey} />
+
       {/* ── footer: upsell tracker + hand-over action ── */}
       <footer className="panel p-5 flex flex-wrap items-center gap-4">
         <div className="flex flex-col gap-2">
@@ -408,6 +436,54 @@ const EVENT_LABEL: Record<string, string> = {
   share_viewed: 'viewed share card',
 };
 
+const CLASSIFICATION: Record<
+  HandoverAnalytics['classification'],
+  { className: string; style?: CSSProperties; label: string }
+> = {
+  warm: { className: 'chip-jade', label: '🔥 warm' },
+  cool: { className: 'chip-gold', label: '🌤 cool' },
+  cold: { className: 'chip', style: { color: 'var(--color-faint)' }, label: '🧊 cold' },
+};
+
+// 'opened N min/hrs after delivery', or null when we have no first-open timestamp yet.
+function timeToFirstOpenLabel(ms: number | null): string | null {
+  if (ms == null) return null;
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return 'opened seconds after delivery';
+  if (mins < 60) return `opened ${mins} min after delivery`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `opened ${hrs} ${hrs === 1 ? 'hr' : 'hrs'} after delivery`;
+  const days = Math.round(hrs / 24);
+  return `opened ${days} ${days === 1 ? 'day' : 'days'} after delivery`;
+}
+
+// A tiny pure-CSS bar row — no animation, so it's inherently reduced-motion safe.
+function DecaySparkline({ decay }: { decay: HandoverAnalytics['decay'] }) {
+  if (decay.length === 0) return null;
+  const max = decay.reduce((m, d) => Math.max(m, d.opens), 0);
+  return (
+    <div className="mt-2">
+      <div className="flex items-end gap-px" style={{ height: 24 }} aria-hidden="true">
+        {decay.map((d) => (
+          <div
+            key={d.day}
+            className="flex-1 rounded-sm"
+            style={{
+              minWidth: 2,
+              height: `${max > 0 ? Math.max(8, (d.opens / max) * 100) : 8}%`,
+              background: d.opens > 0 ? 'var(--color-source)' : 'var(--color-line)',
+              opacity: d.opens > 0 ? 1 : 0.5,
+            }}
+          />
+        ))}
+      </div>
+      <span className="block text-[0.62rem] mt-1" style={{ color: 'var(--color-faint)' }}>
+        opens per day since delivery
+      </span>
+    </div>
+  );
+}
+
 function ClientEngagement({
   a,
   open,
@@ -417,10 +493,16 @@ function ClientEngagement({
   open: boolean;
   onToggle: () => void;
 }) {
+  const cls = CLASSIFICATION[a.classification];
+  const ttfo = timeToFirstOpenLabel(a.timeToFirstOpenMs);
+
   if (a.opened === 0) {
     return (
       <div className="mt-3">
-        <span className="chip" style={{ color: 'var(--color-faint)' }}>○ Not opened yet</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="chip" style={{ color: 'var(--color-faint)' }}>○ Not opened yet</span>
+          <span className={cx('chip', cls.className)} style={cls.style}>{cls.label}</span>
+        </div>
         <span className="block text-[0.68rem] mt-1.5" style={{ color: 'var(--color-faint)' }}>
           We&apos;ll show a signal here the first time the client opens the delivery page.
         </span>
@@ -431,6 +513,7 @@ function ClientEngagement({
   return (
     <div className="mt-3">
       <div className="flex flex-wrap items-center gap-2">
+        <span className={cx('chip', cls.className)} style={cls.style}>{cls.label}</span>
         <span className="chip chip-jade">✓ Opened {a.opened}×{a.lastSeenAt ? ` · last ${relativeTime(a.lastSeenAt)}` : ''}</span>
         {a.docsViewed > 0 && <span className="chip chip-source">📖 Read docs {a.docsViewed}×</span>}
         {a.reportDownloaded > 0 && <span className="chip chip-gold">↓ Downloaded {a.reportDownloaded}×</span>}
@@ -457,10 +540,69 @@ function ClientEngagement({
           ))}
         </ul>
       )}
+      <span className="block text-[0.68rem] mt-1.5" style={{ color: 'var(--color-muted)' }}>
+        {ttfo ?? 'not opened yet'}
+      </span>
+      <DecaySparkline decay={a.decay} />
       <span className="block text-[0.62rem] mt-1.5" style={{ color: 'var(--color-faint)' }}>
         Engagement events &amp; referrer origin only — never who, never an IP.
       </span>
     </div>
+  );
+}
+
+function npsColor(nps: number): string {
+  if (nps >= 9) return 'var(--color-jade)';
+  if (nps >= 7) return 'var(--color-gold)';
+  return 'var(--color-danger)';
+}
+
+function ClientSurvey({ survey }: { survey: SurveyAggregate['responses'][number] | null }) {
+  return (
+    <section className="panel p-5 mb-6">
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="label">Client survey</span>
+        <span className="text-[0.68rem]" style={{ color: 'var(--color-faint)' }}>
+          how the handover landed
+        </span>
+      </div>
+      {survey && survey.nps != null ? (
+        <div className="space-y-3">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span
+              className="text-2xl leading-none"
+              style={{ fontFamily: 'var(--font-display)', color: npsColor(survey.nps) }}
+            >
+              {survey.nps}
+            </span>
+            <span className="text-[0.72rem] mono" style={{ color: 'var(--color-faint)' }}>
+              / 10 NPS
+            </span>
+            {survey.at && (
+              <span className="text-[0.68rem] ml-auto" style={{ color: 'var(--color-muted)' }}>
+                {relativeTime(survey.at)}
+              </span>
+            )}
+          </div>
+          {survey.comment.trim() && (
+            <blockquote
+              className="panel-soft px-3 py-2.5 text-sm"
+              style={{
+                color: 'var(--color-bone)',
+                borderLeft: '2px solid var(--color-source)',
+                fontStyle: 'italic',
+              }}
+            >
+              “{survey.comment.trim()}”
+            </blockquote>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm" style={{ color: 'var(--color-faint)' }}>
+          No survey response yet.
+        </p>
+      )}
+    </section>
   );
 }
 
