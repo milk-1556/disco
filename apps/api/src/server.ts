@@ -464,6 +464,24 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { ok: true };
   });
 
+  // First-real-build onboarding wizard (#3): the 6-step activation path, with each step's done-state
+  // derived from the operator's REAL data (scoped) so the wizard self-updates as they progress.
+  app.get('/onboarding', { preHandler: requireAuth }, async (req) => {
+    const r = scoped(req);
+    const [snaps, jobs, handovers] = await Promise.all([r.listSnapshots(), r.listJobs(), r.listHandovers()]);
+    const completed = jobs.filter((j) => j.status === 'completed');
+    return {
+      liveMode: isLiveMode(),
+      hasToken: env.discordBotToken.length > 0,
+      hasTemplate: snaps.length > 0,
+      ranValidation: jobs.some((j) => j.dryRun && j.status === 'completed'), // readiness/dry-run proxy
+      ranCanary: jobs.some((j) => j.canary && j.status === 'completed'),
+      ranRealBuild: completed.some((j) => !j.dryRun && !j.canary),
+      deliveredHandover: handovers.some((h) => h.state === 'ready' || h.state === 'handed_over'),
+      counts: { templates: snaps.length, builds: completed.filter((j) => !j.dryRun).length, handovers: handovers.length },
+    };
+  });
+
   // Operator productivity widgets (#6): read-only rollups over this operator's own data (scoped).
   app.get('/dashboard', { preHandler: requireAuth }, async (req) => {
     const r = scoped(req);

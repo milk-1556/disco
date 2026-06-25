@@ -56,6 +56,7 @@ export const api = {
   audit: () => req<AuditEntry[]>('/audit'),
   buildEvents: (jobId?: string) => req<BuildEventEntry[]>(`/events${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ''}`),
   dashboard: () => req<DashboardStats>('/dashboard'),
+  onboarding: () => req<OnboardingState>('/onboarding'),
   readiness: (snapshotId: string, config: RebrandConfig, targetTier = 0) =>
     req<ReadinessReport>('/builds/readiness', { method: 'POST', body: JSON.stringify({ snapshotId, config, targetTier }) }),
   starterPacks: () => req<StarterPack[]>('/starter-packs'),
@@ -378,6 +379,16 @@ export interface ReadinessReport {
   warnings: { name: string; detail: string; severity: string }[];
   skipped: { ref: string; reason: string }[];
   steps: string[];
+}
+export interface OnboardingState {
+  liveMode: boolean;
+  hasToken: boolean;
+  hasTemplate: boolean;
+  ranValidation: boolean;
+  ranCanary: boolean;
+  ranRealBuild: boolean;
+  deliveredHandover: boolean;
+  counts: { templates: number; builds: number; handovers: number };
 }
 export interface DashboardStats {
   buildsThisWeek: number;
