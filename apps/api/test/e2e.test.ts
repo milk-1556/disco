@@ -360,3 +360,44 @@ describe('e2e: build readiness check / canary gate (#3)', () => {
     expect((await app.inject({ method: 'POST', url: '/builds/readiness', headers: auth, payload: JSON.stringify({ snapshotId: snapId, config: { bogus: true } }) })).statusCode).toBe(400);
   });
 });
+
+describe('e2e: operator activity log (#4) + build-duration SLO (#5)', () => {
+  let app: FastifyInstance;
+  const auth = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('logs shipped actions (snapshot.create, build.start, handover.deliver) to the activity log', async () => {
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: auth })).json() as { guilds: { id: string }[] };
+    const snap = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: auth, payload: JSON.stringify({ sourceGuildId: guilds.guilds[0]!.id }) })).json() as { id: string }).id;
+    const cfg = { clientId: 'x', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: auth, payload: JSON.stringify({ snapshotId: snap, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) {
+      const s = ((await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: auth })).json() as { status: string }).status;
+      if (s === 'completed') break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    const hid = ((await app.inject({ method: 'POST', url: '/handovers', headers: auth, payload: JSON.stringify({ jobId: jid }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: auth, payload: JSON.stringify({ state: 'ready' }) });
+
+    const actions = ((await app.inject({ method: 'GET', url: '/audit', headers: auth })).json() as { action: string }[]).map((a) => a.action);
+    expect(actions).toContain('snapshot.create');
+    expect(actions).toContain('build.start');
+    expect(actions).toContain('handover.deliver');
+    // a dry-run must NOT pollute the activity log with a build.start
+    const before = actions.filter((a) => a === 'build.start').length;
+    await app.inject({ method: 'POST', url: '/jobs', headers: auth, payload: JSON.stringify({ snapshotId: snap, config: cfg, dryRun: true }) });
+    const after = ((await app.inject({ method: 'GET', url: '/audit', headers: auth })).json() as { action: string }[]).filter((a) => a.action === 'build.start').length;
+    expect(after).toBe(before);
+  });
+
+  it('/dashboard exposes the build-duration SLO (no false positive on fast builds)', async () => {
+    const d = (await app.inject({ method: 'GET', url: '/dashboard', headers: auth })).json() as { slowBuilds: number; sloMs: number; slowestBuildMs: number };
+    expect(d.sloMs).toBeGreaterThanOrEqual(30_000); // floor so a tiny average can't false-positive
+    expect(d.slowBuilds).toBe(0); // the in-process mock build is milliseconds — never "slow"
+    expect(d.slowestBuildMs).toBeLessThan(d.sloMs);
+  });
+});

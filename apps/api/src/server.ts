@@ -279,6 +279,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
         ownerEmail: operatorOf(req),
       });
       pingActivity('imported');
+      await repo.addAudit({ action: 'snapshot.create', target: rec.name, detail: `v${rec.version} captured`, operator: operatorOf(req) });
       return { id: rec.id, name: rec.name, version: rec.version, unchanged: false };
     } catch (err) {
       console.error('snapshot capture failed:', err); // detail server-side; generic to the client
@@ -474,6 +475,11 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const buildsThisWeek = builds.filter((j) => now - new Date(j.createdAt).getTime() < WEEK).length;
     const durations = builds.map((j) => j.metrics?.durationMs ?? 0).filter((d) => d > 0);
     const avgBuildMs = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+    // Build-duration SLO (#5): a build is "slow" if it ran >2× the rolling average (with a floor so a
+    // tiny average can't false-positive). Surfaced as a home-dashboard banner the operator can act on.
+    const sloMs = Math.max(avgBuildMs * 2, 30_000);
+    const slow = builds.filter((j) => (j.metrics?.durationMs ?? 0) > sloMs);
+    const slowestMs = builds.reduce((m, j) => Math.max(m, j.metrics?.durationMs ?? 0), 0);
     // Stuck = a DELIVERED handover (not a draft) that's >72h old and the client has never opened.
     let stuckHandovers = 0;
     for (const h of handovers) {
@@ -488,6 +494,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       totalClients: clients.length,
       retainedClients,
       clientRetentionRate: clients.length ? Math.round((retainedClients / clients.length) * 100) : 0,
+      slowBuilds: slow.length,
+      slowestBuildMs: slowestMs,
+      sloMs,
     };
   });
 
@@ -564,6 +573,11 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       error: null,
       ownerEmail: operatorOf(req),
     });
+
+    // Operator activity log (#4): record what was shipped today (real builds + canary, not dry-runs).
+    if (!job.dryRun) {
+      await repo.addAudit({ action: job.canary ? 'build.canary' : 'build.start', target: rec.name, detail: `→ ${parsed.data.serverName ?? rec.snapshot.guild.name}`, operator: operatorOf(req) });
+    }
 
     if (useQueue()) {
       // Cross-process: enqueue to BullMQ; the worker executes and writes results to Postgres.
@@ -881,6 +895,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     }
     const h = await scoped(req).updateHandover(id, patch);
     if (!h) return reply.code(404).send({ error: 'not found' });
+    // Activity log (#4): delivering a handover (draft → ready/handed_over) is a shipped milestone.
+    if (b.state === 'ready' || b.state === 'handed_over') {
+      await repo.addAudit({ action: 'handover.deliver', target: `handover ${id.slice(-6)}`, detail: b.state === 'handed_over' ? 'handed over' : 'marked ready to share', operator: operatorOf(req) });
+    }
     return h;
   });
 

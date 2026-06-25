@@ -67,6 +67,17 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
         <button className="btn" onClick={() => go('economics')}>Review pipeline →</button>
       </div>
 
+      {/* build-duration SLO watcher (#5) — flag builds that ran >2× the rolling average */}
+      {dash && dash.slowBuilds > 0 && (
+        <div className="panel-soft p-3 mb-4 flex items-center gap-3 flex-wrap" style={{ borderColor: 'color-mix(in srgb, var(--color-gold) 45%, transparent)' }}>
+          <span className="chip chip-gold">⚠ SLO</span>
+          <span className="text-sm" style={{ color: 'var(--color-bone)' }}>
+            {dash.slowBuilds} build{dash.slowBuilds === 1 ? '' : 's'} ran past the {fmtDuration(dash.sloMs)} duration budget (slowest {fmtDuration(dash.slowestBuildMs)}).
+          </span>
+          <button className="btn btn-ghost text-xs ml-auto" onClick={() => go('queue')}>Review in Queue →</button>
+        </div>
+      )}
+
       {/* operator productivity widgets (#6) — read-only rollups over your own work */}
       {dash && (
         <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>

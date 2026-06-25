@@ -386,6 +386,9 @@ export interface DashboardStats {
   totalClients: number;
   retainedClients: number;
   clientRetentionRate: number;
+  slowBuilds: number;
+  slowestBuildMs: number;
+  sloMs: number;
 }
 export interface StarterPack {
   key: string;
