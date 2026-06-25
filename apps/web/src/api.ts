@@ -400,6 +400,7 @@ export interface DashboardStats {
   slowBuilds: number;
   slowestBuildMs: number;
   sloMs: number;
+  today: { builds: number; delivered: number; snapshots: number; clientOpens: number };
 }
 export interface StarterPack {
   key: string;

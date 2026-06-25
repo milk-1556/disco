@@ -451,3 +451,27 @@ describe('e2e: onboarding wizard activation state (#3)', () => {
     expect(o.counts.builds).toBe(0);
   });
 });
+
+describe('e2e: daily summary rollup (#4)', () => {
+  let app: FastifyInstance;
+  const auth = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it("counts today's builds + deliveries + client opens, scoped to the operator", async () => {
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: auth })).json() as { guilds: { id: string }[] };
+    const snap = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: auth, payload: JSON.stringify({ sourceGuildId: guilds.guilds[0]!.id }) })).json() as { id: string }).id;
+    const cfg = { clientId: 'x', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+    const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: auth, payload: JSON.stringify({ snapshotId: snap, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) { const s = ((await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: auth })).json() as { status: string }).status; if (s === 'completed') break; await new Promise((r) => setTimeout(r, 25)); }
+    const hid = ((await app.inject({ method: 'POST', url: '/handovers', headers: auth, payload: JSON.stringify({ jobId: jid }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: auth, payload: JSON.stringify({ state: 'ready' }) });
+    await app.inject({ method: 'GET', url: `/h/${hid}` }); // a client open today
+
+    const d = (await app.inject({ method: 'GET', url: '/dashboard', headers: auth })).json() as { today: { builds: number; delivered: number; snapshots: number; clientOpens: number } };
+    expect(d.today.builds).toBeGreaterThanOrEqual(1);
+    expect(d.today.delivered).toBeGreaterThanOrEqual(1);
+    expect(d.today.snapshots).toBeGreaterThanOrEqual(1);
+    expect(d.today.clientOpens).toBeGreaterThanOrEqual(1);
+  });
+});

@@ -499,11 +499,24 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const slow = builds.filter((j) => (j.metrics?.durationMs ?? 0) > sloMs);
     const slowestMs = builds.reduce((m, j) => Math.max(m, j.metrics?.durationMs ?? 0), 0);
     // Stuck = a DELIVERED handover (not a draft) that's >72h old and the client has never opened.
+    // Same pass counts today's client opens (#4 daily summary).
+    const sameDay = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
     let stuckHandovers = 0;
+    let clientOpensToday = 0;
     for (const h of handovers) {
-      if (h.state === 'draft' || now - new Date(h.createdAt).getTime() < H72) continue;
-      if ((await r.listHandoverViews(h.id)).length === 0) stuckHandovers += 1;
+      const views = await r.listHandoverViews(h.id);
+      if (h.state !== 'draft' && now - new Date(h.createdAt).getTime() >= H72 && views.length === 0) stuckHandovers += 1;
+      clientOpensToday += views.filter((v) => v.kind === 'opened' && sameDay(v.at)).length;
     }
+    // Daily summary (#4): "today you ran N builds, delivered M handovers, K client opens" — from the
+    // operator's own activity-log entries today (scoped by the operator field) + today's opens.
+    const mineToday = (await repo.listAudit(500)).filter((a) => a.operator === operatorOf(req) && sameDay(a.at));
+    const today = {
+      builds: mineToday.filter((a) => a.action === 'build.start' || a.action === 'build.canary').length,
+      delivered: mineToday.filter((a) => a.action === 'handover.deliver').length,
+      snapshots: mineToday.filter((a) => a.action === 'snapshot.create').length,
+      clientOpens: clientOpensToday,
+    };
     const retainedClients = clients.filter((c) => c.monthlyRetainer > 0).length;
     return {
       buildsThisWeek,
@@ -515,6 +528,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       slowBuilds: slow.length,
       slowestBuildMs: slowestMs,
       sloMs,
+      today,
     };
   });
 

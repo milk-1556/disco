@@ -67,6 +67,22 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
         <button className="btn" onClick={() => go('economics')}>Review pipeline →</button>
       </div>
 
+      {/* daily recap (#4) — what you shipped today, read-only */}
+      {dash && (dash.today.builds + dash.today.delivered + dash.today.snapshots + dash.today.clientOpens > 0) && (
+        <div className="panel-soft p-3 mb-4 flex items-center gap-2 flex-wrap text-sm">
+          <span className="label">today</span>
+          <span style={{ color: 'var(--color-muted)' }}>
+            {[
+              dash.today.builds > 0 ? `ran ${dash.today.builds} build${dash.today.builds === 1 ? '' : 's'}` : null,
+              dash.today.delivered > 0 ? `delivered ${dash.today.delivered} handover${dash.today.delivered === 1 ? '' : 's'}` : null,
+              dash.today.snapshots > 0 ? `added ${dash.today.snapshots} template${dash.today.snapshots === 1 ? '' : 's'}` : null,
+              dash.today.clientOpens > 0 ? `${dash.today.clientOpens} client open${dash.today.clientOpens === 1 ? '' : 's'}` : null,
+            ].filter(Boolean).join(' · ') || 'nothing shipped yet'}
+            .
+          </span>
+        </div>
+      )}
+
       {/* build-duration SLO watcher (#5) — flag builds that ran >2× the rolling average */}
       {dash && dash.slowBuilds > 0 && (
         <div className="panel-soft p-3 mb-4 flex items-center gap-3 flex-wrap" style={{ borderColor: 'color-mix(in srgb, var(--color-gold) 45%, transparent)' }}>
