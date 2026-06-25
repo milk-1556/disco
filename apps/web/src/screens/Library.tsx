@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, type JoinedGuild, type SnapshotSummary, type StarterPack } from '../api.js';
+import { api, type JoinedGuild, type MarketplaceItem, type SnapshotSummary, type StarterPack } from '../api.js';
 import { Modal } from '../components/Modal.js';
 import { SkeletonCard } from '../components/Skeleton.js';
 import { SnapshotTimeline } from '../components/SnapshotTimeline.js';
@@ -137,6 +137,56 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setImportingPack(null);
+    }
+  }
+
+  // Marketplace (#1 web): browse + clone shared operator templates into the library.
+  const [marketOpen, setMarketOpen] = useState(false);
+  const [market, setMarket] = useState<MarketplaceItem[] | null>(null);
+  const [marketErr, setMarketErr] = useState<string | null>(null);
+  const [marketPreview, setMarketPreview] = useState<string | null>(null);
+  const [cloningId, setCloningId] = useState<string | null>(null);
+  async function openMarket() {
+    setMarketOpen(true);
+    setMarketPreview(null);
+    if (!market) {
+      setMarketErr(null);
+      try {
+        setMarket(await api.marketplace());
+      } catch (e) {
+        setMarketErr(e instanceof Error ? e.message : String(e));
+        setMarket([]);
+      }
+    }
+  }
+  async function cloneFromMarket(templateId: string) {
+    setCloningId(templateId);
+    setMarketErr(null);
+    try {
+      const r = await api.cloneMarketplace(templateId);
+      await load();
+      setMarketOpen(false);
+      setMarketPreview(null);
+      setNote(`Added “${r.name}” (v${r.version}) to your library as a template.`);
+      setTimeout(() => setNote(null), 5000);
+    } catch (e) {
+      setMarketErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCloningId(null);
+    }
+  }
+
+  // Toggle a template's marketplace visibility (structure-only share), then reload.
+  const [sharingId, setSharingId] = useState<string | null>(null);
+  async function toggleShare(s: SnapshotSummary) {
+    setSharingId(s.id);
+    try {
+      await api.updateSnapshot(s.id, { shared: !s.shared });
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSharingId(null);
     }
   }
 
@@ -426,6 +476,81 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
         </Modal>
       )}
 
+      {marketOpen && (
+        <Modal title="Operator marketplace" onClose={() => { setMarketOpen(false); setMarketPreview(null); }}>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
+            Server structures other operators have shared — channels, roles &amp; permissions, no private messages or notes. Add one to your library, then rebrand &amp; build it for a client.
+          </p>
+          {marketErr && (
+            <div className="panel-soft p-3 mb-3 text-sm flex items-center justify-between gap-3" style={{ color: 'var(--color-danger)' }}>
+              <span>Couldn’t reach the marketplace — {marketErr}</span>
+              <button className="btn btn-ghost shrink-0" disabled={!!cloningId} onClick={openMarket}>Retry</button>
+            </div>
+          )}
+          {!market ? (
+            <div className="text-sm" style={{ color: 'var(--color-faint)' }}>Loading shared templates…</div>
+          ) : market.length === 0 && !marketErr ? (
+            <div className="panel-soft p-6 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
+              Nothing shared yet. Be the first — flip <strong>🛒 Share</strong> on one of your templates and it’ll show up here for every operator.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {market.map((m) => {
+                const open = marketPreview === m.templateId;
+                const extraChannels = m.counts.channels - m.sampleChannels.length;
+                return (
+                  <div key={m.templateId} className="panel-soft p-4">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-base font-medium" style={{ fontFamily: 'var(--font-display)' }}>{m.name}</span>
+                          <span className="chip chip-source">v{m.version}</span>
+                          {m.mine && <span className="chip chip-jade">yours</span>}
+                        </div>
+                        <p className="text-sm mt-1" style={{ color: 'var(--color-muted)' }}>
+                          {m.mine ? 'shared by you' : <>shared by <strong>{m.sourceOperator}</strong></>}
+                        </p>
+                        <div className="text-[0.72rem] mono mt-2" style={{ color: 'var(--color-faint)' }}>
+                          {m.counts.categories} categories · {m.counts.channels} channels · {m.counts.roles} roles · {m.counts.emojis} emojis · {m.counts.automod} automod
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button className="btn btn-ghost text-xs" onClick={() => setMarketPreview(open ? null : m.templateId)} aria-expanded={open}>
+                          {open ? 'Hide' : 'Preview'}
+                        </button>
+                        {m.mine ? (
+                          <span className="chip chip-jade" title="This is your own template">yours</span>
+                        ) : (
+                          <button className="btn btn-primary text-xs" disabled={cloningId === m.templateId} onClick={() => cloneFromMarket(m.templateId)}>
+                            {cloningId === m.templateId ? 'Adding…' : '＋ Add to library'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {open && (
+                      <div className="mt-3 pt-3 grid gap-3" style={{ borderTop: '1px solid var(--color-line)', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+                        <div>
+                          <div className="label mb-1">categories</div>
+                          <div className="flex flex-wrap gap-1">{m.categories.map((c) => <span key={c} className="chip">{c}</span>)}</div>
+                        </div>
+                        <div>
+                          <div className="label mb-1">channels</div>
+                          <div className="flex flex-wrap gap-1">{m.sampleChannels.map((c) => <span key={c} className="chip">#{c}</span>)}{extraChannels > 0 && <span className="chip" style={{ color: 'var(--color-faint)' }}>+{extraChannels}</span>}</div>
+                        </div>
+                        <div>
+                          <div className="label mb-1">roles</div>
+                          <div className="flex flex-wrap gap-1">{m.roles.map((rr) => <span key={rr} className="chip chip-gold">{rr}</span>)}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {importOpen && (
         <Modal
           title="Pick a server to snapshot into your library"
@@ -530,6 +655,7 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
           />
           <button className="btn" onClick={() => fileRef.current?.click()}>↑ Import file</button>
           <button className="btn" onClick={openPacks}>✨ Starter packs</button>
+          <button className="btn" onClick={openMarket}>🛒 Marketplace</button>
           <button className="btn btn-primary" onClick={openImport}>
             ＋ Snapshot a server
           </button>
@@ -704,6 +830,17 @@ export function Library({ onBuild, onCompare }: { onBuild: (snapshotId: string) 
                     onClick={async () => { await api.updateSnapshot(s.id, { isTemplate: !s.isTemplate }).catch((e) => setErr(e instanceof Error ? e.message : String(e))); await load(); }}
                     style={s.isTemplate ? { color: 'var(--color-jade)' } : undefined}
                   >{s.isTemplate ? '★' : '☆'}</button>
+                  {s.isTemplate && (
+                    <button
+                      className="btn btn-ghost"
+                      title="Share the STRUCTURE (channels/roles/permissions) to the operator marketplace — your messages + notes stay private."
+                      aria-label={s.shared ? `Stop sharing ${s.name} to the marketplace` : `Share ${s.name} to the marketplace`}
+                      aria-pressed={s.shared}
+                      disabled={sharingId === s.id}
+                      onClick={() => toggleShare(s)}
+                      style={s.shared ? { color: 'var(--color-source)' } : undefined}
+                    >{sharingId === s.id ? '…' : s.shared ? '🛒 Shared' : '🛒 Share'}</button>
+                  )}
                   <button className="btn btn-ghost" title="Version history & provenance" aria-label={`View version history for ${s.name}`} onClick={() => setTimelineFor({ templateName: s.name, sourceGuildId: s.sourceGuildId })}>🕓</button>
                   <button className="btn btn-ghost" title="Edit tags / note / template" aria-label={`Edit tags, note and template settings for ${s.name}`} onClick={() => setEditing(s.id)}>✎</button>
                   <button className="btn btn-ghost" title="Export .discobundle" aria-label={`Export ${s.name} as a .discobundle file`} onClick={() => exportOne(s)}>↓</button>

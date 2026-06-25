@@ -535,6 +535,8 @@ describe('e2e: template marketplace — share is STRUCTURE-ONLY (#1, security-cr
     expect(item).not.toHaveProperty('content');
     expect(item).not.toHaveProperty('note');
     expect(item).not.toHaveProperty('snapshot'); // no raw artifact
+    expect(item.sourceOperator).not.toMatch(/@/); // pseudonymized — the raw operator email never leaks
+    expect(item.sourceOperator).toMatch(/^operator-/);
     expect(Array.isArray(item.roles)).toBe(true); // structure IS exposed
     expect((item.counts as { channels: number }).channels).toBeGreaterThan(0);
   });
@@ -548,6 +550,7 @@ describe('e2e: template marketplace — share is STRUCTURE-ONLY (#1, security-cr
     expect(cloned.snapshot.brandTokens).toEqual([]); // source client's brand identity stripped
     expect(Object.keys(cloned.snapshot.guild.assets)).toHaveLength(0); // client logo/banner bytes not referenced
     expect(cloned.snapshot.emojis.every((e) => e.asset === 'assets/00000000.png')).toBe(true); // no asset-byte leak
+    expect((cloned.snapshot as { roles: { icon?: string }[] }).roles.every((r) => !r.icon)).toBe(true); // role-icon bytes not referenced (HIGH)
     expect(cloned.note).not.toMatch(/SECRET/); // A's private note never reaches B
     expect(cloned.snapshot.roles.length).toBeGreaterThan(0); // structure preserved
     expect(cloned.snapshot.channels.length).toBeGreaterThan(0);

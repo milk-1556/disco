@@ -383,10 +383,22 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // SECURITY: only the structural pack (guild settings, roles, categories, channels + their permission
   // overwrites, emojis, stickers, automod) is ever exposed. Private fields — the copied channel CONTENT
   // (messages), the source guild's ownerNote, and the operator's curation note — are NEVER shared.
+  // A stable, non-reversible pseudonym for a sharing operator — never expose the raw login email
+  // cross-operator (it's operator/agency-identifying PII). Owners see 'you'.
+  const pseudoOperator = (email: string): string => {
+    if (!email) return 'system';
+    let h = 2166136261;
+    for (let i = 0; i < email.length; i++) {
+      h ^= email.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return `operator-${(h >>> 0).toString(36).slice(0, 6)}`;
+  };
+
   const marketplaceItem = (rec: SnapshotRecord, mine: boolean) => ({
     templateId: rec.id,
     name: rec.name,
-    sourceOperator: rec.ownerEmail || 'system',
+    sourceOperator: mine ? 'you' : pseudoOperator(rec.ownerEmail),
     version: rec.version,
     mine,
     counts: {
@@ -420,14 +432,21 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     //  • emoji/sticker asset keys — the custom-expression image bytes (→ a harmless placeholder; the
     //    structure/names survive, the bytes don't, and the recipient's build skips a missing asset)
     const PLACEHOLDER = 'assets/00000000.png';
+    const noSrc = <T extends { sourceId?: string }>(x: T): T => ({ ...x, sourceId: undefined });
     const safe = {
       ...src.snapshot,
       content: [],
       brandTokens: [],
       source: { ...src.snapshot.source, name: `${src.snapshot.guild.name} (shared)`, ownerNote: '' },
-      guild: { ...src.snapshot.guild, assets: {} },
-      emojis: src.snapshot.emojis.map((e) => ({ ...e, asset: PLACEHOLDER })),
-      stickers: src.snapshot.stickers.map((s) => ({ ...s, asset: PLACEHOLDER })),
+      // strip asset-byte refs (icon/banner/splash) + source-guild traceability
+      guild: { ...src.snapshot.guild, assets: {}, sourceGuildId: undefined },
+      // roles: strip the role-ICON asset key (A's image bytes, fetchable via /assets) + source id
+      roles: src.snapshot.roles.map((r) => ({ ...r, icon: undefined, sourceId: undefined })),
+      channels: src.snapshot.channels.map(noSrc),
+      categories: src.snapshot.categories.map(noSrc),
+      automod: src.snapshot.automod.map(noSrc),
+      emojis: src.snapshot.emojis.map((e) => ({ ...e, asset: PLACEHOLDER, sourceId: undefined })),
+      stickers: src.snapshot.stickers.map((s) => ({ ...s, asset: PLACEHOLDER, sourceId: undefined })),
     };
     const r = scoped(req);
     const mine = (await r.listSnapshots()).filter((s) => s.sourceGuildId === src.sourceGuildId);
