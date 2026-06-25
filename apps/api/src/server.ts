@@ -1151,15 +1151,16 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (!prior.snapshotId || !prior.rebrandConfig) return reply.code(400).send({ error: 'this build has no snapshot or config to replay' });
     const snap = await r.getSnapshot(prior.snapshotId);
     if (!snap) return reply.code(404).send({ error: 'snapshot not found' });
-    const prefs = await r.getOperatorPrefs(operatorOf(req));
     const job = await r.addJob({
       kind: 'rebuild',
       status: 'queued',
       snapshotId: snap.id,
       clientId: prior.clientId,
       targetGuildId: body.targetGuildId ?? null,
-      dryRun: body.dryRun ?? prefs?.defaultDryRun ?? false,
-      canary: body.canary ?? prefs?.defaultCanary ?? false,
+      // A replay re-runs THE SAME build, so it MIRRORS the parent's safety posture unless explicitly
+      // overridden — replaying a dry-run must never silently become a real live build (seam r8 MEDIUM).
+      dryRun: body.dryRun ?? prior.dryRun,
+      canary: body.canary ?? prior.canary,
       rebrandConfig: prior.rebrandConfig,
       metrics: null,
       progress: 0,

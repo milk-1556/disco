@@ -82,20 +82,23 @@ describe('#1 load / concurrency harness', () => {
       return { durations, wallMs };
     }
 
+    await runWave(2); // discarded warmup: absorb JIT/allocation cold-start so the baseline below is WARM
     const levels = [1, 2, 5, 10, 20];
     const rows: { c: number; stats: Stats; wallMs: number; perBuild: number }[] = [];
     for (const c of levels) {
       const { durations, wallMs } = await runWave(c);
       rows.push({ c, stats: summarize(durations), wallMs, perBuild: wallMs / c });
     }
-    const base = rows[0]!.stats.p50; // single-build p50 baseline
+    // Baseline = the warm steady-state FLOOR (min p50 across levels), not the first wave — otherwise a
+    // cold-start-inflated concurrency=1 sample would raise the bar and MASK a real knee (seam r8 LOW).
+    const base = Math.min(...rows.map((r) => r.stats.p50));
     report.push('\n[1] CONCURRENT BUILDS (runBuildJob → MockGuild, dry-run)');
     report.push('  concurrency │ per-build p50/p95/p99 (ms) │ wall (ms) │ throughput (builds/s) │ slowdown×');
     for (const r of rows) {
       const tput = (r.c / (r.wallMs / 1000)).toFixed(1);
       report.push(`     ${String(r.c).padStart(3)}      │ ${fmt(r.stats.p50).padStart(7)}/${fmt(r.stats.p95).padStart(7)}/${fmt(r.stats.p99).padStart(7)} │ ${fmt(r.wallMs).padStart(8)} │ ${tput.padStart(10)}         │ ${(r.stats.p50 / base).toFixed(2)}`);
     }
-    // The knee = first level where per-build p50 inflates >2× the single-build baseline (real contention).
+    // The knee = first level where per-build p50 inflates >2× the WARM baseline (real contention).
     const knee = rows.find((r) => r.stats.p50 > base * 2);
     report.push(`  → knee: ${knee ? `per-build latency >2× baseline at concurrency ${knee.c}` : 'none in 1..20 — builds stay near-baseline (CPU headroom)'}`);
 

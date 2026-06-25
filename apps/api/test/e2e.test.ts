@@ -723,6 +723,11 @@ describe('e2e: build replay (#3) + snapshot scan preview (#2)', () => {
     expect(nj.targetGuildId).toBe('123456789012345678');
     expect(nj.snapshotId).toBe(snaps[0]!.id);
     expect(nj.rebrandConfig.serverName).toBe('Original Build'); // config copied from the parent
+    // SAFETY (seam r8): replaying a dry-run parent with an EMPTY body must MIRROR the parent (stay dry-run),
+    // never silently become a real live build.
+    const mirrorId = ((await app.inject({ method: 'POST', url: `/jobs/${parentId}/replay`, headers: A, payload: JSON.stringify({}) })).json() as { id: string }).id;
+    const mj = (await app.inject({ method: 'GET', url: `/jobs/${mirrorId}`, headers: A })).json() as { dryRun: boolean };
+    expect(mj.dryRun).toBe(true);
     // a 2nd operator cannot replay operator A's build
     expect((await app.inject({ method: 'POST', url: `/jobs/${parentId}/replay`, headers: B, payload: JSON.stringify({}) })).statusCode).toBe(404);
   });

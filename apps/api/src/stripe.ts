@@ -35,6 +35,8 @@ interface LineItem {
 
 /** Minimal shape of the Stripe event envelope we care about (scaffold — not the full SDK type). */
 interface StripeEvent {
+  /** The event envelope id (evt_…) — what you search in the Stripe dashboard; distinct from the session id. */
+  id?: string;
   type?: string;
   data?: { object?: StripeSession };
 }
@@ -213,7 +215,8 @@ export function registerStripeRoutes(
     // Inbound webhook log (#6): record every hit (signature result + outcome) with a REDACTED summary —
     // never the raw payload. Admin-viewable via GET /admin/webhooks for debugging delivery failures.
     const logHook = (signatureValid: boolean, outcome: string, detail: string, ev?: StripeEvent) =>
-      void repo.addWebhookEvent({ source: 'stripe', eventId: ev?.data?.object?.id ?? '', eventType: ev?.type ?? '', signatureValid, outcome, detail }).catch(() => {});
+      // eventId = the event envelope id (evt_…) when present, else the session id — the searchable id, never a payload.
+      void repo.addWebhookEvent({ source: 'stripe', eventId: ev?.id ?? ev?.data?.object?.id ?? '', eventType: ev?.type ?? '', signatureValid, outcome, detail }).catch(() => {});
 
     if (secret) {
       if (!verifyStripeSignature(rawBody, sig, secret)) {

@@ -90,20 +90,25 @@ and reports where the first thing degrades.
 
 ## 1. Concurrent builds — `runBuildJob()` against MockGuild (dry-run), ramped
 
+Measured against a **warm baseline** (a discarded warmup wave runs first, and the baseline is the
+steady-state floor = min p50 across levels — an earlier cold-start baseline masked the knee below):
+
 | Concurrency | per-build p50 | p95 | p99 | wall | throughput | slowdown× |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1  | 2.54 ms | 2.54 | 2.54 | 2.56 ms | 390 builds/s | 1.00 |
-| 2  | 0.89 ms | 0.89 | 0.89 | 0.91 ms | 2202 builds/s | 0.35 |
-| 5  | 1.63 ms | 1.64 | 1.64 | 1.67 ms | 3000 builds/s | 0.64 |
-| 10 | 2.85 ms | 2.88 | 2.88 | 2.92 ms | 3425 builds/s | 1.12 |
-| 20 | 4.33 ms | 4.41 | 4.41 | 4.44 ms | 4505 builds/s | 1.71 |
+| 1  | 0.41 ms | 0.41 | 0.41 | 0.41 ms | 2421 builds/s | 1.00 |
+| 2  | 0.59 ms | 0.59 | 0.59 | 0.61 ms | 3293 builds/s | 1.44 |
+| 5  | 1.97 ms | 1.98 | 1.98 | 2.01 ms | 2493 builds/s | 4.78 |
+| 10 | 2.47 ms | 2.51 | 2.51 | 2.53 ms | 3949 builds/s | 6.01 |
+| 20 | 6.38 ms | 6.48 | 6.48 | 6.51 ms | 3071 builds/s | 15.5 |
 
-Throughput rises monotonically to 20 — the in-process compute path has headroom well past the
-10-concurrent target. **Caveat (the real finding):** at concurrency 20 the *tail* becomes GC-sensitive
-and bimodal run-to-run — a representative second run spiked p99 from ~4 ms to ~20 ms (an 8× slowdown) on
-a garbage-collection pause, while median stayed flat. So **~10 concurrent in-process builds is the
-comfortable ceiling**; past that, expect GC-driven tail spikes and scale horizontally (more workers)
-rather than packing one process. The harness asserts 10 concurrent dry-run builds finish < 10 s wall.
+**The knee is at ~5 concurrent.** Aggregate throughput stays high (~2.5–4k builds/s all the way to 20,
+because the event loop keeps all builds making progress), but **per-build latency degrades sharply past
+~5** — a single build that took ~0.4 ms alone takes ~2 ms at 5-way and ~6 ms at 20-way contention (15×).
+On top of that the *tail* turns GC-sensitive and bimodal at the high end (a prior run spiked p99 to ~20 ms
+on a collection pause). So the practical guidance: **size in-process build concurrency to ~5, ceiling
+~10**, and scale horizontally (more workers) beyond that rather than packing one process — you trade
+per-build latency for throughput you don't need. The harness asserts 10 concurrent dry-run builds finish
+< 10 s wall.
 
 ## 2. 50 concurrent handover-view beacons — `POST /h/:id/event` over a real socket
 
@@ -127,18 +132,20 @@ asserts all 100 connect and fan-out p95 < 1 s.
 
 ## Where it breaks first
 
-In-process, **nothing in the 10-build / 50-click / 100-listener envelope breaks** — the application layer
-has headroom. The first real ceiling is **infrastructure this harness deliberately does not stub**, in
-likely order:
+The handover-beacon (50) and SSE (100) envelopes have headroom — every write persists and fan-out is
+~4 ms. The build path is the one that degrades inside the tested range: **per-build latency knees at ~5
+concurrent** (above) even though aggregate throughput holds. Beyond that the limits are **infrastructure
+this harness deliberately does not stub**, in likely order:
 
-1. **BullMQ worker concurrency** — real builds run in the worker, not the API; throughput is gated by
-   how many workers × their concurrency setting, not by the in-process numbers above.
-2. **Postgres connection pool** — under the Prisma backend, concurrent builds each hold a connection for
+1. **In-process build latency** — the measured knee: at ~5 concurrent dry-run builds per process,
+   per-build latency starts climbing (0.4→2 ms), and the tail goes GC-sensitive by ~20. Size in-process
+   concurrency to ~5 (ceiling ~10) and scale out rather than packing one process.
+2. **BullMQ worker concurrency** — real builds run in the worker, not the API; system throughput is gated
+   by how many workers × their concurrency setting, not by the in-process numbers above.
+3. **Postgres connection pool** — under the Prisma backend, concurrent builds each hold a connection for
    their checkpoint writes; the pool size (not CPU) caps simultaneous in-flight builds.
-3. **Redis subscriber connections** — each SSE listener holds a pub/sub subscription; at thousands of
+4. **Redis subscriber connections** — each SSE listener holds a pub/sub subscription; at thousands of
    concurrent delivery pages, Redis `maxclients` / file descriptors bound it, not the ~4 ms fan-out.
-4. **GC tail latency** — already visible at ~20 in-process builds (above); a single-process box should
-   cap build concurrency to ~10 and scale out.
 
 These are named, not measured, because measuring them requires the live infra and would make the test
 flaky/non-hermetic. When the Prisma+Redis backend becomes the hot path, give it its own integration-level
