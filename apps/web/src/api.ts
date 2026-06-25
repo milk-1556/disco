@@ -56,6 +56,8 @@ export const api = {
   audit: () => req<AuditEntry[]>('/audit'),
   buildEvents: (jobId?: string) => req<BuildEventEntry[]>(`/events${jobId ? `?jobId=${encodeURIComponent(jobId)}` : ''}`),
   dashboard: () => req<DashboardStats>('/dashboard'),
+  readiness: (snapshotId: string, config: RebrandConfig, targetTier = 0) =>
+    req<ReadinessReport>('/builds/readiness', { method: 'POST', body: JSON.stringify({ snapshotId, config, targetTier }) }),
   starterPacks: () => req<StarterPack[]>('/starter-packs'),
   importStarterPack: (key: string) => req<{ id: string; name: string; version: number }>(`/starter-packs/${encodeURIComponent(key)}/import`, { method: 'POST' }),
   handoverViews: (id: string) => req<{ count: number; recent: HandoverViewEntry[] }>(`/handovers/${id}/views`),
@@ -363,6 +365,19 @@ export interface BuildEventEntry {
   at: string;
   kind: string;
   detail: string;
+}
+export interface ReadinessReport {
+  verdict: 'ready' | 'ready_with_warnings' | 'blocked';
+  serverName: string;
+  targetTier: number;
+  wouldCreate: number;
+  wouldSkip: number;
+  manualSteps: number;
+  counts: Record<string, number>;
+  blocks: { name: string; detail: string; severity: string }[];
+  warnings: { name: string; detail: string; severity: string }[];
+  skipped: { ref: string; reason: string }[];
+  steps: string[];
 }
 export interface DashboardStats {
   buildsThisWeek: number;

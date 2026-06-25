@@ -4,6 +4,7 @@ import {
   streamJobLogs,
   type BrandToken,
   type JobEvent,
+  type ReadinessReport,
   type RebrandConfig,
   type RebrandPreview,
   type RebuildReport,
@@ -55,6 +56,8 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [feasibility, setFeasibility] = useState<Awaited<ReturnType<typeof api.feasibility>> | null>(null);
   const [targetTier, setTargetTier] = useState(0); // boost tier of the guild we're building INTO (0 = fresh)
+  const [readiness, setReadiness] = useState<ReadinessReport | null>(null); // #3 canary "would-succeed" gate
+  const [checking, setChecking] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -99,6 +102,19 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
       setRebrandedName(r.rebrandedGuildName);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function runReadiness() {
+    setErr(null);
+    setChecking(true);
+    setReadiness(null);
+    try {
+      setReadiness(await api.readiness(snapshotId, config, targetTier));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -317,8 +333,41 @@ export function BuildConsole({ snapshotId }: { snapshotId: string }) {
             );
           })()}
 
+          {readiness && (() => {
+            const v = readiness.verdict;
+            const color = v === 'blocked' ? 'var(--color-danger)' : v === 'ready' ? 'var(--color-jade)' : 'var(--color-gold)';
+            const label = v === 'blocked' ? '✗ Blocked — fix before building' : v === 'ready' ? '✓ Ready to build' : '⚠ Ready, with items that will skip';
+            return (
+              <div className="panel-soft p-4" style={{ borderColor: `color-mix(in srgb, ${color} 45%, transparent)` }}>
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <span className="label">readiness check</span>
+                  <span className="text-sm font-medium" style={{ color }}>{label}</span>
+                </div>
+                <div className="text-[0.74rem] mono mb-2" style={{ color: 'var(--color-muted)' }}>
+                  would create {readiness.wouldCreate} objects · {readiness.wouldSkip} skip · {readiness.manualSteps} manual step{readiness.manualSteps === 1 ? '' : 's'} · target tier {readiness.targetTier}
+                </div>
+                {[...readiness.blocks, ...readiness.warnings].length > 0 && (
+                  <div className="space-y-1">
+                    {readiness.blocks.map((f, i) => (
+                      <div key={`b${i}`} className="text-[0.74rem] flex gap-2"><span className="mono" style={{ color: 'var(--color-danger)', minWidth: 52 }}>✗ block</span><span style={{ color: 'var(--color-muted)' }}>{f.detail}</span></div>
+                    ))}
+                    {readiness.warnings.map((f, i) => (
+                      <div key={`w${i}`} className="text-[0.74rem] flex gap-2"><span className="mono" style={{ color: 'var(--color-gold)', minWidth: 52 }}>⚠ warn</span><span style={{ color: 'var(--color-muted)' }}>{f.detail}</span></div>
+                    ))}
+                  </div>
+                )}
+                <div className="text-[0.66rem] mt-2" style={{ color: 'var(--color-faint)' }}>
+                  Simulated — no Discord writes. Run this green, then build for real.
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="panel p-5">
             <div className="flex items-center gap-3 flex-wrap">
+              <button className="btn" onClick={runReadiness} disabled={checking || running} title="Simulate the full build with zero Discord writes — your go/no-go before a real build">
+                {checking ? 'Checking…' : '🔍 Readiness check'}
+              </button>
               <button className="btn" onClick={() => run({ dryRun: true })} disabled={running}>
                 {running ? 'Working…' : '◐ Dry-run'}
               </button>

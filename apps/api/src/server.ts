@@ -1,4 +1,4 @@
-import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, exportBundle, makeSampleSnapshot, makeStarterPacks, parseBundle, rebrand } from '@disco/core';
+import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, dryRunReport, exportBundle, makeSampleSnapshot, makeStarterPacks, parseBundle, rebrand } from '@disco/core';
 import { defaultOwnershipSteps, RebrandConfig, SnapshotMetaPatch } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, listJoinedGuilds, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
 import { demoGuildSnapshot, listDemoGuilds } from './demoGuilds.js';
@@ -500,6 +500,39 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid config', detail: parsed.error.flatten() });
     const { snapshot, preview } = rebrand(rec.snapshot, parsed.data);
     return { preview, rebrandedGuildName: snapshot.guild.name, brandTokens: rec.snapshot.brandTokens };
+  });
+
+  // Build readiness check (#3, "canary") — a synchronous, zero-write "would-this-build-succeed?" gate.
+  // Runs ALL the guardrails (Discord hard limits + boost-tier cross-check) and a full dry-run projection
+  // (channel/role/overwrite plan, what skips, manual steps) against the rebranded snapshot, and returns
+  // a single verdict: ready | ready_with_warnings | blocked. Run this green, THEN flip to a real build.
+  app.post('/builds/readiness', { preHandler: requireAuth }, async (req, reply) => {
+    const body = (req.body ?? {}) as { snapshotId?: string; config?: unknown; targetTier?: number };
+    const rec = body.snapshotId ? await scoped(req).getSnapshot(body.snapshotId) : undefined;
+    if (!rec) return reply.code(404).send({ error: 'snapshot not found' });
+    const parsed = RebrandConfig.safeParse(body.config);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid config', detail: parsed.error.flatten() });
+    const targetTier = Math.max(0, Math.min(3, Math.trunc(Number(body.targetTier)) || 0));
+
+    const feasibility = auditBuildLimits(rec.snapshot, targetTier);
+    const blocks = feasibility.findings.filter((f) => f.severity === 'block');
+    const warnings = feasibility.findings.filter((f) => f.severity === 'warn');
+    const { snapshot: rebranded } = rebrand(rec.snapshot, parsed.data);
+    const report = dryRunReport(rebranded, 'readiness', new Date().toISOString());
+    const verdict = blocks.length ? 'blocked' : warnings.length || report.skipped.length ? 'ready_with_warnings' : 'ready';
+    return {
+      verdict,
+      serverName: rebranded.guild.name,
+      targetTier,
+      wouldCreate: report.created.length,
+      wouldSkip: report.skipped.length,
+      manualSteps: report.manualSteps.length,
+      counts: report.counts,
+      blocks,
+      warnings,
+      skipped: report.skipped.slice(0, 20),
+      steps: report.created.slice(0, 12), // a sample of the create plan, in dependency order
+    };
   });
 
   // ── jobs ──
