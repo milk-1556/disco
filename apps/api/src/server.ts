@@ -872,7 +872,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       } catch (err) {
         // In LIVE mode this is a hard block (the build will fail at the first API call); never leak the raw error.
         console.error('readiness live probe failed:', err);
-        live = { mode: 'live', reachable: false, tokenValid: false, permissions: null, detail: 'Could not reach Discord with the configured bot token — it may be missing, invalid, or rate-limited.' };
+        live = { mode: isLiveMode() ? 'live' : 'demo', reachable: false, tokenValid: false, permissions: null, detail: 'Could not reach Discord with the configured bot token — it may be missing, invalid, or rate-limited.' };
       }
     }
 
