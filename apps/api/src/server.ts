@@ -1,4 +1,4 @@
-import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, dryRunReport, exportBundle, makeSampleSnapshot, makeStarterPacks, parseBundle, rebrand } from '@disco/core';
+import { auditAuthority, auditBuildLimits, type BuildJobData, BundleError, captureSnapshot, collectAssetKeys, dryRunReport, exportBundle, makeSampleSnapshot, makeStarterPacks, mergeSnapshots, type MergeResolutions, parseBundle, rebrand } from '@disco/core';
 import { defaultOwnershipSteps, RebrandConfig, type SnapshotRecord, SnapshotMetaPatch } from '@disco/schema';
 import { DiscordGuildClient, DiskAssetStore, listJoinedGuilds, MockGuild, mockGuildFromSnapshot } from '@disco/sdk';
 import { demoGuildSnapshot, listDemoGuilds } from './demoGuilds.js';
@@ -331,6 +331,55 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       if (err instanceof BundleError) return reply.code(400).send({ error: err.message }); // controlled, safe
       console.error('bundle import failed:', err); // detail server-side; generic to the client
       return reply.code(500).send({ error: 'could not import bundle' });
+    }
+  });
+
+  // ── snapshot composability (#5): merge two owned snapshots into a composite template ──
+  // Both must be owned by the operator (scoped). Preview returns the name-collisions to resolve.
+  app.post('/snapshots/merge/preview', { preHandler: requireAuth }, async (req, reply) => {
+    const body = (req.body ?? {}) as { aId?: string; bId?: string };
+    const r = scoped(req);
+    const [a, b] = await Promise.all([body.aId ? r.getSnapshot(body.aId) : undefined, body.bId ? r.getSnapshot(body.bId) : undefined]);
+    if (!a || !b) return reply.code(404).send({ error: 'snapshot(s) not found' });
+    try {
+      const { conflicts, snapshot } = mergeSnapshots(a.snapshot, b.snapshot);
+      return {
+        conflicts,
+        counts: { roles: snapshot.roles.length, channels: snapshot.channels.length, categories: snapshot.categories.length, emojis: snapshot.emojis.length, automod: snapshot.automod.length },
+      };
+    } catch (err) {
+      console.error('merge preview failed:', err);
+      return reply.code(400).send({ error: 'these snapshots could not be merged' });
+    }
+  });
+
+  app.post('/snapshots/merge', { preHandler: requireAuth }, async (req, reply) => {
+    const body = (req.body ?? {}) as { aId?: string; bId?: string; resolutions?: MergeResolutions; name?: string };
+    const r = scoped(req);
+    const [a, b] = await Promise.all([body.aId ? r.getSnapshot(body.aId) : undefined, body.bId ? r.getSnapshot(body.bId) : undefined]);
+    if (!a || !b) return reply.code(404).send({ error: 'snapshot(s) not found' });
+    try {
+      const { snapshot } = mergeSnapshots(a.snapshot, b.snapshot, body.resolutions ?? {});
+      // A composite is its OWN template line (a fresh synthetic source id), not a version of either parent.
+      const synthGuild = `${Date.now()}${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}`;
+      snapshot.source = { ...snapshot.source, guildId: synthGuild, name: `${a.name} + ${b.name}`, ownerNote: '' };
+      const name = (body.name || `${a.name} + ${b.name}`).slice(0, 120);
+      const rec = await r.addSnapshot({
+        name,
+        version: 1,
+        sourceGuildId: synthGuild,
+        capturedAt: snapshot.capturedAt,
+        schemaVersion: snapshot.schemaVersion,
+        snapshot,
+        ownerEmail: operatorOf(req),
+      });
+      await r.updateSnapshot(rec.id, { isTemplate: true, tags: ['composite'], note: `Composite of "${a.name}" + "${b.name}".` });
+      await repo.addAudit({ action: 'snapshot.merge', target: name, detail: `${a.name} + ${b.name}`, operator: operatorOf(req) });
+      pingActivity('imported');
+      return { id: rec.id, name: rec.name, version: rec.version };
+    } catch (err) {
+      console.error('merge failed:', err);
+      return reply.code(400).send({ error: 'these snapshots could not be merged' });
     }
   });
 

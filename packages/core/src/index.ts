@@ -47,5 +47,8 @@ export * from './authority.js';
 // Discord permission bitfield → human-readable names (drives the snapshot-diff per-permission view)
 export * from './permissions.js';
 
+// Snapshot composability — merge two snapshots into a composite (#5)
+export * from './compose.js';
+
 // Per-build API-call metering for cost analytics
 export * from './meter.js';

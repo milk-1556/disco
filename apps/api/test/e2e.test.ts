@@ -618,3 +618,39 @@ describe('e2e: deeper analytics + survey + earnings (#3/#4/#6)', () => {
     expect(((await app.inject({ method: 'GET', url: '/earnings', headers: B })).json() as { paidCents: number }).paidCents).toBe(0);
   });
 });
+
+describe('e2e: snapshot composability — merge endpoints (#5)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'merge-attacker@x.com' })}`, 'content-type': 'application/json' };
+  let aId = '';
+  let bId = '';
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+    aId = ((await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[])[0]!.id; // seeded sample
+    const guilds = (await app.inject({ method: 'GET', url: '/guilds', headers: A })).json() as { guilds: { id: string }[] };
+    const second = guilds.guilds.find((g) => g.id !== guilds.guilds[0]!.id) ?? guilds.guilds[0]!;
+    bId = ((await app.inject({ method: 'POST', url: '/snapshots/capture', headers: A, payload: JSON.stringify({ sourceGuildId: second.id }) })).json() as { id: string }).id;
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('previews conflicts then creates an owner-scoped composite template', async () => {
+    const preview = (await app.inject({ method: 'POST', url: '/snapshots/merge/preview', headers: A, payload: JSON.stringify({ aId, bId }) })).json() as { conflicts: unknown[]; counts: { channels: number } };
+    expect(Array.isArray(preview.conflicts)).toBe(true);
+    expect(preview.counts.channels).toBeGreaterThan(0);
+
+    const before = ((await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as unknown[]).length;
+    const merged = (await app.inject({ method: 'POST', url: '/snapshots/merge', headers: A, payload: JSON.stringify({ aId, bId, resolutions: {}, name: 'Composite Pack' }) })).json() as { id: string; name: string };
+    expect(merged.id).toBeTruthy();
+    expect(merged.name).toBe('Composite Pack');
+    const after = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string; isTemplate: boolean }[];
+    expect(after.length).toBe(before + 1); // a new composite snapshot
+    expect(after.find((s) => s.id === merged.id)?.isTemplate).toBe(true);
+  });
+
+  it('a 2nd operator cannot merge snapshots it does not own (404)', async () => {
+    expect((await app.inject({ method: 'POST', url: '/snapshots/merge/preview', headers: B, payload: JSON.stringify({ aId, bId }) })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'POST', url: '/snapshots/merge', headers: B, payload: JSON.stringify({ aId, bId, resolutions: {} }) })).statusCode).toBe(404);
+  });
+});
