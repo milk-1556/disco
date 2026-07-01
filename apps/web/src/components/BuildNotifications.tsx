@@ -71,7 +71,10 @@ export function BuildNotifications({ onOpen }: { onOpen?: (jobId: string) => voi
       const res = await api.clientOpens(cursor).catch(() => null);
       if (!live || !res || res.opens.length === 0) return;
       cursor = Math.max(cursor, ...res.opens.map((o) => Date.parse(o.at)));
-      for (const o of res.opens.slice(0, 3)) {
+      // Toast EVERY surfaced open (the server already caps the batch at 20) — otherwise advancing the
+      // cursor past an un-toasted open would silently drop that notification. Oldest-first so the newest
+      // ends on top; the toast stack's own slice(0,4) caps how many are visible at once.
+      for (const o of [...res.opens].reverse()) {
         const id = `open:${o.handoverId}:${seq++}`;
         setToasts((t) => [{ id, kind: 'open' as const, title: `${o.label} opened their delivery`, sub: 'Client viewed their finished server', jobId: o.jobId }, ...t].slice(0, 4));
         timers.current[id] = setTimeout(() => dismiss(id), 9000);

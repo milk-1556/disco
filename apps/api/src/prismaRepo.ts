@@ -349,7 +349,9 @@ export class PrismaRepo implements Repo {
     await this.db.handover.update({ where: { id: handoverId }, data: { surveyNps: nps, surveyComment: comment, surveyAt: new Date() } }).catch(() => {});
   }
   async listHandoverViews(handoverId: string) {
-    const rows = await this.db.handoverView.findMany({ where: { handoverId }, orderBy: { at: 'desc' } });
+    // Cap the per-handover rows: callers (analytics, the dashboard/client-opens fan-out) only ever need
+    // recent views + counts, so an unbounded scan of a heavily-opened delivery is pure DoS surface (r9 LOW).
+    const rows = await this.db.handoverView.findMany({ where: { handoverId }, orderBy: { at: 'desc' }, take: 500 });
     return rows.map((r) => ({ id: r.id, handoverId: r.handoverId, at: iso(r.at), referrer: r.referrer, kind: r.kind ?? 'opened' }));
   }
 

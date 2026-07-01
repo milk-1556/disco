@@ -976,7 +976,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       invoicedCents,
       paidCents,
       outstandingCents: Math.max(0, invoicedCents - paidCents),
-      mrrCents: Math.round(clients.reduce((s, c) => s + (c.monthlyRetainer || 0), 0) * 100),
+      mrrCents: clients.reduce((s, c) => s + Math.round((c.monthlyRetainer || 0) * 100), 0), // round-per-client (matches /earnings + /clients/:id)
     };
     return {
       buildsThisWeek,
