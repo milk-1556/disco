@@ -3,6 +3,7 @@ import type { View } from './Shell.js';
 import { Modal } from './Modal.js';
 
 const HELP: { keys: string; label: string }[] = [
+  { keys: '⌘ K', label: 'Search everything — clients, templates, builds, screens' },
   { keys: 'g t', label: 'Go to Today' },
   { keys: 'g l', label: 'Go to Library' },
   { keys: 'g q', label: 'Go to Queue' },

@@ -16,6 +16,7 @@ import { Preferences } from './screens/Preferences.js';
 import { Setup } from './screens/Setup.js';
 import { Today } from './screens/Today.js';
 import { Shortcuts } from './components/Shortcuts.js';
+import { CommandPalette } from './components/CommandPalette.js';
 import { Maintenance } from './components/Maintenance.js';
 import { SnapshotDiff } from './screens/SnapshotDiff.js';
 
@@ -89,6 +90,14 @@ export default function App() {
       }}
     >
       <Shortcuts go={go} />
+      <CommandPalette
+        go={go}
+        onBuildSnapshot={(id) => {
+          setBuildSnapshot(id);
+          go('build');
+        }}
+        onOpenHandover={(jobId) => setHandoverJob(jobId)}
+      />
       {checkout && (
         <div className="rise" style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 70 }}>
           <div
