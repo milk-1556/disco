@@ -29,6 +29,9 @@ export const Handover = z.object({
   /** Per-client branding for the delivery page. */
   logoKey: z.string().nullable().default(null),
   welcomeMessage: z.string().default(''),
+  /** The client's Discord invite link to their finished server — the primary action on the delivery
+   *  page ("Open your server"). Operator-set; validated server-side to a Discord invite URL. Empty until set. */
+  inviteUrl: z.string().default(''),
   ownershipSteps: z.array(OwnershipStep).default([]),
   upsellStatus: UpsellStatus.default('none'),
   /** The operator who owns this record (multi-operator access scoping). Defaults to the sole operator. */

@@ -66,6 +66,7 @@ export type HandoverPatch = Partial<{
   passwordHash: string | null;
   logoKey: string | null;
   welcomeMessage: string;
+  inviteUrl: string;
   readyAt: string;
 }>;
 
@@ -279,6 +280,7 @@ export class InMemoryRepo implements Repo {
       hasPassword: !!h.passwordHash,
       logoKey: null,
       welcomeMessage: h.welcomeMessage ?? '',
+      inviteUrl: '',
       ownershipSteps: h.ownershipSteps,
       upsellStatus: h.upsellStatus,
       ownerEmail: h.ownerEmail,

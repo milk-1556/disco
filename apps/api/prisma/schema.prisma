@@ -173,6 +173,7 @@ model Handover {
   state           String   @default("draft") // draft | ready | handed_over
   logoKey         String?
   welcomeMessage  String   @default("")
+  inviteUrl       String   @default("") // client's Discord invite to their finished server (validated)
   ownershipSteps  Json     @default("[]")
   upsellStatus    String   @default("none") // none | proposed | retained | redesign
   ownerEmail      String   @default("") // multi-operator access scoping

@@ -616,8 +616,18 @@ function Branding({
   saving: boolean;
 }) {
   const [welcome, setWelcome] = useState(handover.welcomeMessage);
+  const [invite, setInvite] = useState(handover.inviteUrl);
+  const [inviteErr, setInviteErr] = useState<string | null>(null);
   const [pw, setPw] = useState('');
   const [copied, setCopied] = useState(false);
+  const saveInvite = () => {
+    const v = invite.trim();
+    if (v !== '' && !/^https:\/\/(www\.)?(discord\.gg\/.+|(canary\.|ptb\.)?discord(app)?\.com\/invite\/.+)/.test(v)) {
+      return setInviteErr('Must be a Discord invite (https://discord.gg/… or https://discord.com/invite/…)');
+    }
+    setInviteErr(null);
+    if (v !== handover.inviteUrl) void onPatch({ inviteUrl: v });
+  };
   // The /share/:id link carries social-preview meta (og:title etc.) and forwards humans to the
   // delivery page — so it unfurls nicely when the operator drops it in Discord / email / a DM.
   const publicUrl = `${location.origin}/share/${handover.id}`;
@@ -670,6 +680,23 @@ function Branding({
               onBlur={() => welcome !== handover.welcomeMessage && onPatch({ welcomeMessage: welcome })}
               placeholder="Welcome to your new community hub — here's everything that's set up…"
             />
+          </div>
+
+          <div>
+            <div className="label mb-1 flex items-center gap-2">
+              <span>Server invite link {handover.inviteUrl ? '· set' : ''}</span>
+              <span style={{ color: 'var(--color-faint)' }}>— the client's “Open your server” button</span>
+            </div>
+            <input
+              className="input"
+              type="url"
+              inputMode="url"
+              value={invite}
+              onChange={(e) => { setInvite(e.target.value); setInviteErr(null); }}
+              onBlur={saveInvite}
+              placeholder="https://discord.gg/your-invite"
+            />
+            {inviteErr && <div className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{inviteErr}</div>}
           </div>
 
           <div className="flex items-end gap-2">

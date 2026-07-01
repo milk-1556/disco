@@ -122,6 +122,20 @@ export function PublicHandover({ id }: { id: string }) {
           </div>
         </header>
 
+        {/* Primary action: open the finished Discord server. Guarded to https (server validates Discord-only). */}
+        {data.inviteUrl && /^https:\/\//.test(data.inviteUrl) && (
+          <a
+            href={data.inviteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-primary w-full justify-center mb-6"
+            style={{ fontSize: '1rem', padding: '0.85rem 1.25rem' }}
+            onClick={() => api.trackHandoverEvent(id, 'docs_viewed')}
+          >
+            Open your Discord server →
+          </a>
+        )}
+
         {data.welcomeMessage && (
           <div className="panel p-5 mb-6">
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-bone)' }}>{data.welcomeMessage}</p>

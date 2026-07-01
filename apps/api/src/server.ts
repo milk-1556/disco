@@ -1322,12 +1322,22 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     const id = (req.params as { id: string }).id;
     const b = (req.body ?? {}) as {
       state?: HandoverPatch['state']; ownershipSteps?: HandoverPatch['ownershipSteps']; upsellStatus?: HandoverPatch['upsellStatus'];
-      password?: string | null; welcomeMessage?: string; logo?: string | null;
+      password?: string | null; welcomeMessage?: string; logo?: string | null; inviteUrl?: string;
     };
     const patch: HandoverPatch = {};
     if (b.state !== undefined) patch.state = b.state;
     if (b.ownershipSteps !== undefined) patch.ownershipSteps = b.ownershipSteps;
     if (b.upsellStatus !== undefined) patch.upsellStatus = b.upsellStatus;
+    // The invite link is rendered as an href on the PUBLIC client page — validate it is a real Discord
+    // invite (https, discord.gg/… or discord.com/invite/…). Rejecting other schemes/hosts blocks a
+    // javascript:/data: XSS and an accidental/malicious off-Discord phishing link. Empty clears it.
+    if (b.inviteUrl !== undefined) {
+      const v = String(b.inviteUrl).trim();
+      if (v !== '' && !isDiscordInvite(v)) {
+        return reply.code(400).send({ error: 'The invite link must be a Discord invite — https://discord.gg/… or https://discord.com/invite/…' });
+      }
+      patch.inviteUrl = v;
+    }
     if (b.password !== undefined) {
       patch.passwordHash = b.password ? bcrypt.hashSync(b.password, 10) : null;
       await repo.addAudit({ action: 'handover.password', target: `handover ${id.slice(-6)}`, detail: b.password ? 'password set' : 'password cleared', operator: operatorOf(req) });
@@ -1406,6 +1416,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       state: h.state,
       logoUrl: h.logoKey ? `/${h.logoKey}` : null,
       welcomeMessage: h.welcomeMessage,
+      inviteUrl: h.inviteUrl, // the client's "Open your server" link (validated Discord invite, or '')
       scope: job?.report?.counts ?? {},
       created: job?.report?.created ?? [],
       botChecklist: job?.report?.botChecklist ?? [],
@@ -1530,6 +1541,24 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
 }
 
 /** Escape a string for safe interpolation into HTML text and double-quoted attributes. */
+/**
+ * True only for a real Discord invite URL: https, host discord.gg/<code> or a Discord domain under
+ * /invite/<code>. Everything else — javascript:/data: schemes, off-Discord hosts, http — is rejected,
+ * so the operator can't (by typo or malice) put an XSS or phishing link on the client-facing page.
+ */
+function isDiscordInvite(v: string): boolean {
+  try {
+    const u = new URL(v);
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.replace(/^www\./, '');
+    if (host === 'discord.gg') return u.pathname.length > 1;
+    if (['discord.com', 'discordapp.com', 'ptb.discord.com', 'canary.discord.com'].includes(host)) return /^\/invite\/[^/]+/.test(u.pathname);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')

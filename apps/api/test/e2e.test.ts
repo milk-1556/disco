@@ -799,3 +799,44 @@ describe('e2e: first-build trust — readiness expansion (#1) + build trace (#3)
     expect((await app.inject({ method: 'GET', url: `/builds/${jobId}/trace`, headers: B })).statusCode).toBe(404);
   });
 });
+
+describe('e2e: client server invite link on the handover (#2, XSS/phishing-guarded)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const cfg = { clientId: 'c', serverName: 'Invite HQ', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+  let hid = '';
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const jobId = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) { const j = (await app.inject({ method: 'GET', url: `/jobs/${jobId}`, headers: A })).json() as { status: string }; if (j.status === 'completed' || j.status === 'failed') break; await new Promise((r) => setTimeout(r, 25)); }
+    hid = ((await app.inject({ method: 'POST', url: '/handovers', headers: A, payload: JSON.stringify({ jobId }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: A, payload: JSON.stringify({ state: 'ready' }) });
+  });
+  afterAll(async () => { await app.close(); });
+
+  const setInvite = (v: string) => app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: A, payload: JSON.stringify({ inviteUrl: v }) });
+
+  it('accepts real Discord invites (discord.gg + discord.com/invite) and surfaces them on the public page', async () => {
+    expect((await setInvite('https://discord.gg/abc123')).statusCode).toBe(200);
+    const pub = (await app.inject({ method: 'GET', url: `/h/${hid}` })).json() as { inviteUrl: string };
+    expect(pub.inviteUrl).toBe('https://discord.gg/abc123');
+    expect((await setInvite('https://discord.com/invite/xyz789')).statusCode).toBe(200);
+  });
+
+  it('REJECTS javascript:, data:, http:, and off-Discord hosts (XSS + phishing guard)', async () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'http://discord.gg/abc', 'https://evil.com/invite/x', 'https://discord.gg.evil.com/x', 'https://notdiscord.com/invite/x']) {
+      expect((await setInvite(bad)).statusCode, `${bad} must be rejected`).toBe(400);
+    }
+    // the stored value is unchanged (still the last VALID one), never the rejected input
+    const pub = (await app.inject({ method: 'GET', url: `/h/${hid}` })).json() as { inviteUrl: string };
+    expect(pub.inviteUrl).toBe('https://discord.com/invite/xyz789');
+  });
+
+  it('empty string clears the invite', async () => {
+    expect((await setInvite('')).statusCode).toBe(200);
+    const pub = (await app.inject({ method: 'GET', url: `/h/${hid}` })).json() as { inviteUrl: string };
+    expect(pub.inviteUrl).toBe('');
+  });
+});

@@ -131,7 +131,7 @@ export const api = {
   getHandover: (id: string) => req<HandoverBundle>(`/handovers/${id}`),
   updateHandover: (
     id: string,
-    patch: Partial<Pick<Handover, 'state' | 'ownershipSteps' | 'upsellStatus' | 'welcomeMessage'>> & { password?: string | null; logo?: string | null },
+    patch: Partial<Pick<Handover, 'state' | 'ownershipSteps' | 'upsellStatus' | 'welcomeMessage' | 'inviteUrl'>> & { password?: string | null; logo?: string | null },
   ) => req<Handover>(`/handovers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   /** Public (unauthenticated) delivery page fetch — password via query when gated. */
   publicHandover: async (id: string, pw?: string): Promise<PublicHandover> => {
@@ -594,6 +594,7 @@ export interface Handover {
   hasPassword: boolean;
   logoKey: string | null;
   welcomeMessage: string;
+  inviteUrl: string;
   ownershipSteps: OwnershipStep[];
   upsellStatus: 'none' | 'proposed' | 'retained' | 'redesign';
   createdAt: string;
@@ -604,6 +605,7 @@ export interface PublicHandover {
   state: string;
   logoUrl: string | null;
   welcomeMessage: string;
+  inviteUrl: string;
   scope: Record<string, number>;
   created: string[];
   botChecklist: string[];

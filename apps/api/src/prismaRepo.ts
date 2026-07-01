@@ -253,7 +253,7 @@ export class PrismaRepo implements Repo {
   // ── handovers ──
   private toHandover = (r: {
     id: string; jobId: string; clientId: string | null; passwordHash: string | null; state: string;
-    logoKey: string | null; welcomeMessage: string; ownershipSteps: Prisma.JsonValue; upsellStatus: string; ownerEmail?: string;
+    logoKey: string | null; welcomeMessage: string; inviteUrl?: string; ownershipSteps: Prisma.JsonValue; upsellStatus: string; ownerEmail?: string;
     surveyNps?: number | null; surveyComment?: string; surveyAt?: Date | null; readyAt?: Date | null; createdAt: Date;
   }): Handover => ({
     id: r.id,
@@ -263,6 +263,7 @@ export class PrismaRepo implements Repo {
     hasPassword: !!r.passwordHash,
     logoKey: r.logoKey,
     welcomeMessage: r.welcomeMessage,
+    inviteUrl: r.inviteUrl ?? '',
     ownershipSteps: (r.ownershipSteps as OwnershipStep[]) ?? [],
     upsellStatus: r.upsellStatus as Handover['upsellStatus'],
     ownerEmail: r.ownerEmail ?? '',
@@ -307,6 +308,7 @@ export class PrismaRepo implements Repo {
     if (patch.passwordHash !== undefined) data.passwordHash = patch.passwordHash;
     if (patch.logoKey !== undefined) data.logoKey = patch.logoKey;
     if (patch.welcomeMessage !== undefined) data.welcomeMessage = patch.welcomeMessage;
+    if (patch.inviteUrl !== undefined) data.inviteUrl = patch.inviteUrl;
     if (patch.readyAt !== undefined) data.readyAt = new Date(patch.readyAt);
     try {
       return this.toHandover(await this.db.handover.update({ where: { id }, data }));
