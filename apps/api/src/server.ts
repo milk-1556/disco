@@ -611,6 +611,41 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { ok: true };
   });
 
+  // Client detail — everything about one client in one place: profile + their build history + handovers
+  // + an earnings rollup. Owner-scoped (404 for a non-owned client); all sub-lists are scoped too.
+  app.get('/clients/:id', { preHandler: requireAuth }, async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const r = scoped(req);
+    const client = await r.getClient(id);
+    if (!client) return reply.code(404).send({ error: 'not found' });
+    const [jobs, handovers, snapNames] = await Promise.all([r.listJobs(), r.listHandovers(), r.snapshotNames()]);
+    const nameOf = new Map(snapNames.map((s) => [s.id, s.name]));
+    const mine = jobs.filter((j) => j.clientId === id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const builds = mine.map((j) => ({
+      id: j.id, status: j.status, dryRun: j.dryRun, canary: j.canary,
+      snapshotName: j.snapshotId ? (nameOf.get(j.snapshotId) ?? null) : null,
+      invoicedCents: j.invoicedCents, paidCents: j.paidCents, createdAt: j.createdAt,
+    }));
+    const hs = handovers.filter((h) => h.clientId === id).map((h) => ({ id: h.id, jobId: h.jobId, state: h.state, readyAt: h.readyAt, inviteUrl: h.inviteUrl }));
+    const real = mine.filter((j) => !j.dryRun && !j.canary);
+    const invoicedCents = real.reduce((s, j) => s + (j.invoicedCents || 0), 0);
+    const paidCents = real.reduce((s, j) => s + (j.paidCents || 0), 0);
+    return {
+      client,
+      builds,
+      handovers: hs,
+      totals: {
+        builds: mine.length,
+        realBuilds: real.length,
+        completed: real.filter((j) => j.status === 'completed').length,
+        invoicedCents,
+        paidCents,
+        outstandingCents: Math.max(0, invoicedCents - paidCents),
+        mrrCents: Math.round((client.monthlyRetainer || 0) * 100),
+      },
+    };
+  });
+
   // Operator accountability log of destructive operations. Scoped: an admin sees every operator's
   // actions; a regular operator sees only their own (multi-operator readiness).
   app.get('/audit', { preHandler: requireAuth }, async (req) => {

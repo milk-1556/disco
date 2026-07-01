@@ -885,3 +885,30 @@ describe('e2e: invite link hardening — scoping, variants, draft-gate (#2 revie
     expect((await app.inject({ method: 'GET', url: `/h/${draftHid}` })).statusCode).toBe(404);
   });
 });
+
+describe('e2e: client detail — aggregation + owner-scoping (#3)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'cd-op-2@x.com' })}`, 'content-type': 'application/json' };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it('rolls up a client\'s builds + earnings, owner-scoped (2nd operator 404s)', async () => {
+    const cid = ((await app.inject({ method: 'POST', url: '/clients', headers: A, payload: JSON.stringify({ creatorName: 'Detail Co', handle: 'detailco', monthlyRetainer: 750 }) })).json() as { id: string }).id;
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const jobId = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, clientId: cid, dryRun: false, config: { clientId: cid, serverName: 'Detail HQ', findReplace: [], colorMap: [], linkMap: [], assets: {} } }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/jobs/${jobId}/billing`, headers: A, payload: JSON.stringify({ invoicedCents: 500000, paidCents: 300000 }) });
+
+    const d = (await app.inject({ method: 'GET', url: `/clients/${cid}`, headers: A })).json() as {
+      client: { creatorName: string }; builds: { id: string }[]; totals: { builds: number; invoicedCents: number; paidCents: number; outstandingCents: number; mrrCents: number };
+    };
+    expect(d.client.creatorName).toBe('Detail Co');
+    expect(d.builds.length).toBe(1);
+    expect(d.totals.invoicedCents).toBe(500000);
+    expect(d.totals.paidCents).toBe(300000);
+    expect(d.totals.outstandingCents).toBe(200000);
+    expect(d.totals.mrrCents).toBe(75000); // $750/mo → cents
+    // a 2nd operator cannot read operator A's client detail
+    expect((await app.inject({ method: 'GET', url: `/clients/${cid}`, headers: B })).statusCode).toBe(404);
+  });
+});

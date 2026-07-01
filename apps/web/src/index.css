@@ -396,3 +396,25 @@ select:focus-visible,
     animation: none;
   }
 }
+
+/* A subtle clickable-card affordance: brighten border + faint tint + tiny lift on hover/focus. */
+.card-hover {
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+.card-hover:hover {
+  border-color: var(--color-faint);
+  background: color-mix(in srgb, var(--color-source) 5%, transparent);
+  transform: translateY(-1px);
+}
+.card-hover:focus-visible {
+  outline: 2px solid var(--color-source);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-hover {
+    transition: none;
+  }
+  .card-hover:hover {
+    transform: none;
+  }
+}

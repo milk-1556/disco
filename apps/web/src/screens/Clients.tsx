@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api, type Client } from '../api.js';
 import { EmptyArt } from '../components/EmptyArt.js';
+import { ClientDetail } from './ClientDetail.js';
 import { NewClient } from './NewClient.js';
 
-export function Clients() {
+export function Clients({ onOpenHandover }: { onOpenHandover?: (jobId: string) => void }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [adding, setAdding] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -37,6 +39,10 @@ export function Clients() {
         }}
       />
     );
+  }
+
+  if (selected) {
+    return <ClientDetail id={selected} onBack={() => setSelected(null)} onOpenHandover={onOpenHandover} />;
   }
 
   return (
@@ -84,7 +90,16 @@ export function Clients() {
       ) : (
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))' }}>
           {clients.map((c) => (
-            <article key={c.id} className="panel p-4 flex flex-col">
+            <article
+              key={c.id}
+              className="panel p-4 flex flex-col card-hover"
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelected(c.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(c.id); } }}
+              style={{ cursor: 'pointer' }}
+              aria-label={`Open ${c.creatorName}`}
+            >
               <div className="flex items-start justify-between gap-2">
                 <h2 className="text-base leading-tight">{c.creatorName}</h2>
                 {c.handle && <span className="chip mono shrink-0" style={{ color: 'var(--color-client)' }}>{c.handle}</span>}
@@ -127,7 +142,7 @@ export function Clients() {
                 ) : (
                   <span style={{ color: 'var(--color-faint)' }}>No deal priced yet</span>
                 )}
-                <button className="btn btn-ghost text-xs ml-auto shrink-0" style={{ padding: '0.3rem 0.6rem', color: 'var(--color-faint)' }} onClick={() => remove(c)} aria-label={`Remove ${c.creatorName}`}>
+                <button className="btn btn-ghost text-xs ml-auto shrink-0" style={{ padding: '0.3rem 0.6rem', color: 'var(--color-faint)' }} onClick={(e) => { e.stopPropagation(); void remove(c); }} aria-label={`Remove ${c.creatorName}`}>
                   Remove
                 </button>
               </div>

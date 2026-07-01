@@ -108,6 +108,7 @@ export const api = {
   // Trust lane #3: per-build trace — per-step timing + retry count + outcomes.
   buildTrace: (jobId: string) => req<BuildTrace>(`/builds/${jobId}/trace`),
   clients: () => req<Client[]>('/clients'),
+  clientDetail: (id: string) => req<ClientDetail>(`/clients/${id}`),
   addClient: (body: Partial<Client>) => req<Client>('/clients', { method: 'POST', body: JSON.stringify(body) }),
   deleteClient: (id: string) => req<{ ok: boolean }>(`/clients/${id}`, { method: 'DELETE' }),
   inviteUrl: (applicationId: string, mode: 'administrator' | 'granular', guildId?: string) =>
@@ -391,6 +392,12 @@ export interface JobSummary {
 export interface Upsell {
   name: string;
   price: number;
+}
+export interface ClientDetail {
+  client: Client;
+  builds: { id: string; status: string; dryRun: boolean; canary: boolean; snapshotName: string | null; invoicedCents: number; paidCents: number; createdAt: string }[];
+  handovers: { id: string; jobId: string; state: string; readyAt: string | null; inviteUrl: string }[];
+  totals: { builds: number; realBuilds: number; completed: number; invoicedCents: number; paidCents: number; outstandingCents: number; mrrCents: number };
 }
 export interface Client {
   id: string;

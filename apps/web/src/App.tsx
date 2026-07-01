@@ -140,7 +140,7 @@ export default function App() {
       ) : view === 'queue' ? (
         <Queue onOpen={(jobId) => setHandoverJob(jobId)} />
       ) : view === 'clients' ? (
-        <Clients />
+        <Clients onOpenHandover={(jobId) => setHandoverJob(jobId)} />
       ) : view === 'activity' ? (
         <Activity />
       ) : view === 'economics' ? (
