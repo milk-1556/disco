@@ -51,6 +51,7 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
   const [detail, setDetail] = useState<Job | null>(null);
   const [logs, setLogs] = useState<JobEvent[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   // Replay: which job's panel is open, its form fields, joined-guild picker, and per-job "queued ✓" flash.
   const [replayFor, setReplayFor] = useState<string | null>(null);
   const [replayGuild, setReplayGuild] = useState('');
@@ -132,6 +133,17 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
 
   const counts = jobs.reduce<Record<string, number>>((acc, j) => ((acc[j.status] = (acc[j.status] ?? 0) + 1), acc), {});
 
+  // Bulk actions — retry every failed/canceled build or cancel every queued/paused one in one confirm.
+  const failedJobs = jobs.filter((j) => j.status === 'failed' || j.status === 'canceled');
+  const queuedJobs = jobs.filter((j) => j.status === 'queued' || j.status === 'paused');
+  const bulkAct = async (ids: string[], fn: (id: string) => Promise<unknown>, verb: string) => {
+    if (!confirm(`${verb} ${ids.length} build${ids.length === 1 ? '' : 's'}?`)) return;
+    setBulkBusy(true);
+    for (const id of ids) await fn(id).catch(() => {}); // best-effort; one failure doesn't block the rest
+    setJobs(await api.jobs());
+    setBulkBusy(false);
+  };
+
   return (
     <div className="px-4 py-6 md:p-8 max-w-4xl rise">
       <div className="flex items-end justify-between mb-6">
@@ -145,6 +157,23 @@ export function Queue({ onOpen }: { onOpen: (jobId: string) => void }) {
           )}
         </div>
       </div>
+
+      {(failedJobs.length > 1 || queuedJobs.length > 1) && (
+        <div className="panel-soft p-2.5 mb-5 flex items-center gap-2 flex-wrap text-sm">
+          <span className="label">bulk</span>
+          {failedJobs.length > 1 && (
+            <button className="btn text-xs" disabled={bulkBusy} onClick={() => bulkAct(failedJobs.map((j) => j.id), (id) => api.retryJob(id), 'Retry')}>
+              ↻ Retry all failed ({failedJobs.length})
+            </button>
+          )}
+          {queuedJobs.length > 1 && (
+            <button className="btn btn-ghost text-xs" disabled={bulkBusy} onClick={() => bulkAct(queuedJobs.map((j) => j.id), (id) => api.cancelJob(id), 'Cancel')}>
+              Cancel all queued ({queuedJobs.length})
+            </button>
+          )}
+          {bulkBusy && <span className="mono text-xs" style={{ color: 'var(--color-faint)' }}>working…</span>}
+        </div>
+      )}
 
       {jobs.length === 0 && !loaded && <SkeletonRows count={3} h={72} />}
 
