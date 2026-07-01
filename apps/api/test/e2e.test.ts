@@ -999,3 +999,35 @@ describe('e2e: public handover endpoints are rate-limited (#11 hardening)', () =
     expect(got429).toBe(true); // the per-IP+handover cap eventually rejects the flood
   });
 });
+
+describe('e2e: earnings CSV export — injection-safe + owner-scoped (#12)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'csv-op-2@x.com' })}` };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it('exports CSV with headers, neutralizes formula injection, and is owner-scoped', async () => {
+    const cid = ((await app.inject({ method: 'POST', url: '/clients', headers: A, payload: JSON.stringify({ creatorName: '=cmd|/c calc', monthlyRetainer: 0 }) })).json() as { id: string }).id;
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, clientId: cid, dryRun: false, config: { clientId: cid, serverName: 'CSV HQ', findReplace: [], colorMap: [], linkMap: [], assets: {} } }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) { const s = ((await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: A })).json() as { status: string }).status; if (s === 'completed' || s === 'failed') break; await new Promise((r) => setTimeout(r, 25)); }
+    await app.inject({ method: 'PATCH', url: `/jobs/${jid}/billing`, headers: A, payload: JSON.stringify({ invoicedCents: 100000, paidCents: 0 }) });
+
+    const res = await app.inject({ method: 'GET', url: '/earnings/export.csv', headers: A });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.headers['content-disposition']).toMatch(/attachment; filename=/);
+    const csv = res.payload;
+    expect(csv.split('\r\n')[0]).toBe('Date,Client,Template,Status,Invoiced (USD),Paid (USD),Outstanding (USD)');
+    // the formula name is neutralized (apostrophe-prefixed), never a raw leading =
+    expect(csv).toContain("'=cmd");
+    expect(csv).not.toMatch(/(^|,)=cmd/m);
+    expect(csv).toContain('1000.00');
+
+    // a 2nd operator's export contains none of operator A's build rows
+    const bcsv = (await app.inject({ method: 'GET', url: '/earnings/export.csv', headers: B })).payload;
+    expect(bcsv).not.toContain('cmd');
+    expect(bcsv.split('\r\n').filter((l) => l.trim()).length).toBe(1); // header only
+  });
+});

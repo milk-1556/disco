@@ -375,7 +375,14 @@ export function Economics() {
         <div className="panel p-5 mb-6">
           <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
             <div className="eyebrow">receipts &amp; earnings</div>
-            <span className="label">{earnings.billedBuilds} of {earnings.totalBuilds} build{earnings.totalBuilds === 1 ? '' : 's'} billed</span>
+            <div className="flex items-center gap-2">
+              <span className="label">{earnings.billedBuilds} of {earnings.totalBuilds} build{earnings.totalBuilds === 1 ? '' : 's'} billed</span>
+              {earnings.totalBuilds > 0 && (
+                <button className="btn btn-ghost text-xs" style={{ padding: '0.25rem 0.6rem' }} onClick={() => void api.downloadEarningsCsv()} title="Download a CSV for your accountant">
+                  ↓ Export CSV
+                </button>
+              )}
+            </div>
           </div>
           <p className="text-sm mb-4" style={{ color: 'var(--color-muted)' }}>
             What you’ve invoiced, what’s landed, and what’s still owed. Mark builds invoiced and paid below to

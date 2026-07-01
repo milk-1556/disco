@@ -879,6 +879,35 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  // Earnings CSV export (owner-scoped) — the operator hands this to their accountant. One row per real
+  // build: date, client, template, status, invoiced/paid/outstanding. CSV-injection-safe (client/template
+  // names are user-controlled and could carry a spreadsheet formula).
+  app.get('/earnings/export.csv', { preHandler: requireAuth }, async (req, reply) => {
+    const r = scoped(req);
+    const [jobs, clients, names] = await Promise.all([r.listJobs(), r.listClients(), r.snapshotNames()]);
+    const clientName = new Map(clients.map((c) => [c.id, c.creatorName]));
+    const nameOf = new Map(names.map((n) => [n.id, n.name]));
+    const real = jobs.filter((j) => !j.dryRun && !j.canary).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const header = ['Date', 'Client', 'Template', 'Status', 'Invoiced (USD)', 'Paid (USD)', 'Outstanding (USD)'];
+    const rows = real.map((j) => {
+      const inv = (j.invoicedCents ?? 0) / 100;
+      const paid = (j.paidCents ?? 0) / 100;
+      return [
+        new Date(j.createdAt).toISOString().slice(0, 10),
+        (j.clientId && clientName.get(j.clientId)) || '',
+        j.snapshotId ? nameOf.get(j.snapshotId) ?? 'deleted template' : '',
+        j.status,
+        inv.toFixed(2),
+        paid.toFixed(2),
+        Math.max(0, inv - paid).toFixed(2),
+      ];
+    });
+    const csv = [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    reply.header('content-type', 'text/csv; charset=utf-8');
+    reply.header('content-disposition', `attachment; filename="disco-earnings-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return csv;
+  });
+
   // First-real-build onboarding wizard (#3): the 6-step activation path, with each step's done-state
   // derived from the operator's REAL data (scoped) so the wizard self-updates as they progress.
   app.get('/onboarding', { preHandler: requireAuth }, async (req) => {
@@ -1700,6 +1729,19 @@ function isDiscordInvite(v: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Escape one CSV cell. Two hazards: (1) spreadsheet FORMULA INJECTION — a cell starting with =,+,-,@
+ * (or a control char) is executed as a formula by Excel/Sheets, so a client name like "=cmd|..." could
+ * run on the operator's machine; we neutralize it with a leading apostrophe. (2) standard CSV quoting for
+ * commas/quotes/newlines.
+ */
+function csvCell(value: string | number): string {
+  let s = String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+  return s;
 }
 
 function escapeHtml(value: string): string {

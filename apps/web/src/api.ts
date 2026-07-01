@@ -59,6 +59,26 @@ export const api = {
   onboarding: () => req<OnboardingState>('/onboarding'),
   surveys: () => req<SurveyAggregate>('/surveys'),
   earnings: () => req<Earnings>('/earnings'),
+  // Fetch the owner-scoped earnings CSV (authed) and trigger a browser download. Returns false on failure.
+  downloadEarningsCsv: async (): Promise<boolean> => {
+    const token = getToken();
+    try {
+      const res = await fetch(`${BASE}/earnings/export.csv`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) return false;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `disco-earnings-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  },
   setBilling: (jobId: string, billing: { invoicedCents?: number; paidCents?: number }) =>
     req<{ id: string; invoicedCents: number; paidCents: number }>(`/jobs/${jobId}/billing`, { method: 'PATCH', body: JSON.stringify(billing) }),
   // Public, one-time client survey submit from the delivery page (no auth — the handover id is the
