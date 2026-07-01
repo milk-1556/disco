@@ -5,7 +5,7 @@ import { demoGuildSnapshot, listDemoGuilds } from './demoGuilds.js';
 import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { type Role, roleFor, signSession, verifyCredentials, verifySession } from './auth.js';
+import { type Role, signSession, verifyCredentials, verifySession } from './auth.js';
 import { type Actor, SYSTEM_ACTOR, scopeRepo } from './repoScope.js';
 import { diffSnapshots } from './diff.js';
 import { env, isLiveMode, usePrisma, useQueue } from './env.js';
@@ -165,20 +165,10 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     if (rateLimited(`login:${req.ip}`, 10, 60_000)) return reply.code(429).send({ error: 'Too many attempts — wait a minute and try again.' });
     const body = (req.body ?? {}) as { email?: string; password?: string };
     const email = (body.email ?? '').trim();
-    const password = body.password ?? '';
-    // 1) The env-configured bootstrap admin — unchanged path (always works, even if the DB is empty/down).
-    let principal = '';
-    if (await verifyCredentials(email, password)) {
-      principal = email;
-    } else if (email && password) {
-      // 2) A DB-backed operator (multi-operator / white-label) — additive, inert until an admin invites one.
-      // An admin email must ONLY authenticate via the env path above — never a DB row (which would mint an
-      // admin token from a DB-stored password). So a DB op whose email resolves to admin is refused here.
-      const op = await repo.getOperatorByEmail(email);
-      if (op && roleFor(op.email) !== 'admin' && (await bcrypt.compare(password, op.passwordHash))) principal = op.email;
-    }
-    if (!principal) return reply.code(401).send({ error: 'invalid credentials' });
-    return { token: signSession({ email: principal }), email: principal };
+    // Max-only internal tool: a single env-configured operator. No DB-backed accounts, no team.
+    const ok = await verifyCredentials(email, body.password ?? '');
+    if (!ok) return reply.code(401).send({ error: 'invalid credentials' });
+    return { token: signSession({ email }), email };
   });
 
   // ── snapshots ──
@@ -416,54 +406,6 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return repo.listWebhookEvents(limit, source); // system-wide log (not owner-scoped)
   });
 
-  // ── DB-backed operator accounts (multi-operator / white-label). ADMIN-ONLY. The env OPERATOR_EMAIL is
-  // the bootstrap admin (not in this list); these are additional SCOPED operators an admin invites.
-  const isEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-  app.get('/operators', { preHandler: requireAuth }, async (req, reply) => {
-    if (actorOf(req).role !== 'admin') return reply.code(403).send({ error: 'admin only' });
-    return repo.listOperators();
-  });
-  app.post('/operators', { preHandler: requireAuth }, async (req, reply) => {
-    if (actorOf(req).role !== 'admin') return reply.code(403).send({ error: 'admin only' });
-    const b = (req.body ?? {}) as { email?: string; password?: string };
-    const email = (b.email ?? '').trim().toLowerCase();
-    const password = b.password ?? '';
-    if (!isEmail(email)) return reply.code(400).send({ error: 'A valid email is required.' });
-    if (password.length < 8) return reply.code(400).send({ error: 'Password must be at least 8 characters.' });
-    // Reject ANY admin email (the whole ADMIN_EMAILS set, not just OPERATOR_EMAIL) — else a DB operator
-    // whose email resolves to admin at verify time would escalate to admin on login. DB ops are scoped only.
-    if (roleFor(email) === 'admin') return reply.code(409).send({ error: 'That email is an admin account — pick a different one.' });
-    if (await repo.getOperatorByEmail(email)) return reply.code(409).send({ error: 'An operator with that email already exists.' });
-    const acct = await repo.addOperator({ email, passwordHash: bcrypt.hashSync(password, 10), role: 'operator' }); // DB operators are never admin
-    await repo.addAudit({ action: 'operator.create', target: email, detail: 'invited operator', operator: operatorOf(req) });
-    return acct;
-  });
-  app.delete('/operators/:id', { preHandler: requireAuth }, async (req, reply) => {
-    if (actorOf(req).role !== 'admin') return reply.code(403).send({ error: 'admin only' });
-    const id = (req.params as { id: string }).id;
-    const target = (await repo.listOperators()).find((o) => o.id === id);
-    if (!target) return { ok: true };
-    await repo.deleteOperator(id);
-    await repo.addAudit({ action: 'operator.delete', target: target.email, detail: 'removed operator', operator: operatorOf(req) });
-    return { ok: true };
-  });
-
-  // Self-service password change — an operator changes their OWN password. Requires the CURRENT password
-  // (so a stolen session can't silently reset it). The env bootstrap admin can't change here (env-based).
-  app.post('/auth/change-password', { preHandler: requireAuth }, async (req, reply) => {
-    if (rateLimited(`chpw:${req.ip}`, 10, 60_000)) return reply.code(429).send({ error: 'Too many attempts — wait a minute.' });
-    const b = (req.body ?? {}) as { currentPassword?: string; newPassword?: string };
-    const me = operatorOf(req).toLowerCase();
-    if (roleFor(me) === 'admin') {
-      return reply.code(400).send({ error: 'The admin password is set via OPERATOR_PASSWORD_HASH — update the environment, not the app.' });
-    }
-    const op = await repo.getOperatorByEmail(me);
-    if (!op) return reply.code(404).send({ error: 'account not found' });
-    if (!(await bcrypt.compare(b.currentPassword ?? '', op.passwordHash))) return reply.code(401).send({ error: 'Current password is incorrect.' });
-    if ((b.newPassword ?? '').length < 8) return reply.code(400).send({ error: 'New password must be at least 8 characters.' });
-    await repo.setOperatorPassword(me, bcrypt.hashSync(b.newPassword!, 10));
-    return { ok: true };
-  });
 
   // ── snapshot composability (#5): merge two owned snapshots into a composite template ──
   // Both must be owned by the operator (scoped). Preview returns the name-collisions to resolve.

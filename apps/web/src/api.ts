@@ -125,11 +125,6 @@ export const api = {
   // #6 webhook event log (admin only).
   webhookEvents: (source?: 'stripe' | 'discord', limit = 200) =>
     req<WebhookEvent[]>(`/admin/webhooks?limit=${limit}${source ? `&source=${source}` : ''}`),
-  // Multi-operator: admin-managed DB operators + self-service password change.
-  operators: () => req<OperatorAccount[]>('/operators'),
-  inviteOperator: (email: string, password: string) => req<OperatorAccount>('/operators', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  removeOperator: (id: string) => req<{ ok: boolean }>(`/operators/${id}`, { method: 'DELETE' }),
-  changePassword: (currentPassword: string, newPassword: string) => req<{ ok: boolean }>('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
   // Trust lane #3: per-build trace — per-step timing + retry count + outcomes.
   buildTrace: (jobId: string) => req<BuildTrace>(`/builds/${jobId}/trace`),
   // Recent client opens across deliveries (owner-scoped), newer than the epoch-ms cursor.
@@ -611,13 +606,6 @@ export interface BuildTrace {
     objects: { created: number; updated: number; skipped: number; failed: number };
   }[];
   events: { at: string; kind: string; detail: string }[];
-}
-// A DB-backed operator account (multi-operator / white-label). Never carries the password hash.
-export interface OperatorAccount {
-  id: string;
-  email: string;
-  role: string;
-  createdAt: string;
 }
 // #6 inbound webhook receipt (admin log).
 export interface WebhookEvent {

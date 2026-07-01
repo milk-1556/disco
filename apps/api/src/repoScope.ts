@@ -87,11 +87,5 @@ export function scopeRepo(base: Repo, actor: Actor): Repo {
     getOperatorPrefs: () => base.getOperatorPrefs(actor.email),
     upsertOperatorPrefs: (_email, patch) => base.upsertOperatorPrefs(actor.email, patch),
 
-    // ── operator accounts — system-level, admin-gated at the route (login is a system path). Passthrough.
-    getOperatorByEmail: (email) => base.getOperatorByEmail(email),
-    listOperators: () => base.listOperators(),
-    addOperator: (o) => base.addOperator(o),
-    deleteOperator: (id) => base.deleteOperator(id),
-    setOperatorPassword: (email, hash) => base.setOperatorPassword(email, hash),
   };
 }

@@ -24,18 +24,6 @@ export interface BuildEventEntry {
   ownerEmail: string; // multi-operator scoping (copied from the owning job)
 }
 
-/** A DB-backed operator account (multi-operator / white-label). The env OPERATOR_EMAIL is the bootstrap
- *  admin and is NOT stored here; these are the additional scoped operators an admin invites. */
-export interface OperatorAccount {
-  id: string;
-  email: string;
-  role: string; // 'operator' (scoped); DB operators are never admin — only the env-admin is.
-  createdAt: string;
-}
-/** Login-time view — includes the password hash for verification. Never returned to any route. */
-export interface OperatorAuth extends OperatorAccount {
-  passwordHash: string;
-}
 
 /** One inbound webhook receipt (#6): provider + signature result + processing outcome, redacted summary
  *  only (never the raw payload, which would persist customer PII). Admin-viewable for debugging delivery. */
@@ -139,13 +127,6 @@ export interface Repo {
    *  own email so an operator can only read/write their own prefs. */
   getOperatorPrefs(operatorEmail: string): Promise<OperatorPrefs | undefined>;
   upsertOperatorPrefs(operatorEmail: string, patch: OperatorPrefsPatch): Promise<OperatorPrefs>;
-  /** DB-backed operator accounts (multi-operator). System-level (admin-gated at the route, not owner-scoped).
-   *  getByEmail returns the hash for login; the rest never expose it. Emails are stored lowercased. */
-  getOperatorByEmail(email: string): Promise<OperatorAuth | undefined>;
-  listOperators(): Promise<OperatorAccount[]>;
-  addOperator(o: { email: string; passwordHash: string; role?: string }): Promise<OperatorAccount>;
-  deleteOperator(id: string): Promise<void>;
-  setOperatorPassword(email: string, passwordHash: string): Promise<boolean>;
 }
 
 let seq = 1;
@@ -397,27 +378,4 @@ export class InMemoryRepo implements Repo {
     return next;
   }
 
-  private operators = new Map<string, OperatorAuth>(); // keyed by lowercased email
-  async getOperatorByEmail(email: string) {
-    return this.operators.get(email.toLowerCase());
-  }
-  async listOperators() {
-    return [...this.operators.values()].map(({ passwordHash: _p, ...o }) => o).sort((a, b) => a.email.localeCompare(b.email));
-  }
-  async addOperator(o: { email: string; passwordHash: string; role?: string }) {
-    const email = o.email.toLowerCase();
-    const rec: OperatorAuth = { id: newId('op'), email, passwordHash: o.passwordHash, role: o.role ?? 'operator', createdAt: now() };
-    this.operators.set(email, rec);
-    const { passwordHash: _p, ...acct } = rec;
-    return acct;
-  }
-  async deleteOperator(id: string) {
-    for (const [email, o] of this.operators) if (o.id === id) this.operators.delete(email);
-  }
-  async setOperatorPassword(email: string, passwordHash: string) {
-    const o = this.operators.get(email.toLowerCase());
-    if (!o) return false;
-    this.operators.set(o.email, { ...o, passwordHash });
-    return true;
-  }
 }

@@ -1,7 +1,5 @@
 import { useEffect, useId, useState } from 'react';
 import { api, type OperatorPrefs, type OwnershipStep } from '../api.js';
-import { ChangePassword } from '../components/ChangePassword.js';
-import { OperatorAccounts } from '../components/OperatorAccounts.js';
 
 // Relative "updated N ago" receipt — calm, single-line, never alarming.
 function ago(iso: string): string {
@@ -257,11 +255,6 @@ export function Preferences() {
         </>
       )}
 
-      <div className="mt-8 pt-6" style={{ borderTop: '1px solid var(--color-line-soft)' }}>
-        <div className="eyebrow mb-4" style={{ color: 'var(--color-client)' }}>account &amp; team</div>
-        <ChangePassword />
-        <OperatorAccounts />
-      </div>
     </div>
   );
 }
