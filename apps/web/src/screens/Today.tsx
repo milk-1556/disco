@@ -67,6 +67,21 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
         <button className="btn" onClick={() => go('economics')}>Review pipeline →</button>
       </div>
 
+      {/* money at a glance — the operator's #1 daily signal (outstanding is the actionable one) */}
+      {dash && (dash.money.invoicedCents > 0 || dash.money.mrrCents > 0) && (
+        <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+          <Widget
+            label="outstanding"
+            value={fmt$(dash.money.outstandingCents / 100)}
+            hint="invoiced − paid"
+            tone={dash.money.outstandingCents > 0 ? 'gold' : 'muted'}
+            onClick={dash.money.outstandingCents > 0 ? () => go('economics') : undefined}
+          />
+          <Widget label="paid to date" value={fmt$(dash.money.paidCents / 100)} tone="jade" />
+          <Widget label="recurring" value={`${fmt$(dash.money.mrrCents / 100)}/mo`} hint="MRR from retainers" tone={dash.money.mrrCents > 0 ? 'jade' : 'muted'} />
+        </div>
+      )}
+
       {/* daily recap (#4) — what you shipped today, read-only */}
       {dash && (dash.today.builds + dash.today.delivered + dash.today.snapshots + dash.today.clientOpens > 0) && (
         <div className="panel-soft p-3 mb-4 flex items-center gap-2 flex-wrap text-sm">

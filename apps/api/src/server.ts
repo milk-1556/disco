@@ -911,6 +911,17 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       clientOpens: clientOpensToday,
     };
     const retainedClients = clients.filter((c) => c.monthlyRetainer > 0).length;
+    // Money at a glance (the operator's #1 daily signal): what's been invoiced/paid across REAL builds,
+    // what's still owed, and the recurring monthly retainer base. From data already in hand — no new query.
+    const realBilled = jobs.filter((j) => !j.dryRun && !j.canary);
+    const invoicedCents = realBilled.reduce((s, j) => s + (j.invoicedCents || 0), 0);
+    const paidCents = realBilled.reduce((s, j) => s + (j.paidCents || 0), 0);
+    const money = {
+      invoicedCents,
+      paidCents,
+      outstandingCents: Math.max(0, invoicedCents - paidCents),
+      mrrCents: Math.round(clients.reduce((s, c) => s + (c.monthlyRetainer || 0), 0) * 100),
+    };
     return {
       buildsThisWeek,
       avgBuildMs,
@@ -922,6 +933,7 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       slowestBuildMs: slowestMs,
       sloMs,
       today,
+      money,
     };
   });
 

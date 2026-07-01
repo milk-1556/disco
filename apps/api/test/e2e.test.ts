@@ -914,3 +914,33 @@ describe('e2e: client detail — aggregation + owner-scoping (#3)', () => {
     expect((await app.inject({ method: 'GET', url: `/clients/${cid}`, headers: B })).statusCode).toBe(404);
   });
 });
+
+describe('e2e: dashboard money rollup (#7)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it('surfaces invoiced/paid/outstanding + MRR, owner-scoped', async () => {
+    const cid = ((await app.inject({ method: 'POST', url: '/clients', headers: A, payload: JSON.stringify({ creatorName: 'Money Co', monthlyRetainer: 1000 }) })).json() as { id: string }).id;
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, clientId: cid, dryRun: false, config: { clientId: cid, serverName: 'Money HQ', findReplace: [], colorMap: [], linkMap: [], assets: {} } }) })).json() as { id: string }).id;
+    // let the async in-process build settle BEFORE setting billing, so the build's updateJob calls can't
+    // race/clobber invoicedCents (the operator sets billing on a finished build too).
+    for (let i = 0; i < 80; i++) { const s = ((await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: A })).json() as { status: string }).status; if (s === 'completed' || s === 'failed') break; await new Promise((r) => setTimeout(r, 25)); }
+    await app.inject({ method: 'PATCH', url: `/jobs/${jid}/billing`, headers: A, payload: JSON.stringify({ invoicedCents: 600000, paidCents: 200000 }) });
+    const theJob = ((await app.inject({ method: 'GET', url: '/jobs', headers: A })).json() as { id: string; invoicedCents: number; dryRun: boolean; canary: boolean }[]).find((j) => j.id === jid)!;
+    expect(theJob.invoicedCents).toBe(600000); // billing persisted on the job
+    expect(theJob.dryRun).toBe(false);
+    expect(theJob.canary).toBe(false);
+    const d = (await app.inject({ method: 'GET', url: '/dashboard', headers: A })).json() as { money: { invoicedCents: number; paidCents: number; outstandingCents: number; mrrCents: number } };
+    expect(d.money.invoicedCents).toBeGreaterThanOrEqual(600000);
+    expect(d.money.outstandingCents).toBe(d.money.invoicedCents - d.money.paidCents);
+    expect(d.money.mrrCents).toBeGreaterThanOrEqual(100000); // Money Co's $1000/mo → cents
+    // a 2nd operator's dashboard money is zero (owner-scoped)
+    const B = { authorization: `Bearer ${signSession({ email: 'money-op-2@x.com' })}` };
+    const d2 = (await app.inject({ method: 'GET', url: '/dashboard', headers: B })).json() as { money: { invoicedCents: number; mrrCents: number } };
+    expect(d2.money.invoicedCents).toBe(0);
+    expect(d2.money.mrrCents).toBe(0);
+  });
+});

@@ -470,6 +470,7 @@ export interface DashboardStats {
   slowestBuildMs: number;
   sloMs: number;
   today: { builds: number; delivered: number; snapshots: number; clientOpens: number };
+  money: { invoicedCents: number; paidCents: number; outstandingCents: number; mrrCents: number };
 }
 export interface StarterPack {
   key: string;
