@@ -157,10 +157,29 @@ export function Operations() {
         </div>
       ) : status ? (
         <section className="mb-8" aria-label="System status">
+          {/* overall health banner — the at-a-glance verdict (worker/db degraded → gold) */}
+          {(() => {
+            const degraded = status.status === 'degraded';
+            const why = degraded
+              ? [status.worker === 'down' ? 'no worker consuming the queue' : null, status.db === 'down' ? 'database unreachable' : null].filter(Boolean).join(' · ') || 'a dependency is down'
+              : 'API, worker and database all responding';
+            const color = degraded ? 'var(--color-gold)' : 'var(--color-jade)';
+            return (
+              <div className="panel-soft p-3 mb-3 flex items-center gap-3" style={{ borderColor: `color-mix(in srgb, ${color} 45%, transparent)` }}>
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color, boxShadow: `0 0 10px ${color}` }} />
+                <div className="min-w-0">
+                  <div className="text-sm font-medium" style={{ color }}>{degraded ? 'Degraded' : 'All systems healthy'}</div>
+                  <div className="text-[0.72rem]" style={{ color: 'var(--color-muted)' }}>{why}</div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* status chips */}
           <div className="flex flex-wrap gap-2 mb-3">
             <StatChip label="api" value={status.api} color="var(--color-jade)" />
             <StatChip label="worker" value={status.worker} color={workerColor(status.worker)} />
+            <StatChip label="db" value={status.db ?? status.persistence} color={status.db === 'down' ? 'var(--color-danger)' : 'var(--color-source)'} />
             <StatChip label="queue" value={status.queue} color="var(--color-source)" />
             <StatChip label="store" value={status.persistence} color="var(--color-source)" />
             <StatChip label="uptime" value={uptime(status.uptimeSec)} color="var(--color-faint)" />
