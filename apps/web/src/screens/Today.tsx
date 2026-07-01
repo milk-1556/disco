@@ -20,6 +20,7 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
   const [snaps, setSnaps] = useState<SnapshotSummary[]>([]);
   const [dash, setDash] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   usePoll(
     () =>
@@ -28,7 +29,11 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
         api.clients().then(setClients),
         api.snapshots().then(setSnaps),
         api.dashboard().then(setDash),
-      ]).finally(() => setLoading(false)),
+      ])
+        // If EVERY fetch failed (e.g. an expired session, a transient API error), don't fall through to
+        // the "all caught up" empty state — that would falsely tell the operator nothing needs them.
+        .then((results) => setLoadError(results.every((r) => r.status === 'rejected')))
+        .finally(() => setLoading(false)),
     4000,
   );
 
@@ -125,7 +130,16 @@ export function Today({ go, onOpenHandover }: { go: (v: View) => void; onOpenHan
         </div>
       )}
 
-      {loading ? (
+      {loadError && !dash ? (
+        <div className="panel p-8 text-center">
+          <div className="eyebrow mb-2" style={{ color: 'var(--color-gold)' }}>couldn't load</div>
+          <h2 className="text-lg">Your dashboard didn't load</h2>
+          <p className="text-sm mt-2 mx-auto" style={{ color: 'var(--color-muted)', maxWidth: 360 }}>
+            The connection dropped or your session expired. It retries automatically every few seconds — or reload the page.
+          </p>
+          <button className="btn btn-ghost text-sm mt-4" onClick={() => location.reload()}>Reload</button>
+        </div>
+      ) : loading ? (
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
           <SkeletonCard lines={3} />
           <SkeletonCard lines={2} />
