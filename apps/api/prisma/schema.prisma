@@ -14,6 +14,7 @@ model Operator {
   id           String   @id @default(cuid())
   email        String   @unique
   passwordHash String
+  role         String   @default("operator") // DB operators are scoped; the env OPERATOR_EMAIL is the admin
   createdAt    DateTime @default(now())
 }
 

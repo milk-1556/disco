@@ -382,4 +382,24 @@ export class PrismaRepo implements Repo {
       updatedAt: iso(r.updatedAt),
     };
   }
+
+  async getOperatorByEmail(email: string) {
+    const r = await this.db.operator.findUnique({ where: { email: email.toLowerCase() } });
+    return r ? { id: r.id, email: r.email, passwordHash: r.passwordHash, role: r.role, createdAt: iso(r.createdAt) } : undefined;
+  }
+  async listOperators() {
+    const rows = await this.db.operator.findMany({ orderBy: { email: 'asc' } });
+    return rows.map((r) => ({ id: r.id, email: r.email, role: r.role, createdAt: iso(r.createdAt) }));
+  }
+  async addOperator(o: { email: string; passwordHash: string; role?: string }) {
+    const r = await this.db.operator.create({ data: { email: o.email.toLowerCase(), passwordHash: o.passwordHash, role: o.role ?? 'operator' } });
+    return { id: r.id, email: r.email, role: r.role, createdAt: iso(r.createdAt) };
+  }
+  async deleteOperator(id: string) {
+    await this.db.operator.delete({ where: { id } }).catch(() => {});
+  }
+  async setOperatorPassword(email: string, passwordHash: string) {
+    const r = await this.db.operator.updateMany({ where: { email: email.toLowerCase() }, data: { passwordHash } });
+    return r.count > 0;
+  }
 }
