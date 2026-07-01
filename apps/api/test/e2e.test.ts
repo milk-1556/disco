@@ -974,3 +974,28 @@ describe('e2e: client-open notifications feed (#10)', () => {
     expect(other.opens.length).toBe(0);
   });
 });
+
+describe('e2e: public handover endpoints are rate-limited (#11 hardening)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  let hid = '';
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, dryRun: false, config: { clientId: 'c', serverName: 'RL HQ', findReplace: [], colorMap: [], linkMap: [], assets: {} } }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) { const s = ((await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: A })).json() as { status: string }).status; if (s === 'completed' || s === 'failed') break; await new Promise((r) => setTimeout(r, 25)); }
+    hid = ((await app.inject({ method: 'POST', url: '/handovers', headers: A, payload: JSON.stringify({ jobId: jid }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: A, payload: JSON.stringify({ state: 'ready' }) });
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('POST /h/:id/event 429s an anonymous flood past the cap', async () => {
+    let got429 = false;
+    for (let i = 0; i < 70; i++) {
+      const r = await app.inject({ method: 'POST', url: `/h/${hid}/event`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ kind: 'docs_viewed' }) });
+      if (r.statusCode === 429) { got429 = true; break; }
+    }
+    expect(got429).toBe(true); // the per-IP+handover cap eventually rejects the flood
+  });
+});

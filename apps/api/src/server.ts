@@ -800,6 +800,9 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // the report or expands the docs. Allowlisted kinds only; no auth (the handover id is the capability).
   app.post('/h/:id/event', async (req, reply) => {
     const id = (req.params as { id: string }).id;
+    // Public + unauthenticated — cap per IP+handover so an anonymous client can't flood the view log
+    // (inflating engagement metrics or hammering the DB). Real usage fires a handful of beacons per visit.
+    if (rateLimited(`hevt:${req.ip}:${id}`, 60, 60_000)) return reply.code(429).send({ error: 'rate limited' });
     const kind = ((req.body ?? {}) as { kind?: string }).kind ?? '';
     if (!['report_downloaded', 'docs_viewed'].includes(kind)) return reply.code(400).send({ error: 'unknown event' });
     const h = await repo.getHandover(id); // raw repo: public capability path, gated by its own rules
@@ -812,6 +815,8 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
   // the handover id (the capability) + not-draft, exactly like /h/:id. Private to the operator afterward.
   app.post('/h/:id/survey', async (req, reply) => {
     const id = (req.params as { id: string }).id;
+    // Public + unauthenticated — cap per IP+handover so the survey can't be spammed (the UI submits once).
+    if (rateLimited(`hsvy:${req.ip}:${id}`, 10, 60_000)) return reply.code(429).send({ error: 'rate limited' });
     const b = (req.body ?? {}) as { nps?: unknown; comment?: unknown };
     const npsNum = Number(b.nps);
     if (!Number.isInteger(npsNum) || npsNum < 0 || npsNum > 10) return reply.code(400).send({ error: 'nps must be an integer 0-10' });
