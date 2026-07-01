@@ -1550,6 +1550,7 @@ function isDiscordInvite(v: string): boolean {
   try {
     const u = new URL(v);
     if (u.protocol !== 'https:') return false;
+    if (u.username || u.password) return false; // no userinfo — a real Discord invite never has credentials
     const host = u.hostname.replace(/^www\./, '');
     if (host === 'discord.gg') return u.pathname.length > 1;
     if (['discord.com', 'discordapp.com', 'ptb.discord.com', 'canary.discord.com'].includes(host)) return /^\/invite\/[^/]+/.test(u.pathname);

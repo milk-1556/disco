@@ -840,3 +840,48 @@ describe('e2e: client server invite link on the handover (#2, XSS/phishing-guard
     expect(pub.inviteUrl).toBe('');
   });
 });
+
+describe('e2e: invite link hardening — scoping, variants, draft-gate (#2 review follow-ups)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' }; // admin
+  const B = { authorization: `Bearer ${signSession({ email: 'invite-op-2@x.com' })}`, 'content-type': 'application/json' }; // scoped op
+  const cfg = { clientId: 'c', serverName: 'Scoped HQ', findReplace: [], colorMap: [], linkMap: [], assets: {} };
+  let readyHid = '', draftHid = '';
+  beforeAll(async () => {
+    app = buildServer({ repo: new InMemoryRepo(true) });
+    await app.ready();
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const mk = async () => {
+      const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, config: cfg, dryRun: false }) })).json() as { id: string }).id;
+      for (let i = 0; i < 80; i++) { const j = (await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: A })).json() as { status: string }; if (j.status === 'completed') break; await new Promise((r) => setTimeout(r, 25)); }
+      return ((await app.inject({ method: 'POST', url: '/handovers', headers: A, payload: JSON.stringify({ jobId: jid }) })).json() as { id: string }).id;
+    };
+    readyHid = await mk();
+    await app.inject({ method: 'PATCH', url: `/handovers/${readyHid}`, headers: A, payload: JSON.stringify({ state: 'ready' }) });
+    draftHid = await mk(); // left in draft on purpose
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('accepts www + ptb/canary/discordapp invite variants', async () => {
+    for (const ok of ['https://www.discord.gg/abc', 'https://ptb.discord.com/invite/abc', 'https://canary.discord.com/invite/abc', 'https://discordapp.com/invite/abc']) {
+      expect((await app.inject({ method: 'PATCH', url: `/handovers/${readyHid}`, headers: A, payload: JSON.stringify({ inviteUrl: ok }) })).statusCode, ok).toBe(200);
+    }
+  });
+
+  it('rejects a URL carrying credentials (userinfo)', async () => {
+    expect((await app.inject({ method: 'PATCH', url: `/handovers/${readyHid}`, headers: A, payload: JSON.stringify({ inviteUrl: 'https://user:pass@discord.gg/abc' }) })).statusCode).toBe(400);
+  });
+
+  it('IDOR: a 2nd operator cannot set another operator\'s handover invite (404, no write)', async () => {
+    await app.inject({ method: 'PATCH', url: `/handovers/${readyHid}`, headers: A, payload: JSON.stringify({ inviteUrl: 'https://discord.gg/owned' }) });
+    // operator B (non-admin, owns nothing) → 404, and the value is untouched
+    expect((await app.inject({ method: 'PATCH', url: `/handovers/${readyHid}`, headers: B, payload: JSON.stringify({ inviteUrl: 'https://discord.gg/hijack' }) })).statusCode).toBe(404);
+    const pub = (await app.inject({ method: 'GET', url: `/h/${readyHid}` })).json() as { inviteUrl: string };
+    expect(pub.inviteUrl).toBe('https://discord.gg/owned');
+  });
+
+  it('a DRAFT handover never exposes its invite on the public page (404)', async () => {
+    // even if an invite were set, a draft 404s the whole public page
+    expect((await app.inject({ method: 'GET', url: `/h/${draftHid}` })).statusCode).toBe(404);
+  });
+});
