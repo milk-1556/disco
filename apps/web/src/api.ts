@@ -112,6 +112,8 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) => req<{ ok: boolean }>('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
   // Trust lane #3: per-build trace — per-step timing + retry count + outcomes.
   buildTrace: (jobId: string) => req<BuildTrace>(`/builds/${jobId}/trace`),
+  // Recent client opens across deliveries (owner-scoped), newer than the epoch-ms cursor.
+  clientOpens: (sinceMs: number) => req<{ opens: { handoverId: string; jobId: string; label: string; at: string }[] }>(`/activity/client-opens?since=${sinceMs}`),
   clients: () => req<Client[]>('/clients'),
   clientDetail: (id: string) => req<ClientDetail>(`/clients/${id}`),
   addClient: (body: Partial<Client>) => req<Client>('/clients', { method: 'POST', body: JSON.stringify(body) }),

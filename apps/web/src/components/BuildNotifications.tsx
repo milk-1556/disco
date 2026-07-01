@@ -3,7 +3,7 @@ import { api } from '../api.js';
 
 interface Toast {
   id: string;
-  kind: 'done' | 'failed';
+  kind: 'done' | 'failed' | 'open';
   title: string;
   sub: string;
   jobId: string;
@@ -61,14 +61,36 @@ export function BuildNotifications({ onOpen }: { onOpen?: (jobId: string) => voi
     return () => { live = false; clearInterval(iv); Object.values(timers.current).forEach(clearTimeout); };
   }, []);
 
+  // Client-open notifications: poll for deliveries a client just opened. Seed the cursor to "now" on mount
+  // so a page load never replays historical opens; only opens newer than the cursor toast.
+  useEffect(() => {
+    let live = true;
+    let cursor = Date.now();
+    let seq = 0;
+    const poll = async () => {
+      const res = await api.clientOpens(cursor).catch(() => null);
+      if (!live || !res || res.opens.length === 0) return;
+      cursor = Math.max(cursor, ...res.opens.map((o) => Date.parse(o.at)));
+      for (const o of res.opens.slice(0, 3)) {
+        const id = `open:${o.handoverId}:${seq++}`;
+        setToasts((t) => [{ id, kind: 'open' as const, title: `${o.label} opened their delivery`, sub: 'Client viewed their finished server', jobId: o.jobId }, ...t].slice(0, 4));
+        timers.current[id] = setTimeout(() => dismiss(id), 9000);
+      }
+    };
+    const iv = setInterval(poll, 8000);
+    void poll();
+    return () => { live = false; clearInterval(iv); };
+  }, []);
+
   if (toasts.length === 0) return null;
   return (
     <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 80, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 'min(360px, calc(100vw - 32px))' }} aria-live="polite">
       {toasts.map((t) => {
-        const accent = t.kind === 'done' ? 'var(--color-jade)' : 'var(--color-danger)';
+        const accent = t.kind === 'done' ? 'var(--color-jade)' : t.kind === 'open' ? 'var(--color-client)' : 'var(--color-danger)';
+        const glyph = t.kind === 'done' ? '●' : t.kind === 'open' ? '◆' : '▲';
         return (
           <div key={t.id} className="panel rise" style={{ padding: '11px 13px', display: 'flex', alignItems: 'flex-start', gap: 10, borderColor: `color-mix(in srgb, ${accent} 45%, var(--color-line))` }}>
-            <span aria-hidden style={{ color: accent, marginTop: 1 }}>{t.kind === 'done' ? '●' : '▲'}</span>
+            <span aria-hidden style={{ color: accent, marginTop: 1 }}>{glyph}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="text-sm" style={{ color: 'var(--color-bone)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</div>
               <div className="text-[0.72rem]" style={{ color: 'var(--color-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.sub}</div>

@@ -734,6 +734,28 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
     return { count: views.length, recent: views.slice(0, 50) };
   });
 
+  // Recent CLIENT opens across the operator's deliveries (owner-scoped) — the notification feed that lets
+  // the operator know a client just viewed their finished server (an engagement/upsell signal). `since` is
+  // an epoch-ms cursor so the poller only sees NEW opens. Privacy: timestamps + labels only, never IPs.
+  app.get('/activity/client-opens', { preHandler: requireAuth }, async (req) => {
+    const sinceMs = Math.max(0, Number((req.query as { since?: string }).since) || 0);
+    const r = scoped(req);
+    const [handovers, clients] = await Promise.all([r.listHandovers(), r.listClients()]);
+    const clientName = new Map(clients.map((c) => [c.id, c.creatorName]));
+    const nonDraft = handovers.filter((h) => h.state !== 'draft');
+    const viewsPer = await Promise.all(nonDraft.map((h) => r.listHandoverViews(h.id)));
+    const opens: { handoverId: string; jobId: string; label: string; at: string }[] = [];
+    nonDraft.forEach((h, i) => {
+      for (const v of viewsPer[i]!) {
+        if (v.kind === 'opened' && new Date(v.at).getTime() > sinceMs) {
+          opens.push({ handoverId: h.id, jobId: h.jobId, label: (h.clientId && clientName.get(h.clientId)) || 'A client', at: v.at });
+        }
+      }
+    });
+    opens.sort((a, b) => b.at.localeCompare(a.at));
+    return { opens: opens.slice(0, 20) };
+  });
+
   // Handover engagement analytics (#4): per-kind aggregate counts + a recent timeline, for the operator.
   // Privacy: built only from referrer-origin + timestamps + the event kind — never an IP or identity.
   app.get('/handovers/:id/analytics', { preHandler: requireAuth }, async (req) => {

@@ -944,3 +944,33 @@ describe('e2e: dashboard money rollup (#7)', () => {
     expect(d2.money.mrrCents).toBe(0);
   });
 });
+
+describe('e2e: client-open notifications feed (#10)', () => {
+  let app: FastifyInstance;
+  const A = { authorization: `Bearer ${signSession({ email: 'operator@disco.local' })}`, 'content-type': 'application/json' };
+  const B = { authorization: `Bearer ${signSession({ email: 'opens-op-2@x.com' })}`, 'content-type': 'application/json' };
+  beforeAll(async () => { app = buildServer({ repo: new InMemoryRepo(true) }); await app.ready(); });
+  afterAll(async () => { await app.close(); });
+
+  it('surfaces new client opens since a cursor, owner-scoped', async () => {
+    const snaps = (await app.inject({ method: 'GET', url: '/snapshots', headers: A })).json() as { id: string }[];
+    const jid = ((await app.inject({ method: 'POST', url: '/jobs', headers: A, payload: JSON.stringify({ snapshotId: snaps[0]!.id, dryRun: false, config: { clientId: 'c', serverName: 'Opens HQ', findReplace: [], colorMap: [], linkMap: [], assets: {} } }) })).json() as { id: string }).id;
+    for (let i = 0; i < 80; i++) { const s = ((await app.inject({ method: 'GET', url: `/jobs/${jid}`, headers: A })).json() as { status: string }).status; if (s === 'completed' || s === 'failed') break; await new Promise((r) => setTimeout(r, 25)); }
+    const hid = ((await app.inject({ method: 'POST', url: '/handovers', headers: A, payload: JSON.stringify({ jobId: jid }) })).json() as { id: string }).id;
+    await app.inject({ method: 'PATCH', url: `/handovers/${hid}`, headers: A, payload: JSON.stringify({ state: 'ready' }) });
+    // a client opens the public delivery page → an 'opened' view is recorded
+    await app.inject({ method: 'GET', url: `/h/${hid}` });
+    await new Promise((r) => setTimeout(r, 60)); // fire-and-forget view write drains
+
+    const feed = (await app.inject({ method: 'GET', url: '/activity/client-opens?since=0', headers: A })).json() as { opens: { handoverId: string; jobId: string; at: string }[] };
+    const mine = feed.opens.find((o) => o.handoverId === hid)!;
+    expect(mine).toBeTruthy();
+    expect(mine.jobId).toBe(jid);
+    // a future cursor returns nothing (the poller only sees NEW opens)
+    const future = (await app.inject({ method: 'GET', url: `/activity/client-opens?since=${Date.now() + 100000}`, headers: A })).json() as { opens: unknown[] };
+    expect(future.opens.length).toBe(0);
+    // a 2nd operator sees none of operator A's opens (owner-scoped)
+    const other = (await app.inject({ method: 'GET', url: '/activity/client-opens?since=0', headers: B })).json() as { opens: unknown[] };
+    expect(other.opens.length).toBe(0);
+  });
+});
