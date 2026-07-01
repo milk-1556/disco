@@ -116,17 +116,24 @@ export function buildServer(opts: BuildServerOptions = {}): FastifyInstance {
       }
     }
     let lastBuildAt: string | null = null;
+    let dbOk = true; // the repo read below doubles as a DB reachability probe
     try {
       const completed = (await repo.listJobs()).filter((j) => j.status === 'completed').map((j) => j.updatedAt).sort();
       lastBuildAt = completed.length ? completed[completed.length - 1]! : null;
     } catch {
-      /* status must never throw */
+      dbOk = false; // repo/DB unreachable (status must never throw)
     }
+    // DEGRADED when a configured dependency is down: the queue is Redis-backed but no worker is consuming,
+    // or Postgres is the backend but a read failed. Monitoring can alert on status; HTTP stays 200 so a
+    // transient worker restart doesn't flap a liveness probe (the API process itself is up).
+    const degraded = (useQueue() && worker === 'down') || (usePrisma() && !dbOk);
     return {
       ok: true,
+      status: (degraded ? 'degraded' : 'healthy') as 'healthy' | 'degraded',
       mode: isLiveMode() ? 'live' : 'demo',
       api: 'up' as const,
       worker,
+      db: usePrisma() ? ((dbOk ? 'up' : 'down') as 'up' | 'down') : ('in-memory' as const),
       queue: useQueue() ? 'redis' : 'in-process',
       persistence: usePrisma() ? 'postgres' : 'in-memory',
       uptimeSec: Math.round((Date.now() - BOOT_AT) / 1000),

@@ -228,9 +228,11 @@ export interface AuditEntry {
 }
 export interface StatusInfo {
   ok: boolean;
+  status?: 'healthy' | 'degraded';
   mode: string;
   api: 'up';
   worker: 'up' | 'down' | 'n/a';
+  db?: 'up' | 'down' | 'in-memory';
   queue: string;
   persistence: string;
   uptimeSec: number;

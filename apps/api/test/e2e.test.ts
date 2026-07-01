@@ -130,10 +130,12 @@ describe('e2e: destructive ops + audit accountability', () => {
     expect((await app.inject({ method: 'DELETE', url: '/snapshots/nope', headers: auth })).statusCode).toBe(404);
   });
 
-  it('/health is public and reports status + request metrics', async () => {
-    const h = (await app.inject({ method: 'GET', url: '/health' })).json() as { ok: boolean; api: string; requests: { perRoute: unknown[] } };
+  it('/health is public and reports a healthy status + db + request metrics', async () => {
+    const h = (await app.inject({ method: 'GET', url: '/health' })).json() as { ok: boolean; status: string; api: string; db: string; requests: { perRoute: unknown[] } };
     expect(h.ok).toBe(true);
     expect(h.api).toBe('up');
+    expect(h.status).toBe('healthy'); // in-memory + no queue → nothing degraded
+    expect(h.db).toBe('in-memory');
     expect(Array.isArray(h.requests.perRoute)).toBe(true);
   });
 });
